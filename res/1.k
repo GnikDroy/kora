@@ -1,0 +1,1 @@
+int main() ret 1;
