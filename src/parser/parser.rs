@@ -29,19 +29,12 @@ impl Parser {
     }
 
     fn parse_identifier(&mut self) -> Result<String, ParseError> {
-        let token = self.peek()?;
-        match &token.token {
-            Tok::Identifier(_) => {
-                let token = self.pop()?;
-                if let Tok::Identifier(name) = token.token {
-                    Ok(name)
-                } else {
-                    panic!()
-                }
-            }
+        let token = self.pop()?;
+        match token.token {
+            Tok::Identifier(name) => Ok(name),
             _ => Err(ParseError {
                 msg: "Identifier expected".to_string(),
-                token: Some(token.clone()),
+                token: Some(token),
             }),
         }
     }
@@ -49,11 +42,9 @@ impl Parser {
     fn parse_identifier_type_pair(&mut self) -> Result<FunctionParameter, ParseError> {
         let name = self.parse_identifier()?;
 
-        let token = self.peek()?;
+        let token = self.pop()?;
         match token.token {
-            Tok::Symbol(SymbolKind::Colon) => {
-                self.pop()?;
-            }
+            Tok::Symbol(SymbolKind::Colon) => {}
             _ => {
                 return Err(ParseError {
                     msg: "Expected :".to_string(),
@@ -67,35 +58,15 @@ impl Parser {
     }
 
     fn parse_term(&mut self) -> Result<Term, ParseError> {
-        let token = self.peek()?;
+        let token = self.pop()?;
         match token.token {
-            Tok::NumericLiteral(_) => {
-                let token = self.pop()?;
-                if let Tok::NumericLiteral(num) = token.token {
-                    Ok(Term::NumericLiteral(num))
-                } else {
-                    panic!()
-                }
-            }
-            Tok::StringLiteral(_) => {
-                let token = self.pop()?;
-                if let Tok::StringLiteral(s) = token.token {
-                    Ok(Term::StringLiteral(s))
-                } else {
-                    panic!()
-                }
-            }
-            Tok::Identifier(_) => {
-                let token = self.pop()?;
-                if let Tok::Identifier(name) = token.token {
-                    Ok(Term::Variable(name))
-                } else {
-                    panic!()
-                }
-            }
-            _ => {
-                panic!()
-            }
+            Tok::NumericLiteral(num) => Ok(Term::NumericLiteral(num)),
+            Tok::StringLiteral(s) => Ok(Term::StringLiteral(s)),
+            Tok::Identifier(name) => Ok(Term::Variable(name)),
+            _ => Err(ParseError {
+                msg: "Expected term".into(),
+                token: Some(token),
+            }),
         }
     }
 
@@ -125,7 +96,6 @@ impl Parser {
             }
             Tok::NumericLiteral(_) | Tok::StringLiteral(_) | Tok::Identifier(_) => {
                 let mut term = Expression::ExpressionTerm(self.parse_term()?);
-
                 loop {
                     if let Ok(token) = self.peek() {
                         if let Some(operator) = Parser::get_binary_operator(&token.token) {
@@ -166,19 +136,13 @@ impl Parser {
     }
 
     fn parse_statement(&mut self) -> Result<Statement, ParseError> {
-        let token = self.peek()?;
+        let token = self.pop()?;
         match token.token {
-            Tok::Symbol(SymbolKind::Semicolon) => {
-                self.pop()?;
-                Ok(Statement::Empty)
-            }
+            Tok::Symbol(SymbolKind::Semicolon) => Ok(Statement::Empty),
             Tok::Keyword(KeywordKind::Ret) => {
-                self.pop()?;
                 let expr = self.parse_expression()?;
-
-                let token = self.peek()?;
+                let token = self.pop()?;
                 if let Tok::Symbol(SymbolKind::Semicolon) = token.token {
-                    self.pop()?;
                     Ok(Statement::Return(expr))
                 } else {
                     Err(ParseError {
@@ -188,8 +152,6 @@ impl Parser {
                 }
             }
             Tok::Symbol(SymbolKind::LeftBrace) => {
-                self.pop()?;
-
                 let mut statements = vec![];
                 while !self.tokens.is_empty() {
                     let token = self.peek()?;
@@ -205,21 +167,19 @@ impl Parser {
             }
             _ => Err(ParseError {
                 msg: "Expected statement".to_string(),
-                token: Some(token).cloned(),
+                token: Some(token),
             }),
         }
     }
 
     fn parse_array_typename(&mut self) -> Result<Typename, ParseError> {
-        let token = self.peek()?;
+        let token = self.pop()?;
         match token.token {
             Tok::Symbol(SymbolKind::LeftBracket) => {
-                self.pop()?;
                 let typename = self.parse_typename()?;
 
-                let token = self.peek()?;
+                let token = self.pop()?;
                 if let Tok::Symbol(SymbolKind::Comma) = token.token {
-                    self.pop()?;
                 } else {
                     return Err(ParseError {
                         msg: "Expected comma".to_string(),
@@ -227,9 +187,8 @@ impl Parser {
                     });
                 }
 
-                let token = self.peek()?;
+                let token = self.pop()?;
                 let size = if let Tok::NumericLiteral(num) = token.token {
-                    self.pop()?;
                     num
                 } else {
                     return Err(ParseError {
@@ -238,9 +197,8 @@ impl Parser {
                     });
                 };
 
-                let token = self.peek()?;
+                let token = self.pop()?;
                 if let Tok::Symbol(SymbolKind::RightBracket) = token.token {
-                    self.pop()?;
                     Ok(Typename::Array(Box::new(typename), size))
                 } else {
                     Err(ParseError {
@@ -251,7 +209,7 @@ impl Parser {
             }
             _ => Err(ParseError {
                 msg: "Expected array type".to_string(),
-                token: Some(token.clone()),
+                token: Some(token),
             }),
         }
     }
@@ -293,14 +251,13 @@ impl Parser {
 
     fn parse_function_arguments(&mut self) -> Result<Vec<FunctionParameter>, ParseError> {
         let mut args = vec![];
-        let token = self.peek()?;
+        let token = self.pop()?;
 
         if let Tok::Symbol(SymbolKind::LeftParen) = token.token {
-            self.pop()?;
         } else {
             return Err(ParseError {
                 msg: "Expected open paren (".to_string(),
-                token: Some(token).cloned(),
+                token: Some(token),
             });
         }
 
