@@ -584,7 +584,8 @@ mod tests {
     fn expression_parser_valid() {
         let sources = vec![
             "1-2-3",
-            "a=b",
+            "a=b - a != b + a | b + c & d",
+            "a==b + c<d + a<=b + 1>2 + e>=f",
             "(1/2 + (x+4) / 4) / ((x-5)/2 + (x+4)/(x-5))",
             r#"a + b/2 - c/(x * 4) * (3 + 4/(5+"hello there"))"#,
             r#"a + func_call(a, "b" + 2, (a+b) * c / 2) / 2"#,
