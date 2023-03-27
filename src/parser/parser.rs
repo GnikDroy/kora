@@ -57,12 +57,24 @@ impl Parser {
         return Ok(FunctionParameter { name, typename });
     }
 
-    fn parse_term(&mut self) -> Result<Term, ParseError> {
+    fn parse_initial_expression(&mut self) -> Result<Expression, ParseError> {
         let token = self.pop()?;
         match token.token {
-            Tok::NumericLiteral(num) => Ok(Term::NumericLiteral(num)),
-            Tok::StringLiteral(s) => Ok(Term::StringLiteral(s)),
-            Tok::Identifier(name) => Ok(Term::Variable(name)),
+            Tok::NumericLiteral(num) => Ok(Expression::NumericLiteral(num)),
+            Tok::StringLiteral(s) => Ok(Expression::StringLiteral(s)),
+            Tok::Identifier(name) => Ok(Expression::Variable(name)),
+            Tok::Symbol(SymbolKind::LeftParen) => {
+                let expr = self.pratt_parser(0)?;
+                let token = self.pop()?;
+                if let Tok::Symbol(SymbolKind::RightParen) = token.token {
+                    Ok(expr)
+                } else {
+                    Err(ParseError {
+                        msg: "Expected closing paren )".into(),
+                        token: Some(token),
+                    })
+                }
+            }
             _ => Err(ParseError {
                 msg: "Expected term".into(),
                 token: Some(token),
@@ -75,7 +87,7 @@ impl Parser {
             Tok::Symbol(SymbolKind::Plus) => Some(BinaryOperator::Plus),
             Tok::Symbol(SymbolKind::Minus) => Some(BinaryOperator::Minus),
             Tok::Symbol(SymbolKind::Star) => Some(BinaryOperator::Star),
-            Tok::Symbol(SymbolKind::Slash) => Some(BinaryOperator::Star),
+            Tok::Symbol(SymbolKind::Slash) => Some(BinaryOperator::Slash),
             _ => None,
         }
     }
@@ -83,38 +95,30 @@ impl Parser {
     fn pratt_parser(&mut self, current_binding_power: u32) -> Result<Expression, ParseError> {
         let token = self.peek()?;
         match token.token {
-            Tok::Symbol(SymbolKind::LeftParen) => {
-                self.pop()?;
-                let expr = self.pratt_parser(0)?;
-                let token = self.peek()?;
-                if let Tok::Symbol(SymbolKind::RightParen) = token.token {
-                    self.pop()?;
-                    Ok(expr)
-                } else {
-                    panic!();
-                }
-            }
-            Tok::NumericLiteral(_) | Tok::StringLiteral(_) | Tok::Identifier(_) => {
-                let mut term = Expression::ExpressionTerm(self.parse_term()?);
+            Tok::Symbol(SymbolKind::LeftParen)
+            | Tok::NumericLiteral(_)
+            | Tok::StringLiteral(_)
+            | Tok::Identifier(_) => {
+                let mut term = self.parse_initial_expression()?;
                 loop {
                     if let Ok(token) = self.peek() {
                         if let Some(operator) = Parser::get_binary_operator(&token.token) {
-                            self.pop()?;
                             let binding_power = if operator.is_left_associative() {
                                 operator.get_binding_power()
                             } else {
                                 operator.get_binding_power() - 1
                             };
 
-                            if binding_power > current_binding_power {
+                            if binding_power <= current_binding_power {
+                                break Ok(term);
+                            } else {
+                                self.pop()?;
                                 let right_term = self.pratt_parser(binding_power)?;
                                 term = Expression::BinaryExpression(
                                     Box::new(term),
                                     operator,
                                     Box::new(right_term),
                                 );
-                            } else {
-                                break Ok(term);
                             }
                         } else {
                             break Ok(term);
@@ -451,10 +455,9 @@ mod tests {
     #[test]
     fn expression_parser_valid() {
         let sources = vec![
-            "1",
-            r#""1""#,
-            r#""hello world""#,
-            r#""escaped string \" hello there \"""#,
+            "1-2-3",
+            "(1/2 + (x+4) / 4) / ((x-5)/2 + (x+4)/(x-5))",
+            r#"a + b/2 - c/(x * 4) * (3 + 4/(5+"hello there"))"#,
         ];
         for source in sources {
             let tokens = lexer::Lexer::lex(source).expect("lex");

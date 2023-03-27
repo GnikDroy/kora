@@ -35,18 +35,13 @@ pub enum Statement {
 }
 
 #[derive(Debug)]
-pub enum Term {
+pub enum Expression {
     NumericLiteral(i64),
     StringLiteral(String),
     Variable(String),
-}
-
-#[derive(Debug)]
-pub enum Expression {
-    ExpressionTerm(Term),
     BinaryExpression(Box<Expression>, BinaryOperator, Box<Expression>),
     UnaryExpression(UnaryOperator, Box<Expression>),
-    CallExpression(Term, Vec<Expression>),
+    CallExpression(Box<Expression>, Vec<Expression>),
 }
 
 #[derive(Debug)]
@@ -66,7 +61,7 @@ impl BinaryOperator {
     pub fn get_binding_power(&self) -> u32 {
         match self {
             BinaryOperator::Plus | BinaryOperator::Minus => 10,
-            BinaryOperator::Star | BinaryOperator::Slash => 10,
+            BinaryOperator::Star | BinaryOperator::Slash => 20,
         }
     }
     pub fn is_left_associative(&self) -> bool {
