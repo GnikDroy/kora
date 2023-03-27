@@ -1,7 +1,7 @@
 use core::panic;
 
+use super::ast::*;
 use super::errors::*;
-use super::parse_tree::*;
 use crate::lexer::{KeywordKind, SymbolKind, Tok, Token};
 
 pub struct Parser {
