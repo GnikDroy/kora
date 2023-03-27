@@ -3,17 +3,17 @@ use std::error::Error;
 use std::fmt;
 
 #[derive(Debug)]
-pub struct LexerError {
-    pub msg: String,
+pub struct LexerError<'a> {
+    pub msg: &'a str,
     pub col: usize,
     pub row: usize,
     pub line: String,
     pub suggestion: String,
 }
 
-impl Error for LexerError {}
+impl<'a> Error for LexerError<'a> {}
 
-impl fmt::Display for LexerError {
+impl<'a> fmt::Display for LexerError<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.line.len() < 60 {}
         let error_line = format!("{}: {}\n", "error".red().bold(), self.msg.white().bold());

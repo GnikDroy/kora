@@ -11,8 +11,8 @@ impl Lexer {
             while let Some((row, c)) = line_iter.next() {
                 let tok = match c {
                     // single character symbols
-                    '(' | ')' | '[' | ']' | '{' | '}' | ';' | ':' | ',' | '.' | '+' | '-' | '*'
-                    | '/' | '>' | '<' => Ok(Tok::Symbol(match c {
+                    '(' | ')' | '[' | ']' | '{' | '}' | ';' | ':' | ',' | '+' | '-' | '*' | '/'
+                    | '|' | '&' => Ok(Tok::Symbol(match c {
                         '(' => SymbolKind::LeftParen,
                         ')' => SymbolKind::RightParen,
                         '[' => SymbolKind::LeftBracket,
@@ -22,26 +22,57 @@ impl Lexer {
                         ';' => SymbolKind::Semicolon,
                         ':' => SymbolKind::Colon,
                         ',' => SymbolKind::Comma,
-                        '.' => SymbolKind::Dot,
                         '+' => SymbolKind::Plus,
                         '-' => SymbolKind::Minus,
                         '*' => SymbolKind::Star,
                         '/' => SymbolKind::Slash,
-                        '>' => SymbolKind::Greater,
-                        '<' => SymbolKind::Less,
+                        '|' => SymbolKind::Pipe,
+                        '&' => SymbolKind::Ampersand,
                         _ => panic!(),
                     })),
                     // double character symbols
                     '=' => {
                         if let Some((_, c1)) = line_iter.peek() {
                             if c1 == &'=' {
-                                line_iter.next();
                                 Ok(Tok::Symbol(SymbolKind::EqualEqual))
                             } else {
                                 Ok(Tok::Symbol(SymbolKind::Equal))
                             }
                         } else {
                             Ok(Tok::Symbol(SymbolKind::Equal))
+                        }
+                    }
+                    '!' => {
+                        if let Some((_, c1)) = line_iter.peek() {
+                            if c1 == &'=' {
+                                Ok(Tok::Symbol(SymbolKind::ExclamEqual))
+                            } else {
+                                Ok(Tok::Symbol(SymbolKind::Exclam))
+                            }
+                        } else {
+                            Ok(Tok::Symbol(SymbolKind::Exclam))
+                        }
+                    }
+                    '>' => {
+                        if let Some((_, c1)) = line_iter.peek() {
+                            if c1 == &'=' {
+                                Ok(Tok::Symbol(SymbolKind::GreaterEqual))
+                            } else {
+                                Ok(Tok::Symbol(SymbolKind::Greater))
+                            }
+                        } else {
+                            Ok(Tok::Symbol(SymbolKind::Greater))
+                        }
+                    }
+                    '<' => {
+                        if let Some((_, c1)) = line_iter.peek() {
+                            if c1 == &'=' {
+                                Ok(Tok::Symbol(SymbolKind::LessEqual))
+                            } else {
+                                Ok(Tok::Symbol(SymbolKind::Less))
+                            }
+                        } else {
+                            Ok(Tok::Symbol(SymbolKind::Less))
                         }
                     }
                     '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' => {
@@ -60,11 +91,11 @@ impl Lexer {
                         match literal.parse::<i64>() {
                             Ok(n) => Ok(Tok::NumericLiteral(n)),
                             Err(_) => Err(LexerError {
-                                msg: "Integer too big to fit in 64 bits".to_string(),
+                                msg: "Integer too big to fit in 64 bits",
                                 col: col + 1,
                                 row: row + 1,
                                 line: line.into(),
-                                suggestion: "Select a smaller value for the integer".to_string(),
+                                suggestion: "Select a smaller value for the integer, or a different data type".to_string(),
                             }),
                         }
                     }
@@ -90,7 +121,7 @@ impl Lexer {
                                                 }
                                                 _ => {
                                                     error = Some(LexerError {
-                                                        msg: "Invalid escape sequence".to_string(),
+                                                        msg: "Invalid escape sequence",
                                                         col: col + 1,
                                                         row: row + 1,
                                                         line: line.to_string(),
@@ -103,7 +134,7 @@ impl Lexer {
                                             }
                                         } else {
                                             error = Some(LexerError {
-                                                msg: "Incomplete escape sequence".to_string(),
+                                                msg: "Incomplete escape sequence",
                                                 col: col + 1,
                                                 row: row + 1,
                                                 line: line.to_string(),
@@ -122,7 +153,7 @@ impl Lexer {
 
                         if !string_finished {
                             error = Some(LexerError {
-                                msg: "Incomplete string literal".to_string(),
+                                msg: "Incomplete string literal",
                                 col: col + 1,
                                 row: row + 1,
                                 line: line.to_string(),
@@ -159,7 +190,7 @@ impl Lexer {
                     }
                     ' ' | '\t' | '\n' | '\r' => Ok(Tok::Whitespace),
                     _ => Err(LexerError {
-                        msg: "Invalid token".to_string(),
+                        msg: "Invalid token",
                         col: col + 1,
                         row: row + 1,
                         line: line.to_string(),

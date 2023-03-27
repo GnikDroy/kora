@@ -43,15 +43,20 @@ pub enum SymbolKind {
     Semicolon,
     Colon,
     Comma,
-    Dot,
     Plus,
     Minus,
     Star,
     Slash,
-    Greater,
-    Less,
     Equal,
     EqualEqual,
+    Greater,
+    Less,
+    GreaterEqual,
+    LessEqual,
+    Exclam,
+    ExclamEqual,
+    Pipe,
+    Ampersand,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
