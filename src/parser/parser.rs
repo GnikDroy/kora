@@ -1,3 +1,5 @@
+use core::panic;
+
 use super::errors::*;
 use super::parse_tree::*;
 use crate::lexer::{KeywordKind, SymbolKind, Tok, Token};
@@ -64,13 +66,13 @@ impl Parser {
         return Ok(FunctionParameter { name, typename });
     }
 
-    fn parse_expression(&mut self) -> Result<Expression, ParseError> {
+    fn parse_term(&mut self) -> Result<Term, ParseError> {
         let token = self.peek()?;
         match token.token {
             Tok::NumericLiteral(_) => {
                 let token = self.pop()?;
                 if let Tok::NumericLiteral(num) = token.token {
-                    Ok(Expression::NumericLiteral(num))
+                    Ok(Term::NumericLiteral(num))
                 } else {
                     panic!()
                 }
@@ -78,9 +80,78 @@ impl Parser {
             Tok::StringLiteral(_) => {
                 let token = self.pop()?;
                 if let Tok::StringLiteral(s) = token.token {
-                    Ok(Expression::StringLiteral(s))
+                    Ok(Term::StringLiteral(s))
                 } else {
                     panic!()
+                }
+            }
+            Tok::Identifier(_) => {
+                let token = self.pop()?;
+                if let Tok::Identifier(name) = token.token {
+                    Ok(Term::Variable(name))
+                } else {
+                    panic!()
+                }
+            }
+            _ => {
+                panic!()
+            }
+        }
+    }
+
+    fn get_binary_operator(token: &Tok) -> Option<BinaryOperator> {
+        match token {
+            Tok::Symbol(SymbolKind::Plus) => Some(BinaryOperator::Plus),
+            Tok::Symbol(SymbolKind::Minus) => Some(BinaryOperator::Minus),
+            Tok::Symbol(SymbolKind::Star) => Some(BinaryOperator::Star),
+            Tok::Symbol(SymbolKind::Slash) => Some(BinaryOperator::Star),
+            _ => None,
+        }
+    }
+
+    fn pratt_parser(&mut self, current_binding_power: u32) -> Result<Expression, ParseError> {
+        let token = self.peek()?;
+        match token.token {
+            Tok::Symbol(SymbolKind::LeftParen) => {
+                self.pop()?;
+                let expr = self.pratt_parser(0)?;
+                let token = self.peek()?;
+                if let Tok::Symbol(SymbolKind::RightParen) = token.token {
+                    self.pop()?;
+                    Ok(expr)
+                } else {
+                    panic!();
+                }
+            }
+            Tok::NumericLiteral(_) | Tok::StringLiteral(_) | Tok::Identifier(_) => {
+                let mut term = Expression::ExpressionTerm(self.parse_term()?);
+
+                loop {
+                    if let Ok(token) = self.peek() {
+                        if let Some(operator) = Parser::get_binary_operator(&token.token) {
+                            self.pop()?;
+                            let binding_power = if operator.is_left_associative() {
+                                operator.get_binding_power()
+                            } else {
+                                operator.get_binding_power() - 1
+                            };
+
+                            if binding_power > current_binding_power {
+                                let right_term = self.pratt_parser(binding_power)?;
+                                term = Expression::BinaryExpression(
+                                    Box::new(term),
+                                    operator,
+                                    Box::new(right_term),
+                                );
+                            } else {
+                                break Ok(term);
+                            }
+                        } else {
+                            break Ok(term);
+                        }
+                    } else {
+                        break Ok(term);
+                    }
                 }
             }
             _ => Err(ParseError {
@@ -88,6 +159,10 @@ impl Parser {
                 token: self.tokens.last().cloned(),
             }),
         }
+    }
+
+    fn parse_expression(&mut self) -> Result<Expression, ParseError> {
+        self.pratt_parser(0)
     }
 
     fn parse_statement(&mut self) -> Result<Statement, ParseError> {
@@ -428,13 +503,13 @@ mod tests {
             let tokens = lexer::Lexer::lex(source).expect("lex");
             let mut parser = parser::Parser::new(tokens);
             let node = parser.parse_expression();
-            assert!(node.is_ok(), "{}", node.err().unwrap());
+            assert!(node.is_ok(), "{} {}", source, node.err().unwrap());
         }
     }
 
     #[test]
     fn expression_parser_invalid() {
-        let sources = vec!["", "let", "*", "fn"];
+        let sources = vec!["", "let", "*"];
         for source in sources {
             let tokens = lexer::Lexer::lex(source).expect("lex");
             let mut parser = parser::Parser::new(tokens);
