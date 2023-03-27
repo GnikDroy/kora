@@ -3,18 +3,23 @@ use super::parse_tree::*;
 use crate::lexer::{KeywordKind, SymbolKind, Tok, Token};
 
 pub struct Parser {
-    pub tokens: Vec<Token>,
+    tokens: Vec<Token>,
 }
 
 impl Parser {
-    fn peek_token(&mut self) -> Result<&Token, ParseError> {
+    pub fn new(mut tokens: Vec<Token>) -> Parser {
+        tokens.reverse();
+        Parser { tokens }
+    }
+
+    fn peek(&mut self) -> Result<&Token, ParseError> {
         self.tokens.last().ok_or(ParseError {
             msg: "Unexpected end of file".to_string(),
             token: None,
         })
     }
 
-    fn pop_token(&mut self) -> Result<Token, ParseError> {
+    fn pop(&mut self) -> Result<Token, ParseError> {
         self.tokens.pop().ok_or(ParseError {
             msg: "Unexpected end of file".to_string(),
             token: None,
@@ -22,10 +27,10 @@ impl Parser {
     }
 
     fn parse_identifier(&mut self) -> Result<String, ParseError> {
-        let token = self.peek_token()?;
+        let token = self.peek()?;
         match &token.token {
             Tok::Identifier(_) => {
-                let token = self.pop_token()?;
+                let token = self.pop()?;
                 if let Tok::Identifier(name) = token.token {
                     Ok(name)
                 } else {
@@ -42,10 +47,10 @@ impl Parser {
     fn parse_identifier_type_pair(&mut self) -> Result<FunctionParameter, ParseError> {
         let name = self.parse_identifier()?;
 
-        let token = self.peek_token()?;
+        let token = self.peek()?;
         match token.token {
             Tok::Symbol(SymbolKind::Colon) => {
-                self.pop_token()?;
+                self.pop()?;
             }
             _ => {
                 return Err(ParseError {
@@ -60,10 +65,10 @@ impl Parser {
     }
 
     fn parse_expression(&mut self) -> Result<Expression, ParseError> {
-        let token = self.peek_token()?;
+        let token = self.peek()?;
         match token.token {
             Tok::NumericLiteral(_) => {
-                let token = self.pop_token()?;
+                let token = self.pop()?;
                 if let Tok::NumericLiteral(num) = token.token {
                     Ok(Expression::NumericLiteral(num))
                 } else {
@@ -71,7 +76,7 @@ impl Parser {
                 }
             }
             Tok::StringLiteral(_) => {
-                let token = self.pop_token()?;
+                let token = self.pop()?;
                 if let Tok::StringLiteral(s) = token.token {
                     Ok(Expression::StringLiteral(s))
                 } else {
@@ -86,19 +91,19 @@ impl Parser {
     }
 
     fn parse_statement(&mut self) -> Result<Statement, ParseError> {
-        let token = self.peek_token()?;
+        let token = self.peek()?;
         match token.token {
             Tok::Symbol(SymbolKind::Semicolon) => {
-                self.pop_token()?;
+                self.pop()?;
                 Ok(Statement::Empty)
             }
             Tok::Keyword(KeywordKind::Ret) => {
-                self.pop_token()?;
+                self.pop()?;
                 let expr = self.parse_expression()?;
 
-                let token = self.peek_token()?;
+                let token = self.peek()?;
                 if let Tok::Symbol(SymbolKind::Semicolon) = token.token {
-                    self.pop_token()?;
+                    self.pop()?;
                     Ok(Statement::Return(expr))
                 } else {
                     Err(ParseError {
@@ -108,14 +113,14 @@ impl Parser {
                 }
             }
             Tok::Symbol(SymbolKind::LeftBrace) => {
-                self.pop_token()?;
+                self.pop()?;
 
                 let mut statements = vec![];
                 while !self.tokens.is_empty() {
-                    let token = self.peek_token()?;
+                    let token = self.peek()?;
                     match token.token {
                         Tok::Symbol(SymbolKind::RightBrace) => {
-                            self.pop_token()?;
+                            self.pop()?;
                             break;
                         }
                         _ => statements.push(self.parse_statement()?),
@@ -131,15 +136,15 @@ impl Parser {
     }
 
     fn parse_array_typename(&mut self) -> Result<Typename, ParseError> {
-        let token = self.peek_token()?;
+        let token = self.peek()?;
         match token.token {
             Tok::Symbol(SymbolKind::LeftBracket) => {
-                self.pop_token()?;
+                self.pop()?;
                 let typename = self.parse_typename()?;
 
-                let token = self.peek_token()?;
+                let token = self.peek()?;
                 if let Tok::Symbol(SymbolKind::Comma) = token.token {
-                    self.pop_token()?;
+                    self.pop()?;
                 } else {
                     return Err(ParseError {
                         msg: "Expected comma".to_string(),
@@ -147,9 +152,9 @@ impl Parser {
                     });
                 }
 
-                let token = self.peek_token()?;
+                let token = self.peek()?;
                 let size = if let Tok::NumericLiteral(num) = token.token {
-                    self.pop_token()?;
+                    self.pop()?;
                     num
                 } else {
                     return Err(ParseError {
@@ -158,9 +163,9 @@ impl Parser {
                     });
                 };
 
-                let token = self.peek_token()?;
+                let token = self.peek()?;
                 if let Tok::Symbol(SymbolKind::RightBracket) = token.token {
-                    self.pop_token()?;
+                    self.pop()?;
                     Ok(Typename::Array(Box::new(typename), size))
                 } else {
                     Err(ParseError {
@@ -177,10 +182,10 @@ impl Parser {
     }
 
     fn parse_typename(&mut self) -> Result<Typename, ParseError> {
-        let token = self.peek_token()?;
+        let token = self.peek()?;
         match token.token {
             Tok::Identifier(_) => {
-                let token = self.pop_token()?;
+                let token = self.pop()?;
                 if let Tok::Identifier(name) = token.token {
                     Ok(Typename::Struct(name))
                 } else {
@@ -188,19 +193,19 @@ impl Parser {
                 }
             }
             Tok::Keyword(KeywordKind::Int) => {
-                self.pop_token()?;
+                self.pop()?;
                 Ok(Typename::Int)
             }
             Tok::Keyword(KeywordKind::Real) => {
-                self.pop_token()?;
+                self.pop()?;
                 Ok(Typename::Real)
             }
             Tok::Keyword(KeywordKind::Char) => {
-                self.pop_token()?;
+                self.pop()?;
                 Ok(Typename::Char)
             }
             Tok::Keyword(KeywordKind::Bool) => {
-                self.pop_token()?;
+                self.pop()?;
                 Ok(Typename::Bool)
             }
             Tok::Symbol(SymbolKind::LeftBracket) => self.parse_array_typename(),
@@ -213,10 +218,10 @@ impl Parser {
 
     fn parse_function_arguments(&mut self) -> Result<Vec<FunctionParameter>, ParseError> {
         let mut args = vec![];
-        let token = self.peek_token()?;
+        let token = self.peek()?;
 
         if let Tok::Symbol(SymbolKind::LeftParen) = token.token {
-            self.pop_token()?;
+            self.pop()?;
         } else {
             return Err(ParseError {
                 msg: "Expected open paren (".to_string(),
@@ -226,7 +231,7 @@ impl Parser {
 
         let mut expecting_separator = false;
         while !self.tokens.is_empty() {
-            let token = self.peek_token()?;
+            let token = self.peek()?;
             match &token.token {
                 Tok::Symbol(SymbolKind::Comma) => {
                     if !expecting_separator {
@@ -235,7 +240,7 @@ impl Parser {
                             token: Some(token.clone()),
                         });
                     }
-                    self.pop_token()?;
+                    self.pop()?;
                     expecting_separator = false;
                 }
                 Tok::Identifier(_) => {
@@ -249,7 +254,7 @@ impl Parser {
                     expecting_separator = true;
                 }
                 Tok::Symbol(SymbolKind::RightParen) => {
-                    self.pop_token()?;
+                    self.pop()?;
                     return Ok(args);
                 }
                 _ => {
@@ -285,7 +290,6 @@ impl Parser {
     }
 
     pub fn parse(&mut self) -> Result<Module, ParseError> {
-        self.tokens.reverse();
         self.parse_module()
     }
 }
@@ -293,6 +297,218 @@ impl Parser {
 #[cfg(test)]
 mod tests {
     use crate::{lexer, parser};
+
+    #[test]
+    fn module_parser_valid() {
+        let sources = vec!["", "int main();", "int a(); int b(); int c();"];
+        for source in sources {
+            let tokens = lexer::Lexer::lex(source).expect("lex");
+            let mut parser = parser::Parser::new(tokens);
+            let node = parser.parse_module();
+            assert!(node.is_ok(), "{}", node.err().unwrap());
+        }
+    }
+
+    #[test]
+    fn module_parser_invalid() {
+        let sources = vec!["i", "int main()", "int a(); int b(); int ();"];
+        for source in sources {
+            let tokens = lexer::Lexer::lex(source).expect("lex");
+            let mut parser = parser::Parser::new(tokens);
+            let node = parser.parse_module();
+            assert!(node.is_err(), "{}", source);
+        }
+    }
+
+    #[test]
+    fn identifier_parser_valid() {
+        let sources = vec!["ident", "abc", "_wfk23fb"];
+        for source in sources {
+            let tokens = lexer::Lexer::lex(source).expect("lex");
+            let mut parser = parser::Parser::new(tokens);
+            let node = parser.parse_identifier();
+            assert!(node.is_ok(), "{}", node.err().unwrap());
+        }
+    }
+
+    #[test]
+    fn identifier_parser_invalid() {
+        let sources = vec!["", "23bl", "*l"];
+
+        for source in sources {
+            let tokens = lexer::Lexer::lex(source).expect("lex");
+            let mut parser = parser::Parser::new(tokens);
+            let node = parser.parse_identifier();
+            assert!(node.is_err(), "{}", source);
+        }
+    }
+
+    #[test]
+    fn array_typename_parser_valid() {
+        let sources = vec!["[[int, 5], 10]", "[int, 5]", "[t, 5]"];
+        for source in sources {
+            let tokens = lexer::Lexer::lex(source).expect("lex");
+            let mut parser = parser::Parser::new(tokens);
+            let node = parser.parse_array_typename();
+            assert!(node.is_ok(), "{}", node.err().unwrap());
+        }
+    }
+
+    #[test]
+    fn array_typename_parser_invalid() {
+        let sources = vec!["", "1_", "*", "[", "[int, 10", "[int 10]", "[[[["];
+
+        for source in sources {
+            let tokens = lexer::Lexer::lex(source).expect("lex");
+            let mut parser = parser::Parser::new(tokens);
+            let node = parser.parse_array_typename();
+            assert!(node.is_err(), "{}", source);
+        }
+    }
+
+    #[test]
+    fn typename_parser_valid() {
+        let sources = vec!["int", "[[int, 5], 10]", "real", "custom_type"];
+        for source in sources {
+            let tokens = lexer::Lexer::lex(source).expect("lex");
+            let mut parser = parser::Parser::new(tokens);
+            let node = parser.parse_typename();
+            assert!(node.is_ok(), "{}", node.err().unwrap());
+        }
+    }
+
+    #[test]
+    fn typename_parser_invalid() {
+        let sources = vec!["", "1_", "*", "[int]", "[int 10]"];
+
+        for source in sources {
+            let tokens = lexer::Lexer::lex(source).expect("lex");
+            let mut parser = parser::Parser::new(tokens);
+            let node = parser.parse_typename();
+            assert!(node.is_err(), "{}", source);
+        }
+    }
+
+    #[test]
+    fn identifier_type_pair_parser_valid() {
+        let sources = vec![
+            "a: int",
+            "a: [[int, 5], 10]",
+            "ident: real",
+            "ident: custom_type",
+        ];
+        for source in sources {
+            let tokens = lexer::Lexer::lex(source).expect("lex");
+            let mut parser = parser::Parser::new(tokens);
+            let node = parser.parse_identifier_type_pair();
+            assert!(node.is_ok(), "{}", node.err().unwrap());
+        }
+    }
+
+    #[test]
+    fn identifier_type_pair_parser_invalid() {
+        let sources = vec!["", "a: ", "a int", "1: int", "int: int"];
+        for source in sources {
+            let tokens = lexer::Lexer::lex(source).expect("lex");
+            let mut parser = parser::Parser::new(tokens);
+            let node = parser.parse_identifier_type_pair();
+            assert!(node.is_err(), "{}", source);
+        }
+    }
+
+    #[test]
+    fn expression_parser_valid() {
+        let sources = vec![
+            "1",
+            r#""1""#,
+            r#""hello world""#,
+            r#""escaped string \" hello there \"""#,
+        ];
+        for source in sources {
+            let tokens = lexer::Lexer::lex(source).expect("lex");
+            let mut parser = parser::Parser::new(tokens);
+            let node = parser.parse_expression();
+            assert!(node.is_ok(), "{}", node.err().unwrap());
+        }
+    }
+
+    #[test]
+    fn expression_parser_invalid() {
+        let sources = vec!["", "let", "*", "fn"];
+        for source in sources {
+            let tokens = lexer::Lexer::lex(source).expect("lex");
+            let mut parser = parser::Parser::new(tokens);
+            let node = parser.parse_expression();
+            assert!(node.is_err(), "{}", source);
+        }
+    }
+
+    #[test]
+    fn statement_parser_valid() {
+        let sources = vec!["{}", ";", r#"ret "hello world";"#, "{ ret 1; }"];
+        for source in sources {
+            let tokens = lexer::Lexer::lex(source).expect("lex");
+            let mut parser = parser::Parser::new(tokens);
+            let node = parser.parse_statement();
+            assert!(node.is_ok(), "{}", node.err().unwrap());
+        }
+    }
+
+    #[test]
+    fn statement_parser_invalid() {
+        let sources = vec!["", "let", "*", "ret"];
+        for source in sources {
+            let tokens = lexer::Lexer::lex(source).expect("lex");
+            let mut parser = parser::Parser::new(tokens);
+            let node = parser.parse_statement();
+            assert!(node.is_err(), "{}", source);
+        }
+    }
+
+    #[test]
+    fn function_arguments_parser_vaild() {
+        let sources = vec![
+            "(a: int, b: [bool, 5])",
+            "(a: [[int, 5], 10])",
+            "(a: int, b: bool, c: char, d: [int, 5], e: real)",
+        ];
+
+        for source in sources {
+            let tokens = lexer::Lexer::lex(source).expect("lex");
+            let mut parser = parser::Parser::new(tokens);
+            let node = parser.parse_function_arguments();
+            assert!(node.is_ok(), "{}", node.err().unwrap());
+        }
+    }
+
+    #[test]
+    fn function_arguments_parser_invaild() {
+        let sources = vec!["(1a: int)", "(a: _1", "a: int", "(a int)"];
+
+        for source in sources {
+            let tokens = lexer::Lexer::lex(source).expect("lex");
+            let mut parser = parser::Parser::new(tokens);
+            let node = parser.parse_function_arguments();
+            assert!(node.is_err(), "{}", source);
+        }
+    }
+
+    #[test]
+    fn function_parser_valid() {
+        let sources = vec![
+            "int main();",
+            "bool main(){}",
+            "int main(a: int, b : int, c: int);",
+            "[bool, 5] main(){}",
+        ];
+
+        for source in sources {
+            let tokens = lexer::Lexer::lex(source).expect("lex");
+            let mut parser = parser::Parser::new(tokens);
+            let node = parser.parse_function();
+            assert!(node.is_ok(), "{}", node.err().unwrap());
+        }
+    }
 
     #[test]
     fn function_parser_invalid() {
@@ -304,29 +520,11 @@ mod tests {
         ];
 
         for source in sources {
-            let tokens = lexer::Lexer::lex(source);
-            assert!(tokens.is_ok());
+            let tokens = lexer::Lexer::lex(source).expect("lex");
 
-            let tokens = tokens.unwrap();
-            assert!(parser::Parser { tokens }.parse().is_err());
-        }
-    }
-
-    #[test]
-    fn function_parser_valid() {
-        let sources = vec![
-            "",
-            "int main();",
-            "bool main(){}",
-            "int main(a: int, b : int, c: int);",
-            "[bool, 5] main(){}",
-        ];
-
-        for source in sources {
-            let tokens = lexer::Lexer::lex(source);
-            assert!(tokens.is_ok());
-            let tokens = tokens.unwrap();
-            assert!(parser::Parser { tokens }.parse().is_ok());
+            let mut parser = parser::Parser::new(tokens);
+            let node = parser.parse_function();
+            assert!(node.is_err(), "{}", source);
         }
     }
 }

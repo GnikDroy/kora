@@ -11,6 +11,14 @@ impl Error for ParseError {}
 
 impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.msg)
+        match &self.token {
+            Some(tok) => write!(
+                f,
+                "error: {}\n{}:{}\n{:?}",
+                self.msg, tok.col, tok.row, tok.token
+            ),
+
+            None => write!(f, "error: {}\nEOF", self.msg),
+        }
     }
 }
