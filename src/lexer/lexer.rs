@@ -34,6 +34,7 @@ impl Lexer {
                     '=' => {
                         if let Some((_, c1)) = line_iter.peek() {
                             if c1 == &'=' {
+                                line_iter.next();
                                 Ok(Tok::Symbol(SymbolKind::EqualEqual))
                             } else {
                                 Ok(Tok::Symbol(SymbolKind::Equal))
@@ -45,6 +46,7 @@ impl Lexer {
                     '!' => {
                         if let Some((_, c1)) = line_iter.peek() {
                             if c1 == &'=' {
+                                line_iter.next();
                                 Ok(Tok::Symbol(SymbolKind::ExclamEqual))
                             } else {
                                 Ok(Tok::Symbol(SymbolKind::Exclam))
@@ -56,6 +58,7 @@ impl Lexer {
                     '>' => {
                         if let Some((_, c1)) = line_iter.peek() {
                             if c1 == &'=' {
+                                line_iter.next();
                                 Ok(Tok::Symbol(SymbolKind::GreaterEqual))
                             } else {
                                 Ok(Tok::Symbol(SymbolKind::Greater))
@@ -67,6 +70,7 @@ impl Lexer {
                     '<' => {
                         if let Some((_, c1)) = line_iter.peek() {
                             if c1 == &'=' {
+                                line_iter.next();
                                 Ok(Tok::Symbol(SymbolKind::LessEqual))
                             } else {
                                 Ok(Tok::Symbol(SymbolKind::Less))
