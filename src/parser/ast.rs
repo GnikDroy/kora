@@ -132,3 +132,17 @@ pub enum UnaryOperator {
     Not,
     Negate,
 }
+
+impl UnaryOperator {
+    pub fn get_binding_power(&self) -> u32 {
+        match self {
+            UnaryOperator::Not | UnaryOperator::Negate => 102,
+        }
+    }
+
+    pub fn is_left_associative(&self) -> bool {
+        match self {
+            UnaryOperator::Not | UnaryOperator::Negate => false,
+        }
+    }
+}

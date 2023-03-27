@@ -63,6 +63,14 @@ impl Parser {
             Tok::NumericLiteral(num) => Ok(Expression::NumericLiteral(num)),
             Tok::StringLiteral(s) => Ok(Expression::StringLiteral(s)),
             Tok::Identifier(name) => Ok(Expression::Variable(name)),
+            Tok::Symbol(SymbolKind::Minus) => Ok(Expression::UnaryExpression(
+                UnaryOperator::Negate,
+                Box::new(self.pratt_parser(UnaryOperator::Negate.get_binding_power())?),
+            )),
+            Tok::Symbol(SymbolKind::Exclam) => Ok(Expression::UnaryExpression(
+                UnaryOperator::Not,
+                Box::new(self.pratt_parser(UnaryOperator::Not.get_binding_power())?),
+            )),
             Tok::Symbol(SymbolKind::LeftParen) => {
                 let expr = self.pratt_parser(0)?;
                 let token = self.pop()?;
@@ -83,55 +91,43 @@ impl Parser {
         }
     }
 
-    // An implementation of expression parsing using pratt parsers
+    // An implementation of pratt expression parsing
     fn pratt_parser(&mut self, current_binding_power: u32) -> Result<Expression, ParseError> {
-        let token = self.peek()?;
-        match token.token {
-            Tok::Symbol(SymbolKind::LeftParen)
-            | Tok::NumericLiteral(_)
-            | Tok::StringLiteral(_)
-            | Tok::Identifier(_) => {
-                let mut term = self.parse_initial_expression()?;
-                loop {
-                    if let Ok(token) = self.peek().cloned() {
-                        match token.token {
-                            Tok::Symbol(SymbolKind::LeftParen) => {
-                                let args = self.parse_expression_list()?;
-                                break Ok(Expression::CallExpression(Box::new(term), args));
-                            }
-                            _ => {}
-                        }
-
-                        if let Some(operator) = BinaryOperator::get(&token.token) {
-                            let binding_power = if operator.is_left_associative() {
-                                operator.get_binding_power()
-                            } else {
-                                operator.get_binding_power() - 1
-                            };
-
-                            if binding_power <= current_binding_power {
-                                break Ok(term);
-                            } else {
-                                self.pop()?;
-                                let right_term = self.pratt_parser(binding_power)?;
-                                term = Expression::BinaryExpression(
-                                    Box::new(term),
-                                    operator,
-                                    Box::new(right_term),
-                                );
-                            }
-                        } else {
-                            break Ok(term);
-                        }
-                    } else {
-                        break Ok(term);
+        let mut term = self.parse_initial_expression()?;
+        loop {
+            if let Ok(token) = self.peek().cloned() {
+                match token.token {
+                    Tok::Symbol(SymbolKind::LeftParen) => {
+                        let args = self.parse_expression_list()?;
+                        break Ok(Expression::CallExpression(Box::new(term), args));
                     }
+                    _ => {}
                 }
+
+                if let Some(operator) = BinaryOperator::get(&token.token) {
+                    let binding_power = if operator.is_left_associative() {
+                        operator.get_binding_power()
+                    } else {
+                        operator.get_binding_power() - 1
+                    };
+
+                    if binding_power <= current_binding_power {
+                        break Ok(term);
+                    } else {
+                        self.pop()?;
+                        let right_term = self.pratt_parser(binding_power)?;
+                        term = Expression::BinaryExpression(
+                            Box::new(term),
+                            operator,
+                            Box::new(right_term),
+                        );
+                    }
+                } else {
+                    break Ok(term);
+                }
+            } else {
+                break Ok(term);
             }
-            _ => Err(ParseError {
-                msg: "Expected expression: <expr>",
-                token: self.tokens.last().cloned(),
-            }),
         }
     }
 
@@ -585,6 +581,7 @@ mod tests {
         let sources = vec![
             "1-2-3",
             "a=b - a != b + a | b + c & d",
+            "-a + -b / !c",
             "a==b + c<d + a<=b + 1>2 + e>=f",
             "(1/2 + (x+4) / 4) / ((x-5)/2 + (x+4)/(x-5))",
             r#"a + b/2 - c/(x * 4) * (3 + 4/(5+"hello there"))"#,
@@ -600,7 +597,7 @@ mod tests {
 
     #[test]
     fn expression_parser_invalid() {
-        let sources = vec!["", "let", "*"];
+        let sources = vec!["", "let", "*", "a=", "(a", "a<="];
         for source in sources {
             let tokens = lexer::Lexer::lex(source).expect("lex");
             let mut parser = parser::Parser::new(tokens);
