@@ -38,7 +38,7 @@ pub enum Statement {
     Let(IdentifierTypePair, Expression),
     Assignment(String, Expression),
     While(Expression, Box<Statement>),
-    If(Expression, Box<Statement>),
+    If(Expression, Box<Statement>, Option<Box<Statement>>),
     CompoundStatement(Vec<Statement>),
 }
 

@@ -223,7 +223,23 @@ impl Parser {
                     let token = self.pop()?;
                     if let Tok::Symbol(SymbolKind::RightParen) = token.token {
                         let stmt = self.parse_statement()?;
-                        Ok(Statement::If(expr, Box::new(stmt)))
+                        let token = self.peek(); // donot propagate error here
+                        match token {
+                            Ok(token) => {
+                                if let Tok::Keyword(KeywordKind::Else) = token.token {
+                                    self.pop()?;
+                                    let else_stmt = self.parse_statement()?;
+                                    Ok(Statement::If(
+                                        expr,
+                                        Box::new(stmt),
+                                        Some(Box::new(else_stmt)),
+                                    ))
+                                } else {
+                                    Ok(Statement::If(expr, Box::new(stmt), None))
+                                }
+                            }
+                            _ => Ok(Statement::If(expr, Box::new(stmt), None)),
+                        }
                     } else {
                         Err(ParseError {
                             msg:
@@ -629,9 +645,11 @@ mod tests {
             "ret 1;",
             "let a : int = b;",
             "if (1);",
+            "if (1); else ;",
             "while (1) ;",
             "{ ret 1; let a : int = b; }",
             "if (a + b) { while (1) { a = b; } ret 1; }",
+            "if (true) { a = b; let a: bool = true; } else { c = d; print(a); }",
         ];
         for source in sources {
             let tokens = lexer::Lexer::lex(source).expect("lex");
@@ -760,7 +778,7 @@ mod tests {
                 ret a;
             }
             
-            int print(b: [char, 1], a: int) {
+            nil print(b: [char, 1], a: int) {
                 while (a) {
                     print(b);
                     a = a - 1;
