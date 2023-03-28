@@ -308,6 +308,10 @@ impl Parser {
                     panic!()
                 }
             }
+            Tok::Keyword(KeywordKind::Nil) => {
+                self.pop()?;
+                Ok(Typename::Nil)
+            }
             Tok::Keyword(KeywordKind::Int) => {
                 self.pop()?;
                 Ok(Typename::Int)
@@ -528,7 +532,14 @@ mod tests {
 
     #[test]
     fn typename_parser_valid() {
-        let sources = vec!["int", "[[int, 5], 10]", "real", "custom_type"];
+        let sources = vec![
+            "nil",
+            "int",
+            "real",
+            "char",
+            "[[int, 5], 10]",
+            "custom_type",
+        ];
         for source in sources {
             let tokens = lexer::Lexer::lex(source).expect("lex");
             let mut parser = parser::Parser::new(tokens);

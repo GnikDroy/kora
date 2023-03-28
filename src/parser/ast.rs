@@ -21,6 +21,7 @@ pub struct IdentifierTypePair {
 
 #[derive(Debug)]
 pub enum Typename {
+    Nil,
     Int,
     Real,
     Bool,
