@@ -1,12 +1,12 @@
 use crate::parser::*;
 
 pub trait ASTVisitor: Sized {
-    fn visit_integer_literal(&mut self, i: &isize) {}
-    fn visit_real_literal(&mut self, r: &f64) {}
-    fn visit_boolean_literal(&mut self, b: &bool) {}
-    fn visit_string_literal(&mut self, s: &String) {}
-    fn visit_identifier(&mut self, ident: &String) {}
-    fn visit_typename(&mut self, typename: &Type) {}
+    fn visit_integer_literal(&mut self, _: &isize) {}
+    fn visit_real_literal(&mut self, _: &f64) {}
+    fn visit_boolean_literal(&mut self, _: &bool) {}
+    fn visit_string_literal(&mut self, _: &String) {}
+    fn visit_identifier(&mut self, _: &String) {}
+    fn visit_typename(&mut self, _: &Type) {}
 
     fn visit_identifier_type_pair(&mut self, pair: &IdentifierTypePair) {
         walk_identifier_type_pair(self, pair);
