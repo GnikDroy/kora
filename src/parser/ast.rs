@@ -46,6 +46,7 @@ pub enum Statement {
 pub enum Expression {
     NumericLiteral(i64),
     StringLiteral(String),
+    BooleanLiteral(bool),
     Variable(String),
     BinaryExpression(Box<Expression>, BinaryOperator, Box<Expression>),
     UnaryExpression(UnaryOperator, Box<Expression>),

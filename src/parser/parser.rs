@@ -62,6 +62,8 @@ impl Parser {
         match token.token {
             Tok::NumericLiteral(num) => Ok(Expression::NumericLiteral(num)),
             Tok::StringLiteral(s) => Ok(Expression::StringLiteral(s)),
+            Tok::Keyword(KeywordKind::True) => Ok(Expression::BooleanLiteral(true)),
+            Tok::Keyword(KeywordKind::False) => Ok(Expression::BooleanLiteral(false)),
             Tok::Identifier(name) => Ok(Expression::Variable(name)),
             Tok::Symbol(SymbolKind::Minus) => Ok(Expression::UnaryExpression(
                 UnaryOperator::Negate,
@@ -591,6 +593,7 @@ mod tests {
     fn expression_parser_valid() {
         let sources = vec![
             "1-2-3",
+            "true == false & false | true",
             "a=b - a != b + a | b + c & d",
             "-a + -b / !c",
             "a==b + c<d + a<=b + 1>2 + e>=f",
