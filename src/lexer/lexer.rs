@@ -120,8 +120,8 @@ impl Lexer {
                             })
                         }
                         } else {
-                            match literal.parse::<i64>() {
-                            Ok(n) => Ok(Tok::NumericLiteral(n)),
+                            match literal.parse::<isize>() {
+                            Ok(n) => Ok(Tok::IntegerLiteral(n)),
                             Err(_) => Err(LexerError {
                                 msg: "Integer too big to fit in 64 bits",
                                 col: col + 1,

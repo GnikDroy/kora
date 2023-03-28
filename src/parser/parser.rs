@@ -60,7 +60,7 @@ impl Parser {
     fn parse_initial_expression(&mut self) -> Result<Expression, ParseError> {
         let token = self.pop()?;
         match token.token {
-            Tok::NumericLiteral(num) => Ok(Expression::NumericLiteral(num)),
+            Tok::IntegerLiteral(num) => Ok(Expression::IntegerLiteral(num)),
             Tok::StringLiteral(s) => Ok(Expression::StringLiteral(s)),
             Tok::Keyword(KeywordKind::True) => Ok(Expression::BooleanLiteral(true)),
             Tok::Keyword(KeywordKind::False) => Ok(Expression::BooleanLiteral(false)),
@@ -288,7 +288,7 @@ impl Parser {
                 }
 
                 let token = self.pop()?;
-                let size = if let Tok::NumericLiteral(num) = token.token {
+                let size = if let Tok::IntegerLiteral(num) = token.token {
                     num
                 } else {
                     return Err(ParseError {

@@ -67,7 +67,7 @@ pub enum Tok {
     Symbol(SymbolKind),
     Identifier(String),
     StringLiteral(String),
-    NumericLiteral(i64),
+    IntegerLiteral(isize),
     RealLiteral(f64),
     Whitespace,
 }

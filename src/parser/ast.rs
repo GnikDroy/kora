@@ -26,7 +26,7 @@ pub enum Typename {
     Real,
     Bool,
     Char,
-    Array(Box<Typename>, i64),
+    Array(Box<Typename>, isize),
     Struct(String),
 }
 
@@ -44,7 +44,7 @@ pub enum Statement {
 
 #[derive(Debug)]
 pub enum Expression {
-    NumericLiteral(i64),
+    IntegerLiteral(isize),
     StringLiteral(String),
     BooleanLiteral(bool),
     RealLiteral(f64),
