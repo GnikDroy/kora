@@ -48,6 +48,7 @@ pub enum Expression {
     StringLiteral(String),
     BooleanLiteral(bool),
     RealLiteral(f64),
+    Array(Vec<Expression>),
     Variable(String),
     BinaryExpression(Box<Expression>, BinaryOperator, Box<Expression>),
     UnaryExpression(UnaryOperator, Box<Expression>),

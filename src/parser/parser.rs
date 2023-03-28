@@ -87,6 +87,40 @@ impl Parser {
                     })
                 }
             }
+            Tok::Symbol(SymbolKind::LeftBracket) => {
+                let mut expecting_separator = false;
+                let mut args = vec![];
+                while !self.tokens.is_empty() {
+                    let token = self.peek()?;
+                    match &token.token {
+                        Tok::Symbol(SymbolKind::Comma) => {
+                            if !expecting_separator {
+                                return Err(ParseError {
+                                    msg: "Expected expression instead of comma: [<expr>,...]",
+                                    token: Some(token.clone()),
+                                });
+                            }
+                            self.pop()?;
+                            expecting_separator = false;
+                        }
+                        Tok::Symbol(SymbolKind::RightBracket) => {
+                            self.pop()?;
+                            break;
+                        }
+                        _ => {
+                            if expecting_separator {
+                                return Err(ParseError {
+                                    msg: "Expected comma instead of expression: [<expr>,...]",
+                                    token: Some(token.clone()),
+                                });
+                            }
+                            args.push(self.parse_expression()?);
+                            expecting_separator = true;
+                        }
+                    }
+                }
+                Ok(Expression::Array(args))
+            }
             _ => Err(ParseError {
                 msg: "Expected expression: <expr>",
                 token: Some(token),
@@ -611,13 +645,14 @@ mod tests {
         let sources = vec![
             "1-2-3",
             "1.234",
+            "[1,2,3]",
             "true == false & false | true",
             "a=b - a != b + a | b + c & d",
             "-a + -b / !c",
             "a==b + c<d + a<=b + 1>2 + e>=f",
             "(1/2 + (x+4) / 4) / ((x-5)/2 + (x+4)/(x-5))",
             r#"a + b/2 - c/(x * 4) * (3 + 4/(5+"hello there"))"#,
-            r#"a + func_call(a, "b" + 2, (a+b) * c / 2) / 2"#,
+            r#"a + func_call(a, "b" + 2, (a+b) * [1, "abc", (a+b)/2] / 2) / 2"#,
         ];
         for source in sources {
             let tokens = lexer::Lexer::lex(source).expect("lex");
