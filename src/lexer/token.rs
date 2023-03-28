@@ -1,5 +1,5 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum KeywordKind {
+pub enum Keyword {
     Ret,
     Let,
     If,
@@ -14,28 +14,28 @@ pub enum KeywordKind {
     False,
 }
 
-impl KeywordKind {
-    pub fn map(s: &str) -> Option<KeywordKind> {
+impl Keyword {
+    pub fn map(s: &str) -> Option<Keyword> {
         match s {
-            "ret" => Some(KeywordKind::Ret),
-            "let" => Some(KeywordKind::Let),
-            "if" => Some(KeywordKind::If),
-            "else" => Some(KeywordKind::Else),
-            "while" => Some(KeywordKind::While),
-            "nil" => Some(KeywordKind::Nil),
-            "int" => Some(KeywordKind::Int),
-            "real" => Some(KeywordKind::Real),
-            "char" => Some(KeywordKind::Char),
-            "bool" => Some(KeywordKind::Bool),
-            "true" => Some(KeywordKind::True),
-            "false" => Some(KeywordKind::False),
+            "ret" => Some(Keyword::Ret),
+            "let" => Some(Keyword::Let),
+            "if" => Some(Keyword::If),
+            "else" => Some(Keyword::Else),
+            "while" => Some(Keyword::While),
+            "nil" => Some(Keyword::Nil),
+            "int" => Some(Keyword::Int),
+            "real" => Some(Keyword::Real),
+            "char" => Some(Keyword::Char),
+            "bool" => Some(Keyword::Bool),
+            "true" => Some(Keyword::True),
+            "false" => Some(Keyword::False),
             _ => None,
         }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SymbolKind {
+pub enum Symbol {
     LeftParen,
     RightParen,
     LeftBrace,
@@ -62,9 +62,9 @@ pub enum SymbolKind {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Tok {
-    Keyword(KeywordKind),
-    Symbol(SymbolKind),
+pub enum Token {
+    Keyword(Keyword),
+    Symbol(Symbol),
     Identifier(String),
     StringLiteral(String),
     IntegerLiteral(isize),
@@ -73,8 +73,8 @@ pub enum Tok {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Token {
-    pub token: Tok,
+pub struct TokenInfo {
+    pub token: Token,
     pub col: usize,
     pub row: usize,
 }

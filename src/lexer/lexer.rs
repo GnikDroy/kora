@@ -1,91 +1,74 @@
-use super::errors::LexerError;
-use super::token::{KeywordKind, SymbolKind, Tok, Token};
+use super::errors::LexerErr;
+use super::token::{Keyword, Symbol, Token, TokenInfo};
 
 pub struct Lexer {}
 
 impl Lexer {
-    pub fn lex(source: &str) -> Result<Vec<Token>, LexerError> {
+    pub fn lex(source: &str) -> Result<Vec<TokenInfo>, LexerErr> {
         let mut tokens = Vec::new();
-        for (col, line) in source.split(|b| b == '\n').enumerate() {
+        let lines = source.split(|b| b == '\n');
+        for (col, line) in lines.enumerate() {
             let mut line_iter = line.chars().enumerate().peekable();
             while let Some((row, c)) = line_iter.next() {
                 let tok = match c {
-                    // single character symbols
                     '(' | ')' | '[' | ']' | '{' | '}' | ';' | ':' | ',' | '+' | '-' | '*' | '/'
-                    | '|' | '&' => Ok(Tok::Symbol(match c {
-                        '(' => SymbolKind::LeftParen,
-                        ')' => SymbolKind::RightParen,
-                        '[' => SymbolKind::LeftBracket,
-                        ']' => SymbolKind::RightBracket,
-                        '{' => SymbolKind::LeftBrace,
-                        '}' => SymbolKind::RightBrace,
-                        ';' => SymbolKind::Semicolon,
-                        ':' => SymbolKind::Colon,
-                        ',' => SymbolKind::Comma,
-                        '+' => SymbolKind::Plus,
-                        '-' => SymbolKind::Minus,
-                        '*' => SymbolKind::Star,
-                        '/' => SymbolKind::Slash,
-                        '|' => SymbolKind::Pipe,
-                        '&' => SymbolKind::Ampersand,
+                    | '|' | '&' => Ok(Token::Symbol(match c {
+                        '(' => Symbol::LeftParen,
+                        ')' => Symbol::RightParen,
+                        '[' => Symbol::LeftBracket,
+                        ']' => Symbol::RightBracket,
+                        '{' => Symbol::LeftBrace,
+                        '}' => Symbol::RightBrace,
+                        ';' => Symbol::Semicolon,
+                        ':' => Symbol::Colon,
+                        ',' => Symbol::Comma,
+                        '+' => Symbol::Plus,
+                        '-' => Symbol::Minus,
+                        '*' => Symbol::Star,
+                        '/' => Symbol::Slash,
+                        '|' => Symbol::Pipe,
+                        '&' => Symbol::Ampersand,
                         _ => panic!(),
                     })),
-                    // double character symbols
                     '=' => {
-                        if let Some((_, c1)) = line_iter.peek() {
-                            if c1 == &'=' {
-                                line_iter.next();
-                                Ok(Tok::Symbol(SymbolKind::EqualEqual))
-                            } else {
-                                Ok(Tok::Symbol(SymbolKind::Equal))
-                            }
+                        if let Some((_, c1)) = line_iter.peek() && c1 == &'=' {
+                            line_iter.next();
+                            Ok(Token::Symbol(Symbol::EqualEqual))
                         } else {
-                            Ok(Tok::Symbol(SymbolKind::Equal))
+                            Ok(Token::Symbol(Symbol::Equal))
                         }
                     }
                     '!' => {
-                        if let Some((_, c1)) = line_iter.peek() {
-                            if c1 == &'=' {
-                                line_iter.next();
-                                Ok(Tok::Symbol(SymbolKind::ExclamEqual))
-                            } else {
-                                Ok(Tok::Symbol(SymbolKind::Exclam))
-                            }
+                        if let Some((_, c1)) = line_iter.peek() && c1 == &'=' {
+                            line_iter.next();
+                            Ok(Token::Symbol(Symbol::ExclamEqual))
                         } else {
-                            Ok(Tok::Symbol(SymbolKind::Exclam))
+                            Ok(Token::Symbol(Symbol::Exclam))
                         }
                     }
                     '>' => {
-                        if let Some((_, c1)) = line_iter.peek() {
-                            if c1 == &'=' {
-                                line_iter.next();
-                                Ok(Tok::Symbol(SymbolKind::GreaterEqual))
-                            } else {
-                                Ok(Tok::Symbol(SymbolKind::Greater))
-                            }
+                        if let Some((_, c1)) = line_iter.peek() && c1 == &'=' {
+                            line_iter.next();
+                            Ok(Token::Symbol(Symbol::GreaterEqual))
                         } else {
-                            Ok(Tok::Symbol(SymbolKind::Greater))
+                            Ok(Token::Symbol(Symbol::Greater))
                         }
                     }
                     '<' => {
-                        if let Some((_, c1)) = line_iter.peek() {
-                            if c1 == &'=' {
-                                line_iter.next();
-                                Ok(Tok::Symbol(SymbolKind::LessEqual))
-                            } else {
-                                Ok(Tok::Symbol(SymbolKind::Less))
-                            }
+                        if let Some((_, c1)) = line_iter.peek() && c1 == &'=' {
+                            line_iter.next();
+                            Ok(Token::Symbol(Symbol::LessEqual))
                         } else {
-                            Ok(Tok::Symbol(SymbolKind::Less))
+                            Ok(Token::Symbol(Symbol::Less))
                         }
                     }
-                    '0'..'9' | '9' => {
+                    '0'..='9' => {
                         let mut is_real = false;
                         let mut literal = String::new();
                         literal.push(c);
                         while let Some((_, c1)) = line_iter.peek() {
                             match c1 {
-                                '0'..'9' | '9' => {
+                                '0'..='9' => {
                                     literal.push(*c1);
                                     line_iter.next();
                                 }
@@ -95,7 +78,7 @@ impl Lexer {
                                     is_real = true;
                                     while let Some((_, c2)) = line_iter.peek() {
                                         match c2 {
-                                            '0'..'9' | '9' => {
+                                            '0'..='9' => {
                                                 literal.push(*c2);
                                                 line_iter.next();
                                             }
@@ -110,8 +93,8 @@ impl Lexer {
 
                         if is_real {
                             match literal.parse::<f64>() {
-                            Ok(n) => Ok(Tok::RealLiteral(n)),
-                            Err(_) => Err(LexerError{
+                            Ok(n) => Ok(Token::RealLiteral(n)),
+                            Err(_) => Err(LexerErr{
                                 msg: "Real number cannot be fit in 64 bits",
                                 col: col + 1,
                                 row: row + 1,
@@ -121,8 +104,8 @@ impl Lexer {
                         }
                         } else {
                             match literal.parse::<isize>() {
-                            Ok(n) => Ok(Tok::IntegerLiteral(n)),
-                            Err(_) => Err(LexerError {
+                            Ok(n) => Ok(Token::IntegerLiteral(n)),
+                            Err(_) => Err(LexerErr {
                                 msg: "Integer too big to fit in 64 bits",
                                 col: col + 1,
                                 row: row + 1,
@@ -153,7 +136,7 @@ impl Lexer {
                                                     line_iter.next();
                                                 }
                                                 _ => {
-                                                    error = Some(LexerError {
+                                                    error = Some(LexerErr {
                                                         msg: "Invalid escape sequence",
                                                         col: col + 1,
                                                         row: row + 1,
@@ -166,7 +149,7 @@ impl Lexer {
                                                 }
                                             }
                                         } else {
-                                            error = Some(LexerError {
+                                            error = Some(LexerErr {
                                                 msg: "Incomplete escape sequence",
                                                 col: col + 1,
                                                 row: row + 1,
@@ -185,7 +168,7 @@ impl Lexer {
                         }
 
                         if !string_finished {
-                            error = Some(LexerError {
+                            error = Some(LexerErr {
                                 msg: "Incomplete string literal",
                                 col: col + 1,
                                 row: row + 1,
@@ -195,18 +178,18 @@ impl Lexer {
                         }
 
                         if error.is_none() {
-                            Ok(Tok::StringLiteral(literal))
+                            Ok(Token::StringLiteral(literal))
                         } else {
                             Err(error.unwrap())
                         }
                     }
-                    'A'..'Z' | 'Z' | 'a'..'z' | 'z' | '_' => {
+                    'A'..='Z' | 'a'..='z' | '_' => {
                         let mut identifier = String::new();
                         identifier.push(c);
 
                         while let Some((_, c1)) = line_iter.peek() {
                             match c1 {
-                                'A'..'Z' | 'Z' | 'a'..'z' | 'z' | '_' | '0'..'9' | '9' => {
+                                'A'..='Z' | 'a'..='z' | '_' | '0'..='9' => {
                                     identifier.push(*c1);
                                     line_iter.next();
                                 }
@@ -216,13 +199,13 @@ impl Lexer {
                             }
                         }
 
-                        match KeywordKind::map(identifier.as_str()) {
-                            Some(k) => Ok(Tok::Keyword(k)),
-                            _ => Ok(Tok::Identifier(identifier)),
+                        match Keyword::map(identifier.as_str()) {
+                            Some(k) => Ok(Token::Keyword(k)),
+                            _ => Ok(Token::Identifier(identifier)),
                         }
                     }
-                    ' ' | '\t' | '\n' | '\r' => Ok(Tok::Whitespace),
-                    _ => Err(LexerError {
+                    ' ' | '\t' | '\n' | '\r' => Ok(Token::Whitespace),
+                    _ => Err(LexerErr {
                         msg: "Invalid token",
                         col: col + 1,
                         row: row + 1,
@@ -231,20 +214,14 @@ impl Lexer {
                     }),
                 };
 
-                match tok {
-                    Ok(t) => {
-                        if t != Tok::Whitespace {
-                            tokens.push(Token {
-                                token: t,
-                                col: col + 1,
-                                row: row + 1,
-                            });
-                        }
-                    }
-                    Err(e) => {
-                        return Err(e);
-                    }
-                };
+                let tok = tok?;
+                if tok != Token::Whitespace {
+                    tokens.push(TokenInfo {
+                        token: tok,
+                        col: col + 1,
+                        row: row + 1,
+                    });
+                }
             }
         }
         return Ok(tokens);

@@ -1,4 +1,4 @@
-use crate::lexer::{SymbolKind, Tok};
+use crate::lexer::{Symbol, Token};
 
 #[derive(Debug)]
 pub struct Module {
@@ -7,28 +7,28 @@ pub struct Module {
 
 #[derive(Debug)]
 pub struct Function {
-    pub ret_type: Typename,
+    pub return_type: Type,
     pub name: String,
-    pub args: Vec<IdentifierTypePair>,
+    pub arguments: Vec<IdentifierTypePair>,
     pub statement: Statement,
 }
 
 #[derive(Debug)]
 pub struct IdentifierTypePair {
-    pub typename: Typename,
+    pub typename: Type,
     pub name: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Typename {
+pub enum Type {
     Nil,
     Int,
     Real,
     Bool,
     Char,
-    Array(Box<Typename>, isize),
+    Array(Box<Type>, isize),
     Struct(String),
-    Function(Box<Typename>, Vec<Typename>),
+    Function(Box<Type>, Vec<Type>),
 }
 
 #[derive(Debug)]
@@ -39,20 +39,20 @@ pub enum Statement {
     Let(IdentifierTypePair, Expression),
     While(Expression, Box<Statement>),
     If(Expression, Box<Statement>, Option<Box<Statement>>),
-    CompoundStatement(Vec<Statement>),
+    Compound(Vec<Statement>),
 }
 
 #[derive(Debug)]
 pub enum Expression {
     IntegerLiteral(isize),
     StringLiteral(String),
-    BooleanLiteral(bool),
+    BoolLiteral(bool),
     RealLiteral(f64),
     Array(Vec<Expression>),
     Variable(String),
-    BinaryExpression(Box<Expression>, BinaryOperator, Box<Expression>),
-    UnaryExpression(UnaryOperator, Box<Expression>),
-    CallExpression(Box<Expression>, Vec<Expression>),
+    Binary(Box<Expression>, BinaryOp, Box<Expression>),
+    Unary(UnaryOp, Box<Expression>),
+    Call(Box<Expression>, Vec<Expression>),
 }
 
 #[derive(Debug)]
@@ -61,7 +61,7 @@ pub struct FunctionArgument {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum BinaryOperator {
+pub enum BinaryOp {
     Assign,
     Add,
     Subtract,
@@ -77,76 +77,77 @@ pub enum BinaryOperator {
     LessEqual,
 }
 
-impl BinaryOperator {
-    pub fn get(token: &Tok) -> Option<BinaryOperator> {
+impl BinaryOp {
+    pub fn get(token: &Token) -> Option<BinaryOp> {
         match token {
-            Tok::Symbol(SymbolKind::Equal) => Some(BinaryOperator::Assign),
-            Tok::Symbol(SymbolKind::Plus) => Some(BinaryOperator::Add),
-            Tok::Symbol(SymbolKind::Minus) => Some(BinaryOperator::Subtract),
-            Tok::Symbol(SymbolKind::Star) => Some(BinaryOperator::Multiply),
-            Tok::Symbol(SymbolKind::Slash) => Some(BinaryOperator::Divide),
-            Tok::Symbol(SymbolKind::EqualEqual) => Some(BinaryOperator::Equality),
-            Tok::Symbol(SymbolKind::ExclamEqual) => Some(BinaryOperator::NotEquality),
-            Tok::Symbol(SymbolKind::Ampersand) => Some(BinaryOperator::And),
-            Tok::Symbol(SymbolKind::Pipe) => Some(BinaryOperator::Or),
-            Tok::Symbol(SymbolKind::Greater) => Some(BinaryOperator::Greater),
-            Tok::Symbol(SymbolKind::GreaterEqual) => Some(BinaryOperator::GreaterEqual),
-            Tok::Symbol(SymbolKind::Less) => Some(BinaryOperator::Less),
-            Tok::Symbol(SymbolKind::LessEqual) => Some(BinaryOperator::LessEqual),
+            Token::Symbol(Symbol::Equal) => Some(BinaryOp::Assign),
+            Token::Symbol(Symbol::Plus) => Some(BinaryOp::Add),
+            Token::Symbol(Symbol::Minus) => Some(BinaryOp::Subtract),
+            Token::Symbol(Symbol::Star) => Some(BinaryOp::Multiply),
+            Token::Symbol(Symbol::Slash) => Some(BinaryOp::Divide),
+            Token::Symbol(Symbol::EqualEqual) => Some(BinaryOp::Equality),
+            Token::Symbol(Symbol::ExclamEqual) => Some(BinaryOp::NotEquality),
+            Token::Symbol(Symbol::Ampersand) => Some(BinaryOp::And),
+            Token::Symbol(Symbol::Pipe) => Some(BinaryOp::Or),
+            Token::Symbol(Symbol::Greater) => Some(BinaryOp::Greater),
+            Token::Symbol(Symbol::GreaterEqual) => Some(BinaryOp::GreaterEqual),
+            Token::Symbol(Symbol::Less) => Some(BinaryOp::Less),
+            Token::Symbol(Symbol::LessEqual) => Some(BinaryOp::LessEqual),
             _ => None,
         }
     }
 
     pub fn get_binding_power(&self) -> u32 {
+        self.get_binding_power_real() - if self.is_left_associative() { 0 } else { 1 }
+    }
+
+    pub fn get_binding_power_real(&self) -> u32 {
         match self {
-            BinaryOperator::Assign => 2,
-            BinaryOperator::Or => 4,
-            BinaryOperator::And => 6,
-            BinaryOperator::Equality | BinaryOperator::NotEquality => 8,
-            BinaryOperator::Greater
-            | BinaryOperator::Less
-            | BinaryOperator::GreaterEqual
-            | BinaryOperator::LessEqual => 10,
-            BinaryOperator::Add | BinaryOperator::Subtract => 12,
-            BinaryOperator::Multiply | BinaryOperator::Divide => 14,
+            BinaryOp::Assign => 2,
+            BinaryOp::Or => 4,
+            BinaryOp::And => 6,
+            BinaryOp::Equality | BinaryOp::NotEquality => 8,
+            BinaryOp::Greater | BinaryOp::Less | BinaryOp::GreaterEqual | BinaryOp::LessEqual => 10,
+            BinaryOp::Add | BinaryOp::Subtract => 12,
+            BinaryOp::Multiply | BinaryOp::Divide => 14,
         }
     }
 
     pub fn is_left_associative(&self) -> bool {
         match self {
-            BinaryOperator::Add
-            | BinaryOperator::Subtract
-            | BinaryOperator::Multiply
-            | BinaryOperator::Divide
-            | BinaryOperator::Equality
-            | BinaryOperator::NotEquality
-            | BinaryOperator::Greater
-            | BinaryOperator::Less
-            | BinaryOperator::GreaterEqual
-            | BinaryOperator::LessEqual
-            | BinaryOperator::And
-            | BinaryOperator::Or => true,
-            BinaryOperator::Assign => false,
+            BinaryOp::Add
+            | BinaryOp::Subtract
+            | BinaryOp::Multiply
+            | BinaryOp::Divide
+            | BinaryOp::Equality
+            | BinaryOp::NotEquality
+            | BinaryOp::Greater
+            | BinaryOp::Less
+            | BinaryOp::GreaterEqual
+            | BinaryOp::LessEqual
+            | BinaryOp::And
+            | BinaryOp::Or => true,
+            BinaryOp::Assign => false,
         }
     }
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
-pub enum UnaryOperator {
+pub enum UnaryOp {
     Not,
     Negate,
 }
 
-impl UnaryOperator {
+impl UnaryOp {
     pub fn get_binding_power(&self) -> u32 {
         match self {
-            UnaryOperator::Not | UnaryOperator::Negate => 102,
+            UnaryOp::Not | UnaryOp::Negate => 102,
         }
     }
 
     pub fn is_left_associative(&self) -> bool {
         match self {
-            UnaryOperator::Not | UnaryOperator::Negate => false,
+            UnaryOp::Not | UnaryOp::Negate => false,
         }
     }
 }

@@ -6,7 +6,7 @@ pub trait ASTVisitor: Sized {
     fn visit_boolean_literal(&mut self, b: &bool) {}
     fn visit_string_literal(&mut self, s: &String) {}
     fn visit_identifier(&mut self, ident: &String) {}
-    fn visit_typename(&mut self, typename: &Typename) {}
+    fn visit_typename(&mut self, typename: &Type) {}
 
     fn visit_identifier_type_pair(&mut self, pair: &IdentifierTypePair) {
         walk_identifier_type_pair(self, pair);
@@ -16,16 +16,11 @@ pub trait ASTVisitor: Sized {
         walk_array(self, exprs);
     }
 
-    fn visit_binary_expression(
-        &mut self,
-        left: &Expression,
-        op: &BinaryOperator,
-        right: &Expression,
-    ) {
+    fn visit_binary_expression(&mut self, left: &Expression, op: &BinaryOp, right: &Expression) {
         walk_binary_expression(self, left, op, right);
     }
 
-    fn visit_unary_expression(&mut self, op: &UnaryOperator, expr: &Expression) {
+    fn visit_unary_expression(&mut self, op: &UnaryOp, expr: &Expression) {
         walk_unary_expression(self, op, expr);
     }
 
@@ -101,14 +96,14 @@ pub fn walk_call_expression<V: ASTVisitor>(
     }
 }
 
-pub fn walk_unary_expression<V: ASTVisitor>(visitor: &mut V, _: &UnaryOperator, expr: &Expression) {
+pub fn walk_unary_expression<V: ASTVisitor>(visitor: &mut V, _: &UnaryOp, expr: &Expression) {
     visitor.visit_expression(expr);
 }
 
 pub fn walk_binary_expression<V: ASTVisitor>(
     visitor: &mut V,
     left: &Expression,
-    _: &BinaryOperator,
+    _: &BinaryOp,
     right: &Expression,
 ) {
     visitor.visit_expression(left);
@@ -120,7 +115,7 @@ pub fn walk_expression<V: ASTVisitor>(visitor: &mut V, expr: &Expression) {
         Expression::IntegerLiteral(i) => {
             visitor.visit_integer_literal(i);
         }
-        Expression::BooleanLiteral(b) => {
+        Expression::BoolLiteral(b) => {
             visitor.visit_boolean_literal(b);
         }
         Expression::StringLiteral(s) => {
@@ -135,13 +130,13 @@ pub fn walk_expression<V: ASTVisitor>(visitor: &mut V, expr: &Expression) {
         Expression::Variable(var) => {
             visitor.visit_identifier(var);
         }
-        Expression::UnaryExpression(op, expr) => {
+        Expression::Unary(op, expr) => {
             visitor.visit_unary_expression(op, expr);
         }
-        Expression::BinaryExpression(left, op, right) => {
+        Expression::Binary(left, op, right) => {
             visitor.visit_binary_expression(left, op, right);
         }
-        Expression::CallExpression(expr, exprs) => {
+        Expression::Call(expr, exprs) => {
             visitor.visit_call_expression(expr, exprs);
         }
     }
@@ -194,7 +189,7 @@ pub fn walk_statement<V: ASTVisitor>(visitor: &mut V, stmt: &Statement) {
         Statement::Simple(expr) => {
             visitor.visit_simple_statement(expr);
         }
-        Statement::CompoundStatement(stmts) => {
+        Statement::Compound(stmts) => {
             visitor.visit_compound_statement(stmts);
         }
         Statement::Return(expr) => {
@@ -213,9 +208,9 @@ pub fn walk_statement<V: ASTVisitor>(visitor: &mut V, stmt: &Statement) {
 }
 
 pub fn walk_function<V: ASTVisitor>(visitor: &mut V, func: &Function) {
-    visitor.visit_typename(&func.ret_type);
+    visitor.visit_typename(&func.return_type);
     visitor.visit_identifier(&func.name);
-    for arg in func.args.iter() {
+    for arg in func.arguments.iter() {
         visitor.visit_identifier_type_pair(arg);
     }
     visitor.visit_statement(&func.statement);

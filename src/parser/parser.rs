@@ -1,26 +1,26 @@
 use super::ast::*;
 use super::errors::*;
-use crate::lexer::{KeywordKind, SymbolKind, Tok, Token};
+use crate::lexer::{Keyword, Symbol, Token, TokenInfo};
 
 pub struct Parser {
-    tokens: Vec<Token>,
+    tokens: Vec<TokenInfo>,
 }
 
 impl Parser {
-    pub fn new(mut tokens: Vec<Token>) -> Parser {
+    pub fn new(mut tokens: Vec<TokenInfo>) -> Parser {
         tokens.reverse();
         Parser { tokens }
     }
 
-    fn peek(&mut self) -> Result<&Token, ParseError> {
-        self.tokens.last().ok_or(ParseError {
+    fn peek(&mut self) -> Result<&TokenInfo, ParseErr> {
+        self.tokens.last().ok_or(ParseErr {
             msg: "Unexpected EOF.",
             token: None,
         })
     }
 
-    fn pop(&mut self) -> Result<Token, ParseError> {
-        self.tokens.pop().ok_or(ParseError {
+    fn pop(&mut self) -> Result<TokenInfo, ParseErr> {
+        self.tokens.pop().ok_or(ParseErr {
             msg: "Unexpected EOF.",
             token: None,
         })
@@ -28,14 +28,14 @@ impl Parser {
 
     fn parse_generic_delimited<T>(
         &mut self,
-        begin: Tok,
-        end: Tok,
-        delimiter: Tok,
-        f: fn(&mut Parser) -> Result<T, ParseError>,
-    ) -> Result<Vec<T>, ParseError> {
+        begin: Token,
+        end: Token,
+        delimiter: Token,
+        f: fn(&mut Parser) -> Result<T, ParseErr>,
+    ) -> Result<Vec<T>, ParseErr> {
         let token = self.pop()?;
         if token.token != begin {
-            return Err(ParseError {
+            return Err(ParseErr {
                 msg: "Parsing failed while parsing multiple items. Beginning token not found.",
                 token: Some(token),
             });
@@ -49,12 +49,12 @@ impl Parser {
                 self.pop()?;
                 return Ok(args);
             } else if token.token == delimiter && !expecting_separator {
-                return Err(ParseError {
+                return Err(ParseErr {
                     msg: "Expected item, found separator.",
                     token: Some(token.clone()),
                 });
             } else if token.token != delimiter && expecting_separator {
-                return Err(ParseError {
+                return Err(ParseErr {
                     msg: "Expected separator, found something else.",
                     token: Some(token.clone()),
                 });
@@ -66,29 +66,29 @@ impl Parser {
             expecting_separator = !expecting_separator;
         }
 
-        Err(ParseError {
+        Err(ParseErr {
             msg: "Parsing failed while parsing multiple items. Ending token not found.",
             token: self.tokens.last().cloned(),
         })
     }
 
-    fn parse_identifier(&mut self) -> Result<String, ParseError> {
+    fn parse_identifier(&mut self) -> Result<String, ParseErr> {
         let token = self.pop()?;
         match token.token {
-            Tok::Identifier(name) => Ok(name),
-            _ => Err(ParseError {
+            Token::Identifier(name) => Ok(name),
+            _ => Err(ParseErr {
                 msg: "Identifier expected: <identifier>",
                 token: Some(token),
             }),
         }
     }
 
-    fn parse_identifier_type_pair(&mut self) -> Result<IdentifierTypePair, ParseError> {
+    fn parse_identifier_type_pair(&mut self) -> Result<IdentifierTypePair, ParseErr> {
         let name = self.parse_identifier()?;
 
         let token = self.pop()?;
-        if token.token != Tok::Symbol(SymbolKind::Colon) {
-            return Err(ParseError {
+        if token.token != Token::Symbol(Symbol::Colon) {
+            return Err(ParseErr {
                 msg: "Expected colon after identifier: <identifier> : <type>",
                 token: Some(token.clone()),
             });
@@ -98,46 +98,46 @@ impl Parser {
         Ok(IdentifierTypePair { name, typename })
     }
 
-    fn parse_initial_expression(&mut self) -> Result<Expression, ParseError> {
+    fn parse_initial_expression(&mut self) -> Result<Expression, ParseErr> {
         let token = self.pop()?;
         match token.token {
-            Tok::IntegerLiteral(num) => Ok(Expression::IntegerLiteral(num)),
-            Tok::StringLiteral(s) => Ok(Expression::StringLiteral(s)),
-            Tok::Keyword(KeywordKind::True) => Ok(Expression::BooleanLiteral(true)),
-            Tok::Keyword(KeywordKind::False) => Ok(Expression::BooleanLiteral(false)),
-            Tok::RealLiteral(r) => Ok(Expression::RealLiteral(r)),
-            Tok::Identifier(name) => Ok(Expression::Variable(name)),
-            Tok::Symbol(SymbolKind::Minus) => Ok(Expression::UnaryExpression(
-                UnaryOperator::Negate,
-                Box::new(self.pratt_parser(UnaryOperator::Negate.get_binding_power())?),
+            Token::IntegerLiteral(num) => Ok(Expression::IntegerLiteral(num)),
+            Token::StringLiteral(s) => Ok(Expression::StringLiteral(s)),
+            Token::Keyword(Keyword::True) => Ok(Expression::BoolLiteral(true)),
+            Token::Keyword(Keyword::False) => Ok(Expression::BoolLiteral(false)),
+            Token::RealLiteral(r) => Ok(Expression::RealLiteral(r)),
+            Token::Identifier(name) => Ok(Expression::Variable(name)),
+            Token::Symbol(Symbol::Minus) => Ok(Expression::Unary(
+                UnaryOp::Negate,
+                Box::new(self.pratt_parser(UnaryOp::Negate.get_binding_power())?),
             )),
-            Tok::Symbol(SymbolKind::Exclam) => Ok(Expression::UnaryExpression(
-                UnaryOperator::Not,
-                Box::new(self.pratt_parser(UnaryOperator::Not.get_binding_power())?),
+            Token::Symbol(Symbol::Exclam) => Ok(Expression::Unary(
+                UnaryOp::Not,
+                Box::new(self.pratt_parser(UnaryOp::Not.get_binding_power())?),
             )),
-            Tok::Symbol(SymbolKind::LeftParen) => {
+            Token::Symbol(Symbol::LeftParen) => {
                 let expr = self.pratt_parser(0)?;
                 let token = self.pop()?;
-                if token.token == Tok::Symbol(SymbolKind::RightParen) {
+                if token.token == Token::Symbol(Symbol::RightParen) {
                     Ok(expr)
                 } else {
-                    Err(ParseError {
+                    Err(ParseErr {
                         msg: "Expected closing paren ) in parenthesized expression: (<expr>)"
                             .into(),
                         token: Some(token),
                     })
                 }
             }
-            Tok::Symbol(SymbolKind::LeftBracket) => {
+            Token::Symbol(Symbol::LeftBracket) => {
                 self.tokens.push(token);
                 Ok(Expression::Array(self.parse_generic_delimited(
-                    Tok::Symbol(SymbolKind::LeftBracket),
-                    Tok::Symbol(SymbolKind::RightBracket),
-                    Tok::Symbol(SymbolKind::Comma),
+                    Token::Symbol(Symbol::LeftBracket),
+                    Token::Symbol(Symbol::RightBracket),
+                    Token::Symbol(Symbol::Comma),
                     |s| Parser::pratt_parser(s, 0),
                 )?))
             }
-            _ => Err(ParseError {
+            _ => Err(ParseErr {
                 msg: "Expected expression: <expr>",
                 token: Some(token),
             }),
@@ -145,35 +145,23 @@ impl Parser {
     }
 
     // An implementation of pratt expression parsing
-    fn pratt_parser(&mut self, current_binding_power: u32) -> Result<Expression, ParseError> {
+    fn pratt_parser(&mut self, current_binding_power: u32) -> Result<Expression, ParseErr> {
         let mut term = self.parse_initial_expression()?;
         loop {
             if let Ok(token) = self.peek().cloned() {
-                match token.token {
-                    Tok::Symbol(SymbolKind::LeftParen) => {
-                        let args = self.parse_expression_list()?;
-                        break Ok(Expression::CallExpression(Box::new(term), args));
-                    }
-                    _ => {}
+                if token.token == Token::Symbol(Symbol::LeftParen) {
+                    let args = self.parse_expression_list()?;
+                    break Ok(Expression::Call(Box::new(term), args));
                 }
 
-                if let Some(operator) = BinaryOperator::get(&token.token) {
-                    let binding_power = if operator.is_left_associative() {
-                        operator.get_binding_power()
-                    } else {
-                        operator.get_binding_power() - 1
-                    };
-
-                    if binding_power <= current_binding_power {
-                        break Ok(term);
-                    } else {
+                if let Some(operator) = BinaryOp::get(&token.token) {
+                    let binding_power = operator.get_binding_power();
+                    if binding_power > current_binding_power {
                         self.pop()?;
                         let right_term = self.pratt_parser(binding_power)?;
-                        term = Expression::BinaryExpression(
-                            Box::new(term),
-                            operator,
-                            Box::new(right_term),
-                        );
+                        term = Expression::Binary(Box::new(term), operator, Box::new(right_term));
+                    } else {
+                        break Ok(term);
                     }
                 } else {
                     break Ok(term);
@@ -184,14 +172,14 @@ impl Parser {
         }
     }
 
-    fn parse_expression(&mut self) -> Result<Expression, ParseError> {
+    fn parse_expression(&mut self) -> Result<Expression, ParseErr> {
         self.pratt_parser(0)
     }
 
-    fn parse_compound_statement(&mut self) -> Result<Statement, ParseError> {
+    fn parse_compound_statement(&mut self) -> Result<Statement, ParseErr> {
         let token = self.pop()?;
-        if token.token != Tok::Symbol(SymbolKind::LeftBrace) {
-            return Err(ParseError {
+        if token.token != Token::Symbol(Symbol::LeftBrace) {
+            return Err(ParseErr {
                 msg: "Expected compound statement: { <stmt> <stmt> ... }",
                 token: Some(token.clone()),
             });
@@ -201,7 +189,7 @@ impl Parser {
         while !self.tokens.is_empty() {
             let token = self.peek()?;
             match token.token {
-                Tok::Symbol(SymbolKind::RightBrace) => {
+                Token::Symbol(Symbol::RightBrace) => {
                     self.pop()?;
                     break;
                 }
@@ -209,13 +197,13 @@ impl Parser {
             }
         }
 
-        Ok(Statement::CompoundStatement(statements))
+        Ok(Statement::Compound(statements))
     }
 
-    fn parse_return_statement(&mut self) -> Result<Statement, ParseError> {
+    fn parse_return_statement(&mut self) -> Result<Statement, ParseErr> {
         let token = self.pop()?;
-        if token.token != Tok::Keyword(KeywordKind::Ret) {
-            return Err(ParseError {
+        if token.token != Token::Keyword(Keyword::Ret) {
+            return Err(ParseErr {
                 msg: "Expected return statement: ret <expr>;",
                 token: Some(token.clone()),
             });
@@ -224,8 +212,8 @@ impl Parser {
         let expr = self.parse_expression()?;
 
         let token = self.pop()?;
-        if token.token != Tok::Symbol(SymbolKind::Semicolon) {
-            return Err(ParseError {
+        if token.token != Token::Symbol(Symbol::Semicolon) {
+            return Err(ParseErr {
                 msg: "Expected semicolon: ret <expr>;",
                 token: Some(token.clone()),
             });
@@ -233,12 +221,12 @@ impl Parser {
         Ok(Statement::Return(expr))
     }
 
-    fn parse_simple_statement(&mut self) -> Result<Statement, ParseError> {
+    fn parse_simple_statement(&mut self) -> Result<Statement, ParseErr> {
         let expr = self.parse_expression()?;
 
         let token = self.pop()?;
-        if token.token != Tok::Symbol(SymbolKind::Semicolon) {
-            return Err(ParseError {
+        if token.token != Token::Symbol(Symbol::Semicolon) {
+            return Err(ParseErr {
                 msg: "Expected expr-statement to end in semicolon: <expression>;",
                 token: Some(token),
             });
@@ -247,10 +235,10 @@ impl Parser {
         Ok(Statement::Simple(expr))
     }
 
-    fn parse_let_statement(&mut self) -> Result<Statement, ParseError> {
+    fn parse_let_statement(&mut self) -> Result<Statement, ParseErr> {
         let token = self.pop()?;
-        if token.token != Tok::Keyword(KeywordKind::Let) {
-            return Err(ParseError {
+        if token.token != Token::Keyword(Keyword::Let) {
+            return Err(ParseErr {
                 msg: "Expected let statement: let <identifier>:<typename> = <expression>;",
                 token: Some(token.clone()),
             });
@@ -259,8 +247,8 @@ impl Parser {
         let declaration = self.parse_identifier_type_pair()?;
 
         let token = self.pop()?;
-        if token.token != Tok::Symbol(SymbolKind::Equal) {
-            return Err(ParseError {
+        if token.token != Token::Symbol(Symbol::Equal) {
+            return Err(ParseErr {
                 msg: "Expected = in statement: let <identifier>:<typename> = <expression>;",
                 token: Some(token),
             });
@@ -269,8 +257,8 @@ impl Parser {
         let expr = self.parse_expression()?;
 
         let token = self.pop()?;
-        if token.token != Tok::Symbol(SymbolKind::Semicolon) {
-            return Err(ParseError {
+        if token.token != Token::Symbol(Symbol::Semicolon) {
+            return Err(ParseErr {
                 msg: "Expected semicolon: let <identifier>:<typename> = <expression>;",
                 token: Some(token),
             });
@@ -279,18 +267,18 @@ impl Parser {
         Ok(Statement::Let(declaration, expr))
     }
 
-    fn parse_if_statement(&mut self) -> Result<Statement, ParseError> {
+    fn parse_if_statement(&mut self) -> Result<Statement, ParseErr> {
         let token = self.pop()?;
-        if token.token != Tok::Keyword(KeywordKind::If) {
-            return Err(ParseError {
+        if token.token != Token::Keyword(Keyword::If) {
+            return Err(ParseErr {
                 msg: "Expected if statement: if (<expression>) <statement> else <statement>",
                 token: Some(token.clone()),
             });
         }
 
         let token = self.pop()?;
-        if token.token != Tok::Symbol(SymbolKind::LeftParen) {
-            return Err(ParseError {
+        if token.token != Token::Symbol(Symbol::LeftParen) {
+            return Err(ParseErr {
                 msg: "Expected starting brace ( before expression: if (<expr>) <statement>",
                 token: Some(token),
             });
@@ -299,8 +287,8 @@ impl Parser {
         let expr = self.parse_expression()?;
 
         let token = self.pop()?;
-        if token.token != Tok::Symbol(SymbolKind::RightParen) {
-            return Err(ParseError {
+        if token.token != Token::Symbol(Symbol::RightParen) {
+            return Err(ParseErr {
                 msg: "Expected closing brace ) after expression: if (<expr>) <statement>".into(),
                 token: Some(token),
             });
@@ -309,7 +297,7 @@ impl Parser {
         let stmt = self.parse_statement()?;
 
         if let Ok(token) = self.peek() {
-            if let Tok::Keyword(KeywordKind::Else) = token.token {
+            if let Token::Keyword(Keyword::Else) = token.token {
                 self.pop()?;
                 let else_stmt = self.parse_statement()?;
                 return Ok(Statement::If(
@@ -323,18 +311,18 @@ impl Parser {
         Ok(Statement::If(expr, Box::new(stmt), None))
     }
 
-    fn parse_while_statement(&mut self) -> Result<Statement, ParseError> {
+    fn parse_while_statement(&mut self) -> Result<Statement, ParseErr> {
         let token = self.pop()?;
-        if token.token != Tok::Keyword(KeywordKind::While) {
-            return Err(ParseError {
+        if token.token != Token::Keyword(Keyword::While) {
+            return Err(ParseErr {
                 msg: "Expected while statement: while (<expression>) <statement>;",
                 token: Some(token.clone()),
             });
         }
 
         let token = self.pop()?;
-        if token.token != Tok::Symbol(SymbolKind::LeftParen) {
-            return Err(ParseError {
+        if token.token != Token::Symbol(Symbol::LeftParen) {
+            return Err(ParseErr {
                 msg: "Expected starting brace ( before expression: while (<expr>) <statement>",
                 token: Some(token),
             });
@@ -343,8 +331,8 @@ impl Parser {
         let expr = self.parse_expression()?;
 
         let token = self.pop()?;
-        if token.token != Tok::Symbol(SymbolKind::RightParen) {
-            return Err(ParseError {
+        if token.token != Token::Symbol(Symbol::RightParen) {
+            return Err(ParseErr {
                 msg: "Expected closing brace ) after expression: while (<expr>) <statement>",
                 token: Some(token),
             });
@@ -354,10 +342,10 @@ impl Parser {
         Ok(Statement::While(expr, Box::new(stmt)))
     }
 
-    fn parse_empty_statement(&mut self) -> Result<Statement, ParseError> {
+    fn parse_empty_statement(&mut self) -> Result<Statement, ParseErr> {
         let token = self.pop()?;
-        if token.token != Tok::Symbol(SymbolKind::Semicolon) {
-            return Err(ParseError {
+        if token.token != Token::Symbol(Symbol::Semicolon) {
+            return Err(ParseErr {
                 msg: "Empty statements must end in semicolon",
                 token: Some(token),
             });
@@ -365,23 +353,23 @@ impl Parser {
         Ok(Statement::Empty)
     }
 
-    fn parse_statement(&mut self) -> Result<Statement, ParseError> {
+    fn parse_statement(&mut self) -> Result<Statement, ParseErr> {
         let token = self.peek()?;
         match token.token {
-            Tok::Symbol(SymbolKind::Semicolon) => self.parse_empty_statement(),
-            Tok::Symbol(SymbolKind::LeftBrace) => self.parse_compound_statement(),
-            Tok::Keyword(KeywordKind::Ret) => self.parse_return_statement(),
-            Tok::Keyword(KeywordKind::Let) => self.parse_let_statement(),
-            Tok::Keyword(KeywordKind::While) => self.parse_while_statement(),
-            Tok::Keyword(KeywordKind::If) => self.parse_if_statement(),
+            Token::Symbol(Symbol::Semicolon) => self.parse_empty_statement(),
+            Token::Symbol(Symbol::LeftBrace) => self.parse_compound_statement(),
+            Token::Keyword(Keyword::Ret) => self.parse_return_statement(),
+            Token::Keyword(Keyword::Let) => self.parse_let_statement(),
+            Token::Keyword(Keyword::While) => self.parse_while_statement(),
+            Token::Keyword(Keyword::If) => self.parse_if_statement(),
             _ => self.parse_simple_statement(),
         }
     }
 
-    fn parse_array_typename(&mut self) -> Result<Typename, ParseError> {
+    fn parse_array_typename(&mut self) -> Result<Type, ParseErr> {
         let token = self.pop()?;
-        if token.token != Tok::Symbol(SymbolKind::LeftBracket) {
-            return Err(ParseError {
+        if token.token != Token::Symbol(Symbol::LeftBracket) {
+            return Err(ParseErr {
                 msg: "Expected array type: [<type>, <size>]",
                 token: Some(token),
             });
@@ -390,105 +378,90 @@ impl Parser {
         let typename = self.parse_typename()?;
 
         let token = self.pop()?;
-        if token.token != Tok::Symbol(SymbolKind::Comma) {
-            return Err(ParseError {
+        if token.token != Token::Symbol(Symbol::Comma) {
+            return Err(ParseErr {
                 msg: "Expected comma after type to specify size: [<type>, <size>]",
                 token: Some(token.clone()),
             });
         }
 
         let token = self.pop()?;
-        let size = if let Tok::IntegerLiteral(num) = token.token {
+        let size = if let Token::IntegerLiteral(num) = token.token {
             num
         } else {
-            return Err(ParseError {
+            return Err(ParseErr {
                 msg: "Expected number to specify size: [<type>, <size>]",
                 token: Some(token.clone()),
             });
         };
 
         let token = self.pop()?;
-        if token.token != Tok::Symbol(SymbolKind::RightBracket) {
-            return Err(ParseError {
+        if token.token != Token::Symbol(Symbol::RightBracket) {
+            return Err(ParseErr {
                 msg: "Expected closing bracket ] to end type specification: [<type>, <size>]",
                 token: Some(token.clone()),
             });
         }
 
-        Ok(Typename::Array(Box::new(typename), size))
+        Ok(Type::Array(Box::new(typename), size))
     }
 
-    fn parse_typename(&mut self) -> Result<Typename, ParseError> {
-        let token = self.peek()?;
+    fn parse_typename(&mut self) -> Result<Type, ParseErr> {
+        let token = self.pop()?;
         match token.token {
-            Tok::Symbol(SymbolKind::LeftBracket) => self.parse_array_typename(),
-            Tok::Identifier(_) => {
-                let identifier = self.parse_identifier()?;
-                Ok(Typename::Struct(identifier))
+            Token::Keyword(Keyword::Nil) => Ok(Type::Nil),
+            Token::Keyword(Keyword::Int) => Ok(Type::Int),
+            Token::Keyword(Keyword::Real) => Ok(Type::Real),
+            Token::Keyword(Keyword::Char) => Ok(Type::Char),
+            Token::Keyword(Keyword::Bool) => Ok(Type::Bool),
+            Token::Identifier(name) => Ok(Type::Struct(name)),
+            Token::Symbol(Symbol::LeftBracket) => {
+                self.tokens.push(token);
+                self.parse_array_typename()
             }
-            Tok::Keyword(KeywordKind::Nil) => {
-                self.pop()?;
-                Ok(Typename::Nil)
-            }
-            Tok::Keyword(KeywordKind::Int) => {
-                self.pop()?;
-                Ok(Typename::Int)
-            }
-            Tok::Keyword(KeywordKind::Real) => {
-                self.pop()?;
-                Ok(Typename::Real)
-            }
-            Tok::Keyword(KeywordKind::Char) => {
-                self.pop()?;
-                Ok(Typename::Char)
-            }
-            Tok::Keyword(KeywordKind::Bool) => {
-                self.pop()?;
-                Ok(Typename::Bool)
-            }
-            _ => Err(ParseError {
+            _ => Err(ParseErr {
                 msg: "Expected type declaration: <type> | [<type>, <size>]",
                 token: Some(token.clone()),
             }),
         }
     }
 
-    fn parse_expression_list(&mut self) -> Result<Vec<Expression>, ParseError> {
+    fn parse_expression_list(&mut self) -> Result<Vec<Expression>, ParseErr> {
         self.parse_generic_delimited(
-            Tok::Symbol(SymbolKind::LeftParen),
-            Tok::Symbol(SymbolKind::RightParen),
-            Tok::Symbol(SymbolKind::Comma),
+            Token::Symbol(Symbol::LeftParen),
+            Token::Symbol(Symbol::RightParen),
+            Token::Symbol(Symbol::Comma),
             Parser::parse_expression,
         )
     }
 
-    fn parse_function_parameters(&mut self) -> Result<Vec<IdentifierTypePair>, ParseError> {
+    fn parse_function_parameters(&mut self) -> Result<Vec<IdentifierTypePair>, ParseErr> {
         self.parse_generic_delimited(
-            Tok::Symbol(SymbolKind::LeftParen),
-            Tok::Symbol(SymbolKind::RightParen),
-            Tok::Symbol(SymbolKind::Comma),
+            Token::Symbol(Symbol::LeftParen),
+            Token::Symbol(Symbol::RightParen),
+            Token::Symbol(Symbol::Comma),
             Parser::parse_identifier_type_pair,
         )
     }
 
-    fn parse_function(&mut self) -> Result<Function, ParseError> {
+    fn parse_function(&mut self) -> Result<Function, ParseErr> {
         Ok(Function {
-            ret_type: self.parse_typename()?,
+            return_type: self.parse_typename()?,
             name: self.parse_identifier()?,
-            args: self.parse_function_parameters()?,
+            arguments: self.parse_function_parameters()?,
             statement: self.parse_statement()?,
         })
     }
 
-    fn parse_module(&mut self) -> Result<Module, ParseError> {
+    fn parse_module(&mut self) -> Result<Module, ParseErr> {
         let mut module = Module { functions: vec![] };
         while !self.tokens.is_empty() {
             module.functions.push(self.parse_function()?);
         }
-        return Ok(module);
+        Ok(module)
     }
 
-    pub fn parse(&mut self) -> Result<Module, ParseError> {
+    pub fn parse(&mut self) -> Result<Module, ParseErr> {
         self.parse_module()
     }
 }
