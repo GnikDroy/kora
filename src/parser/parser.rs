@@ -64,6 +64,7 @@ impl Parser {
             Tok::StringLiteral(s) => Ok(Expression::StringLiteral(s)),
             Tok::Keyword(KeywordKind::True) => Ok(Expression::BooleanLiteral(true)),
             Tok::Keyword(KeywordKind::False) => Ok(Expression::BooleanLiteral(false)),
+            Tok::RealLiteral(r) => Ok(Expression::RealLiteral(r)),
             Tok::Identifier(name) => Ok(Expression::Variable(name)),
             Tok::Symbol(SymbolKind::Minus) => Ok(Expression::UnaryExpression(
                 UnaryOperator::Negate,
@@ -609,6 +610,7 @@ mod tests {
     fn expression_parser_valid() {
         let sources = vec![
             "1-2-3",
+            "1.234",
             "true == false & false | true",
             "a=b - a != b + a | b + c & d",
             "-a + -b / !c",
@@ -771,6 +773,7 @@ mod tests {
             int main() {
                 let a: int = 5;
                 let b: int = 6;
+                let c: real = 6.2345;
                 if (a - b) {
                     print("Hello World", 5);
                 }

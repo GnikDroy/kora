@@ -61,17 +61,18 @@ pub enum SymbolKind {
     Ampersand,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Tok {
     Keyword(KeywordKind),
     Symbol(SymbolKind),
     Identifier(String),
     StringLiteral(String),
     NumericLiteral(i64),
+    RealLiteral(f64),
     Whitespace,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Token {
     pub token: Tok,
     pub col: usize,

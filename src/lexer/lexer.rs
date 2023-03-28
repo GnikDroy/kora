@@ -79,20 +79,48 @@ impl Lexer {
                             Ok(Tok::Symbol(SymbolKind::Less))
                         }
                     }
-                    '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' => {
+                    '0'..'9' | '9' => {
+                        let mut is_real = false;
                         let mut literal = String::new();
                         literal.push(c);
-
                         while let Some((_, c1)) = line_iter.peek() {
                             match c1 {
-                                '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' => {
+                                '0'..'9' | '9' => {
                                     literal.push(*c1);
                                     line_iter.next();
+                                }
+                                '.' => {
+                                    literal.push('.');
+                                    line_iter.next();
+                                    is_real = true;
+                                    while let Some((_, c2)) = line_iter.peek() {
+                                        match c2 {
+                                            '0'..'9' | '9' => {
+                                                literal.push(*c2);
+                                                line_iter.next();
+                                            }
+                                            _ => break,
+                                        }
+                                    }
+                                    break;
                                 }
                                 _ => break,
                             }
                         }
-                        match literal.parse::<i64>() {
+
+                        if is_real {
+                            match literal.parse::<f64>() {
+                            Ok(n) => Ok(Tok::RealLiteral(n)),
+                            Err(_) => Err(LexerError{
+                                msg: "Real number cannot be fit in 64 bits",
+                                col: col + 1,
+                                row: row + 1,
+                                line: line.into(),
+                                suggestion: "Select a smaller / less precise real number, or a different data type".to_string(),
+                            })
+                        }
+                        } else {
+                            match literal.parse::<i64>() {
                             Ok(n) => Ok(Tok::NumericLiteral(n)),
                             Err(_) => Err(LexerError {
                                 msg: "Integer too big to fit in 64 bits",
@@ -101,6 +129,7 @@ impl Lexer {
                                 line: line.into(),
                                 suggestion: "Select a smaller value for the integer, or a different data type".to_string(),
                             }),
+                        }
                         }
                     }
                     '"' => {
@@ -171,13 +200,13 @@ impl Lexer {
                             Err(error.unwrap())
                         }
                     }
-                    'A'..'Z' | 'a'..'z' | '_' => {
+                    'A'..'Z' | 'Z' | 'a'..'z' | 'z' | '_' => {
                         let mut identifier = String::new();
                         identifier.push(c);
 
                         while let Some((_, c1)) = line_iter.peek() {
                             match c1 {
-                                'A'..'Z' | 'a'..'z' | '_' | '0'..'9' => {
+                                'A'..'Z' | 'Z' | 'a'..'z' | 'z' | '_' | '0'..'9' | '9' => {
                                     identifier.push(*c1);
                                     line_iter.next();
                                 }
@@ -246,13 +275,17 @@ mod tests {
             "?",
         ];
         for source in sources {
-            assert!(super::Lexer::lex(source).is_err());
+            let result = super::Lexer::lex(source);
+            assert!(result.is_err(), "{:?}", result);
         }
     }
 
     #[test]
     fn valid() {
         let sources = vec![
+            "1",
+            "1981723.234424",
+            "identz",
             "
                 int main() {
                     ret 2+4;
@@ -267,7 +300,8 @@ mod tests {
             "#,
         ];
         for source in sources {
-            assert!(super::Lexer::lex(source).is_ok());
+            let result = super::Lexer::lex(source);
+            assert!(result.is_ok(), "{:?}", result);
         }
     }
 }
