@@ -19,7 +19,7 @@ pub struct IdentifierTypePair {
     pub name: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Typename {
     Nil,
     Int,
@@ -28,6 +28,7 @@ pub enum Typename {
     Char,
     Array(Box<Typename>, isize),
     Struct(String),
+    Function(Box<Typename>, Vec<Typename>),
 }
 
 #[derive(Debug)]
@@ -59,7 +60,7 @@ pub struct FunctionArgument {
     pub name: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum BinaryOperator {
     Assign,
     Add,
@@ -130,7 +131,7 @@ impl BinaryOperator {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub enum UnaryOperator {
     Not,
     Negate,

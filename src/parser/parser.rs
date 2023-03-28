@@ -1,5 +1,3 @@
-use core::panic;
-
 use super::ast::*;
 use super::errors::*;
 use crate::lexer::{KeywordKind, SymbolKind, Tok, Token};
@@ -16,15 +14,61 @@ impl Parser {
 
     fn peek(&mut self) -> Result<&Token, ParseError> {
         self.tokens.last().ok_or(ParseError {
-            msg: "Unexpected EOF. Something is missing.",
+            msg: "Unexpected EOF.",
             token: None,
         })
     }
 
     fn pop(&mut self) -> Result<Token, ParseError> {
         self.tokens.pop().ok_or(ParseError {
-            msg: "Unexpected EOF. Something is missing.",
+            msg: "Unexpected EOF.",
             token: None,
+        })
+    }
+
+    fn parse_generic_delimited<T>(
+        &mut self,
+        begin: Tok,
+        end: Tok,
+        delimiter: Tok,
+        f: fn(&mut Parser) -> Result<T, ParseError>,
+    ) -> Result<Vec<T>, ParseError> {
+        let token = self.pop()?;
+        if token.token != begin {
+            return Err(ParseError {
+                msg: "Parsing failed while parsing multiple items. Beginning token not found.",
+                token: Some(token),
+            });
+        }
+
+        let mut args = vec![];
+        let mut expecting_separator = false;
+        while !self.tokens.is_empty() {
+            let token = self.peek()?;
+            if token.token == end {
+                self.pop()?;
+                return Ok(args);
+            } else if token.token == delimiter && !expecting_separator {
+                return Err(ParseError {
+                    msg: "Expected item, found separator.",
+                    token: Some(token.clone()),
+                });
+            } else if token.token != delimiter && expecting_separator {
+                return Err(ParseError {
+                    msg: "Expected separator, found something else.",
+                    token: Some(token.clone()),
+                });
+            } else if token.token == delimiter {
+                self.pop()?;
+            } else {
+                args.push(f(self)?);
+            }
+            expecting_separator = !expecting_separator;
+        }
+
+        Err(ParseError {
+            msg: "Parsing failed while parsing multiple items. Ending token not found.",
+            token: self.tokens.last().cloned(),
         })
     }
 
@@ -43,18 +87,15 @@ impl Parser {
         let name = self.parse_identifier()?;
 
         let token = self.pop()?;
-        match token.token {
-            Tok::Symbol(SymbolKind::Colon) => {}
-            _ => {
-                return Err(ParseError {
-                    msg: "Expected colon after identifier: <identifier> : <type>",
-                    token: Some(token.clone()),
-                })
-            }
-        };
+        if token.token != Tok::Symbol(SymbolKind::Colon) {
+            return Err(ParseError {
+                msg: "Expected colon after identifier: <identifier> : <type>",
+                token: Some(token.clone()),
+            });
+        }
 
         let typename = self.parse_typename()?;
-        return Ok(IdentifierTypePair { name, typename });
+        Ok(IdentifierTypePair { name, typename })
     }
 
     fn parse_initial_expression(&mut self) -> Result<Expression, ParseError> {
@@ -77,7 +118,7 @@ impl Parser {
             Tok::Symbol(SymbolKind::LeftParen) => {
                 let expr = self.pratt_parser(0)?;
                 let token = self.pop()?;
-                if let Tok::Symbol(SymbolKind::RightParen) = token.token {
+                if token.token == Tok::Symbol(SymbolKind::RightParen) {
                     Ok(expr)
                 } else {
                     Err(ParseError {
@@ -88,38 +129,13 @@ impl Parser {
                 }
             }
             Tok::Symbol(SymbolKind::LeftBracket) => {
-                let mut expecting_separator = false;
-                let mut args = vec![];
-                while !self.tokens.is_empty() {
-                    let token = self.peek()?;
-                    match &token.token {
-                        Tok::Symbol(SymbolKind::Comma) => {
-                            if !expecting_separator {
-                                return Err(ParseError {
-                                    msg: "Expected expression instead of comma: [<expr>,...]",
-                                    token: Some(token.clone()),
-                                });
-                            }
-                            self.pop()?;
-                            expecting_separator = false;
-                        }
-                        Tok::Symbol(SymbolKind::RightBracket) => {
-                            self.pop()?;
-                            break;
-                        }
-                        _ => {
-                            if expecting_separator {
-                                return Err(ParseError {
-                                    msg: "Expected comma instead of expression: [<expr>,...]",
-                                    token: Some(token.clone()),
-                                });
-                            }
-                            args.push(self.parse_expression()?);
-                            expecting_separator = true;
-                        }
-                    }
-                }
-                Ok(Expression::Array(args))
+                self.tokens.push(token);
+                Ok(Expression::Array(self.parse_generic_delimited(
+                    Tok::Symbol(SymbolKind::LeftBracket),
+                    Tok::Symbol(SymbolKind::RightBracket),
+                    Tok::Symbol(SymbolKind::Comma),
+                    |s| Parser::pratt_parser(s, 0),
+                )?))
             }
             _ => Err(ParseError {
                 msg: "Expected expression: <expr>",
@@ -172,194 +188,243 @@ impl Parser {
         self.pratt_parser(0)
     }
 
+    fn parse_compound_statement(&mut self) -> Result<Statement, ParseError> {
+        let token = self.pop()?;
+        if token.token != Tok::Symbol(SymbolKind::LeftBrace) {
+            return Err(ParseError {
+                msg: "Expected compound statement: { <stmt> <stmt> ... }",
+                token: Some(token.clone()),
+            });
+        }
+
+        let mut statements = vec![];
+        while !self.tokens.is_empty() {
+            let token = self.peek()?;
+            match token.token {
+                Tok::Symbol(SymbolKind::RightBrace) => {
+                    self.pop()?;
+                    break;
+                }
+                _ => statements.push(self.parse_statement()?),
+            }
+        }
+
+        Ok(Statement::CompoundStatement(statements))
+    }
+
+    fn parse_return_statement(&mut self) -> Result<Statement, ParseError> {
+        let token = self.pop()?;
+        if token.token != Tok::Keyword(KeywordKind::Ret) {
+            return Err(ParseError {
+                msg: "Expected return statement: ret <expr>;",
+                token: Some(token.clone()),
+            });
+        }
+
+        let expr = self.parse_expression()?;
+
+        let token = self.pop()?;
+        if token.token != Tok::Symbol(SymbolKind::Semicolon) {
+            return Err(ParseError {
+                msg: "Expected semicolon: ret <expr>;",
+                token: Some(token.clone()),
+            });
+        }
+        Ok(Statement::Return(expr))
+    }
+
+    fn parse_simple_statement(&mut self) -> Result<Statement, ParseError> {
+        let expr = self.parse_expression()?;
+
+        let token = self.pop()?;
+        if token.token != Tok::Symbol(SymbolKind::Semicolon) {
+            return Err(ParseError {
+                msg: "Expected expr-statement to end in semicolon: <expression>;",
+                token: Some(token),
+            });
+        }
+
+        Ok(Statement::Simple(expr))
+    }
+
+    fn parse_let_statement(&mut self) -> Result<Statement, ParseError> {
+        let token = self.pop()?;
+        if token.token != Tok::Keyword(KeywordKind::Let) {
+            return Err(ParseError {
+                msg: "Expected let statement: let <identifier>:<typename> = <expression>;",
+                token: Some(token.clone()),
+            });
+        }
+
+        let declaration = self.parse_identifier_type_pair()?;
+
+        let token = self.pop()?;
+        if token.token != Tok::Symbol(SymbolKind::Equal) {
+            return Err(ParseError {
+                msg: "Expected = in statement: let <identifier>:<typename> = <expression>;",
+                token: Some(token),
+            });
+        }
+
+        let expr = self.parse_expression()?;
+
+        let token = self.pop()?;
+        if token.token != Tok::Symbol(SymbolKind::Semicolon) {
+            return Err(ParseError {
+                msg: "Expected semicolon: let <identifier>:<typename> = <expression>;",
+                token: Some(token),
+            });
+        }
+
+        Ok(Statement::Let(declaration, expr))
+    }
+
+    fn parse_if_statement(&mut self) -> Result<Statement, ParseError> {
+        let token = self.pop()?;
+        if token.token != Tok::Keyword(KeywordKind::If) {
+            return Err(ParseError {
+                msg: "Expected if statement: if (<expression>) <statement> else <statement>",
+                token: Some(token.clone()),
+            });
+        }
+
+        let token = self.pop()?;
+        if token.token != Tok::Symbol(SymbolKind::LeftParen) {
+            return Err(ParseError {
+                msg: "Expected starting brace ( before expression: if (<expr>) <statement>",
+                token: Some(token),
+            });
+        }
+
+        let expr = self.parse_expression()?;
+
+        let token = self.pop()?;
+        if token.token != Tok::Symbol(SymbolKind::RightParen) {
+            return Err(ParseError {
+                msg: "Expected closing brace ) after expression: if (<expr>) <statement>".into(),
+                token: Some(token),
+            });
+        }
+
+        let stmt = self.parse_statement()?;
+
+        if let Ok(token) = self.peek() {
+            if let Tok::Keyword(KeywordKind::Else) = token.token {
+                self.pop()?;
+                let else_stmt = self.parse_statement()?;
+                return Ok(Statement::If(
+                    expr,
+                    Box::new(stmt),
+                    Some(Box::new(else_stmt)),
+                ));
+            }
+        }
+
+        Ok(Statement::If(expr, Box::new(stmt), None))
+    }
+
+    fn parse_while_statement(&mut self) -> Result<Statement, ParseError> {
+        let token = self.pop()?;
+        if token.token != Tok::Keyword(KeywordKind::While) {
+            return Err(ParseError {
+                msg: "Expected while statement: while (<expression>) <statement>;",
+                token: Some(token.clone()),
+            });
+        }
+
+        let token = self.pop()?;
+        if token.token != Tok::Symbol(SymbolKind::LeftParen) {
+            return Err(ParseError {
+                msg: "Expected starting brace ( before expression: while (<expr>) <statement>",
+                token: Some(token),
+            });
+        }
+
+        let expr = self.parse_expression()?;
+
+        let token = self.pop()?;
+        if token.token != Tok::Symbol(SymbolKind::RightParen) {
+            return Err(ParseError {
+                msg: "Expected closing brace ) after expression: while (<expr>) <statement>",
+                token: Some(token),
+            });
+        }
+
+        let stmt = self.parse_statement()?;
+        Ok(Statement::While(expr, Box::new(stmt)))
+    }
+
+    fn parse_empty_statement(&mut self) -> Result<Statement, ParseError> {
+        let token = self.pop()?;
+        if token.token != Tok::Symbol(SymbolKind::Semicolon) {
+            return Err(ParseError {
+                msg: "Empty statements must end in semicolon",
+                token: Some(token),
+            });
+        }
+        Ok(Statement::Empty)
+    }
+
     fn parse_statement(&mut self) -> Result<Statement, ParseError> {
         let token = self.peek()?;
         match token.token {
-            Tok::Symbol(SymbolKind::Semicolon) => {
-                self.pop()?;
-                Ok(Statement::Empty)
-            }
-            Tok::Symbol(SymbolKind::LeftBrace) => {
-                self.pop()?;
-                let mut statements = vec![];
-                while !self.tokens.is_empty() {
-                    let token = self.peek()?;
-                    match token.token {
-                        Tok::Symbol(SymbolKind::RightBrace) => {
-                            self.pop()?;
-                            break;
-                        }
-                        _ => statements.push(self.parse_statement()?),
-                    }
-                }
-                Ok(Statement::CompoundStatement(statements))
-            }
-            Tok::Keyword(KeywordKind::Ret) => {
-                self.pop()?;
-                let expr = self.parse_expression()?;
-                let token = self.pop()?;
-                if let Tok::Symbol(SymbolKind::Semicolon) = token.token {
-                    Ok(Statement::Return(expr))
-                } else {
-                    Err(ParseError {
-                        msg: "Expected semicolon: ret <expr>;",
-                        token: Some(token),
-                    })
-                }
-            }
-            Tok::Keyword(KeywordKind::Let) => {
-                self.pop()?;
-                let declaration = self.parse_identifier_type_pair()?;
-                let token = self.pop()?;
-                if let Tok::Symbol(SymbolKind::Equal) = token.token {
-                    let expr = self.parse_expression()?;
-                    if let Tok::Symbol(SymbolKind::Semicolon) = self.pop()?.token {
-                        Ok(Statement::Let(declaration, expr))
-                    } else {
-                        Err(ParseError {
-                            msg: "Expected semicolon: let <identifier> = <expression>;",
-                            token: None,
-                        })
-                    }
-                } else {
-                    Err(ParseError {
-                        msg: "Expected = in statement: let <identifier> = <expression>;",
-                        token: Some(token),
-                    })
-                }
-            }
-            Tok::Keyword(KeywordKind::While) => {
-                self.pop()?;
-                let token = self.pop()?;
-                if let Tok::Symbol(SymbolKind::LeftParen) = token.token {
-                    let expr = self.parse_expression()?;
-                    let token = self.pop()?;
-                    if let Tok::Symbol(SymbolKind::RightParen) = token.token {
-                        let stmt = self.parse_statement()?;
-                        Ok(Statement::While(expr, Box::new(stmt)))
-                    } else {
-                        Err(ParseError {
-                            msg: "Expected closing brace ) after expression: while (<expr>) <statement>",
-                            token: Some(token),
-                        })
-                    }
-                } else {
-                    Err(ParseError {
-                        msg: "Expected starting brace ( before expression: while (<expr>) <statement>",
-                        token: Some(token),
-                    })
-                }
-            }
-            Tok::Keyword(KeywordKind::If) => {
-                self.pop()?;
-                let token = self.pop()?;
-                if let Tok::Symbol(SymbolKind::LeftParen) = token.token {
-                    let expr = self.parse_expression()?;
-                    let token = self.pop()?;
-                    if let Tok::Symbol(SymbolKind::RightParen) = token.token {
-                        let stmt = self.parse_statement()?;
-                        let token = self.peek(); // donot propagate error here
-                        match token {
-                            Ok(token) => {
-                                if let Tok::Keyword(KeywordKind::Else) = token.token {
-                                    self.pop()?;
-                                    let else_stmt = self.parse_statement()?;
-                                    Ok(Statement::If(
-                                        expr,
-                                        Box::new(stmt),
-                                        Some(Box::new(else_stmt)),
-                                    ))
-                                } else {
-                                    Ok(Statement::If(expr, Box::new(stmt), None))
-                                }
-                            }
-                            _ => Ok(Statement::If(expr, Box::new(stmt), None)),
-                        }
-                    } else {
-                        Err(ParseError {
-                            msg:
-                                "Expected closing brace ) after expression: if (<expr>) <statement>"
-                                    .into(),
-                            token: Some(token),
-                        })
-                    }
-                } else {
-                    Err(ParseError {
-                        msg: "Expected starting brace ( before expression: if (<expr>) <statement>"
-                            .into(),
-                        token: Some(token),
-                    })
-                }
-            }
-            _ => {
-                let expr = self.parse_expression()?;
-                let token = self.pop()?;
-                if let Tok::Symbol(SymbolKind::Semicolon) = token.token {
-                    Ok(Statement::Simple(expr))
-                } else {
-                    Err(ParseError {
-                        msg: "Expected expr-statement to end in semicolon: <expression>;",
-                        token: Some(token),
-                    })
-                }
-            }
+            Tok::Symbol(SymbolKind::Semicolon) => self.parse_empty_statement(),
+            Tok::Symbol(SymbolKind::LeftBrace) => self.parse_compound_statement(),
+            Tok::Keyword(KeywordKind::Ret) => self.parse_return_statement(),
+            Tok::Keyword(KeywordKind::Let) => self.parse_let_statement(),
+            Tok::Keyword(KeywordKind::While) => self.parse_while_statement(),
+            Tok::Keyword(KeywordKind::If) => self.parse_if_statement(),
+            _ => self.parse_simple_statement(),
         }
     }
 
     fn parse_array_typename(&mut self) -> Result<Typename, ParseError> {
         let token = self.pop()?;
-        match token.token {
-            Tok::Symbol(SymbolKind::LeftBracket) => {
-                let typename = self.parse_typename()?;
-
-                let token = self.pop()?;
-                if let Tok::Symbol(SymbolKind::Comma) = token.token {
-                } else {
-                    return Err(ParseError {
-                        msg: "Expected comma after type to specify size: [<type>, <size>]",
-                        token: Some(token.clone()),
-                    });
-                }
-
-                let token = self.pop()?;
-                let size = if let Tok::IntegerLiteral(num) = token.token {
-                    num
-                } else {
-                    return Err(ParseError {
-                        msg: "Expected number to specify size: [<type>, <size>]",
-                        token: Some(token.clone()),
-                    });
-                };
-
-                let token = self.pop()?;
-                if let Tok::Symbol(SymbolKind::RightBracket) = token.token {
-                    Ok(Typename::Array(Box::new(typename), size))
-                } else {
-                    Err(ParseError {
-                        msg:
-                            "Expected closing bracket ] to end type specification: [<type>, <size>]"
-                                .into(),
-                        token: Some(token.clone()),
-                    })
-                }
-            }
-            _ => Err(ParseError {
+        if token.token != Tok::Symbol(SymbolKind::LeftBracket) {
+            return Err(ParseError {
                 msg: "Expected array type: [<type>, <size>]",
                 token: Some(token),
-            }),
+            });
         }
+
+        let typename = self.parse_typename()?;
+
+        let token = self.pop()?;
+        if token.token != Tok::Symbol(SymbolKind::Comma) {
+            return Err(ParseError {
+                msg: "Expected comma after type to specify size: [<type>, <size>]",
+                token: Some(token.clone()),
+            });
+        }
+
+        let token = self.pop()?;
+        let size = if let Tok::IntegerLiteral(num) = token.token {
+            num
+        } else {
+            return Err(ParseError {
+                msg: "Expected number to specify size: [<type>, <size>]",
+                token: Some(token.clone()),
+            });
+        };
+
+        let token = self.pop()?;
+        if token.token != Tok::Symbol(SymbolKind::RightBracket) {
+            return Err(ParseError {
+                msg: "Expected closing bracket ] to end type specification: [<type>, <size>]",
+                token: Some(token.clone()),
+            });
+        }
+
+        Ok(Typename::Array(Box::new(typename), size))
     }
 
     fn parse_typename(&mut self) -> Result<Typename, ParseError> {
         let token = self.peek()?;
         match token.token {
+            Tok::Symbol(SymbolKind::LeftBracket) => self.parse_array_typename(),
             Tok::Identifier(_) => {
-                let token = self.pop()?;
-                if let Tok::Identifier(name) = token.token {
-                    Ok(Typename::Struct(name))
-                } else {
-                    panic!()
-                }
+                let identifier = self.parse_identifier()?;
+                Ok(Typename::Struct(identifier))
             }
             Tok::Keyword(KeywordKind::Nil) => {
                 self.pop()?;
@@ -381,7 +446,6 @@ impl Parser {
                 self.pop()?;
                 Ok(Typename::Bool)
             }
-            Tok::Symbol(SymbolKind::LeftBracket) => self.parse_array_typename(),
             _ => Err(ParseError {
                 msg: "Expected type declaration: <type> | [<type>, <size>]",
                 token: Some(token.clone()),
@@ -390,103 +454,21 @@ impl Parser {
     }
 
     fn parse_expression_list(&mut self) -> Result<Vec<Expression>, ParseError> {
-        let mut args = vec![];
-        let token = self.pop()?;
-
-        if let Tok::Symbol(SymbolKind::LeftParen) = token.token {
-        } else {
-            return Err(ParseError {
-                msg: "Expected open paren ( before expression list: (<expr>,...)",
-                token: Some(token),
-            });
-        }
-
-        let mut expecting_separator = false;
-        while !self.tokens.is_empty() {
-            let token = self.peek()?;
-            match &token.token {
-                Tok::Symbol(SymbolKind::Comma) => {
-                    if !expecting_separator {
-                        return Err(ParseError {
-                            msg: "Expected expression instead of comma: (<expr>,...)",
-                            token: Some(token.clone()),
-                        });
-                    }
-                    self.pop()?;
-                    expecting_separator = false;
-                }
-                Tok::Symbol(SymbolKind::RightParen) => {
-                    self.pop()?;
-                    return Ok(args);
-                }
-                _ => {
-                    if expecting_separator {
-                        return Err(ParseError {
-                            msg: "Expected comma instead of expression: (<expr>,...)",
-                            token: Some(token.clone()),
-                        });
-                    }
-                    args.push(self.parse_expression()?);
-                    expecting_separator = true;
-                }
-            }
-        }
-
-        Err(ParseError {
-            msg: "Expected closing paren ) to end expression list: (<expr>,...)",
-            token: self.tokens.last().cloned(),
-        })
+        self.parse_generic_delimited(
+            Tok::Symbol(SymbolKind::LeftParen),
+            Tok::Symbol(SymbolKind::RightParen),
+            Tok::Symbol(SymbolKind::Comma),
+            Parser::parse_expression,
+        )
     }
 
     fn parse_function_parameters(&mut self) -> Result<Vec<IdentifierTypePair>, ParseError> {
-        let mut args = vec![];
-        let token = self.pop()?;
-
-        if let Tok::Symbol(SymbolKind::LeftParen) = token.token {
-        } else {
-            return Err(ParseError {
-                msg:
-                    "Expected open paren ( before function parameter list. (<identifier> : <type>, ...)"
-                        .into(),
-                token: Some(token),
-            });
-        }
-
-        let mut expecting_separator = false;
-        while !self.tokens.is_empty() {
-            let token = self.peek()?;
-            match &token.token {
-                Tok::Symbol(SymbolKind::Comma) => {
-                    if !expecting_separator {
-                        return Err(ParseError {
-                            msg: "Expected identifier: (<identifier> : <type>, ...)",
-                            token: Some(token.clone()),
-                        });
-                    }
-                    self.pop()?;
-                    expecting_separator = false;
-                }
-                Tok::Symbol(SymbolKind::RightParen) => {
-                    self.pop()?;
-                    return Ok(args);
-                }
-                _ => {
-                    if expecting_separator {
-                        return Err(ParseError {
-                            msg: "Expected comma before next identifier: (<identifier> : <type>, ...)",
-                            token: Some(token.clone()),
-                        });
-                    }
-                    args.push(self.parse_identifier_type_pair()?);
-                    expecting_separator = true;
-                }
-            }
-        }
-
-        Err(ParseError {
-            msg: "Expected closing paren ) instead of EOF: (<identifier> : <type>, ...)",
-            token: self.tokens.last().cloned(),
-        })
+        self.parse_generic_delimited(
+            Tok::Symbol(SymbolKind::LeftParen),
+            Tok::Symbol(SymbolKind::RightParen),
+            Tok::Symbol(SymbolKind::Comma),
+            Parser::parse_identifier_type_pair,
+        )
     }
 
     fn parse_function(&mut self) -> Result<Function, ParseError> {
