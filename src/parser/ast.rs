@@ -13,6 +13,17 @@ pub struct Function {
     pub statement: Statement,
 }
 
+impl Function {
+    pub fn get_type(&self) -> Type {
+        let args = self
+            .arguments
+            .iter()
+            .map(|IdentifierTypePair { name, typename }| typename.clone())
+            .collect();
+        Type::Function(Box::new(self.return_type.clone()), args)
+    }
+}
+
 #[derive(Debug)]
 pub struct IdentifierTypePair {
     pub typename: Type,
