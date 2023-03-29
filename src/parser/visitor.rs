@@ -1,6 +1,10 @@
 use crate::parser::*;
 
 pub trait ASTVisitor: Sized {
+    fn visit_enter_scope(&mut self) {}
+
+    fn visit_exit_scope(&mut self) {}
+
     fn visit_integer_literal(&mut self, _: &isize) {}
 
     fn visit_real_literal(&mut self, _: &f64) {}
@@ -152,9 +156,11 @@ pub fn walk_simple_statement<V: ASTVisitor>(visitor: &mut V, expr: &Expression) 
 }
 
 pub fn walk_compound_statement<V: ASTVisitor>(visitor: &mut V, stmts: &Vec<Statement>) {
+    visitor.visit_enter_scope();
     for s in stmts.iter() {
         visitor.visit_statement(s);
     }
+    visitor.visit_exit_scope();
 }
 
 pub fn walk_return_statement<V: ASTVisitor>(visitor: &mut V, expr: &Expression) {
@@ -213,16 +219,20 @@ pub fn walk_statement<V: ASTVisitor>(visitor: &mut V, stmt: &Statement) {
 }
 
 pub fn walk_function<V: ASTVisitor>(visitor: &mut V, func: &Function) {
+    visitor.visit_enter_scope();
     visitor.visit_typename(&func.return_type);
     visitor.visit_identifier(&func.name);
     for arg in func.arguments.iter() {
         visitor.visit_identifier_type_pair(arg);
     }
     visitor.visit_statement(&func.statement);
+    visitor.visit_exit_scope();
 }
 
 pub fn walk_module<V: ASTVisitor>(visitor: &mut V, module: &Module) {
+    visitor.visit_enter_scope();
     for func in module.functions.iter() {
         visitor.visit_function(func);
     }
+    visitor.visit_exit_scope();
 }

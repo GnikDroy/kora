@@ -1,21 +1,35 @@
 use crate::parser::*;
 use std::collections::HashMap;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Scope {
     symbols: HashMap<String, Type>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct SymbolTable {
     scopes: Vec<Scope>,
 }
 
 impl SymbolTable {
+    pub fn new() -> SymbolTable {
+        SymbolTable {
+            ..Default::default()
+        }
+    }
+
+    pub fn reverse(&mut self) {
+        self.scopes.reverse();
+    }
+
     pub fn push_scope(&mut self) {
         self.scopes.push(Scope {
             ..Default::default()
         });
+    }
+
+    pub fn add_scope(&mut self, scope: Scope) {
+        self.scopes.push(scope);
     }
 
     pub fn pop_scope(&mut self) -> Option<Scope> {
