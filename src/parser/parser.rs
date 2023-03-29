@@ -149,11 +149,11 @@ impl Parser {
                 self.pop().unwrap();
                 let expr = self.pratt_parser(0);
                 let expr = expr.and_then(|e|
-                        self.pop_token(
-                            Token::Symbol(Symbol::RightParen),
-                            "Expected closing paren ) in parenthesized expression: (<expr>)"
-                        )
-                        .map(|_| e)
+                    self.pop_token(
+                        Token::Symbol(Symbol::RightParen),
+                        "Expected closing paren ) in parenthesized expression: (<expr>)"
+                    )
+                    .map(|_| e)
                 );
                 return Some(expr);
         }
@@ -224,21 +224,17 @@ impl Parser {
     fn pratt_parser(&mut self, current_binding_power: u32) -> Result<Expression, ParseErr> {
         let mut term = self.parse_initial_expression()?;
         loop {
-            if matches!(self.peek(), Err(_)) {
-                break Ok(term);
-            }
-
-            let token = self.peek().unwrap();
-            if let Some(operator) = InfixOperator::get(&token.token) {
-                let binding_power = operator.get_binding_power();
-                if binding_power > current_binding_power {
-                    term = self.parselet_infix_operators(operator, term)?;
-                } else {
-                    break Ok(term);
+            if !matches!(self.peek(), Err(_)) {
+                let token = self.peek().unwrap();
+                if let Some(operator) = InfixOperator::get(&token.token) {
+                    let binding_power = operator.get_binding_power();
+                    if binding_power > current_binding_power {
+                        term = self.parselet_infix_operators(operator, term)?;
+                        continue;
+                    }
                 }
-            } else {
-                break Ok(term);
             }
+            break Ok(term);
         }
     }
 
@@ -324,13 +320,16 @@ impl Parser {
             match token.token {
                 Token::Symbol(Symbol::RightBrace) => {
                     self.pop()?;
-                    break;
+                    return Ok(Statement::Compound(statements));
                 }
                 _ => statements.push(self.parse_statement()?),
             }
         }
 
-        Ok(Statement::Compound(statements))
+        Err(ParseErr {
+            msg: "Expected } in compound statement: { <stmt> <stmt> ... }",
+            token: None,
+        })
     }
 
     fn parse_return_statement(&mut self) -> Result<Statement, ParseErr> {
@@ -555,302 +554,287 @@ impl Parser {
 mod tests {
     use crate::{lexer, parser};
 
-    #[test]
-    fn module_parser_valid() {
-        let sources = vec!["", "int main();", "int a(); int b(); int c();"];
+    use super::Parser;
+
+    fn test_parser_valid<T: std::fmt::Debug>(
+        sources: Vec<&str>,
+        f: fn(&mut parser::Parser) -> Result<T, parser::ParseErr>,
+    ) {
         for source in sources {
             let tokens = lexer::Lexer::lex(source).expect("lex");
             let mut parser = parser::Parser::new(tokens);
-            let node = parser.parse_module();
-            assert!(node.is_ok() && parser.tokens.is_empty(), "{:?}", node);
-        }
-    }
-
-    #[test]
-    fn module_parser_invalid() {
-        let sources = vec!["i", "int main()", "int a(); int b(); int ();"];
-        for source in sources {
-            let tokens = lexer::Lexer::lex(source).expect("lex");
-            let mut parser = parser::Parser::new(tokens);
-            let node = parser.parse_module();
-            assert!(node.is_err(), "{}", source);
-        }
-    }
-
-    #[test]
-    fn identifier_parser_valid() {
-        let sources = vec!["ident", "abc", "_wfk23fb"];
-        for source in sources {
-            let tokens = lexer::Lexer::lex(source).expect("lex");
-            let mut parser = parser::Parser::new(tokens);
-            let node = parser.parse_identifier();
-            assert!(node.is_ok() && parser.tokens.is_empty(), "{:?}", node);
-        }
-    }
-
-    #[test]
-    fn identifier_parser_invalid() {
-        let sources = vec!["", "23bl", "*l"];
-
-        for source in sources {
-            let tokens = lexer::Lexer::lex(source).expect("lex");
-            let mut parser = parser::Parser::new(tokens);
-            let node = parser.parse_identifier();
-            assert!(node.is_err(), "{}", source);
-        }
-    }
-
-    #[test]
-    fn array_typename_parser_valid() {
-        let sources = vec!["[[int, 5], 10]", "[int, 5]", "[t, 5]"];
-        for source in sources {
-            let tokens = lexer::Lexer::lex(source).expect("lex");
-            let mut parser = parser::Parser::new(tokens);
-            let node = parser.parse_array_typename();
-            assert!(node.is_ok() && parser.tokens.is_empty(), "{:?}", node);
-        }
-    }
-
-    #[test]
-    fn array_typename_parser_invalid() {
-        let sources = vec!["", "1_", "*", "[", "[int, 10", "[int 10]", "[[[["];
-
-        for source in sources {
-            let tokens = lexer::Lexer::lex(source).expect("lex");
-            let mut parser = parser::Parser::new(tokens);
-            let node = parser.parse_array_typename();
-            assert!(node.is_err(), "{}", source);
-        }
-    }
-
-    #[test]
-    fn typename_parser_valid() {
-        let sources = vec![
-            "nil",
-            "int",
-            "real",
-            "char",
-            "[[int, 5], 10]",
-            "custom_type",
-        ];
-        for source in sources {
-            let tokens = lexer::Lexer::lex(source).expect("lex");
-            let mut parser = parser::Parser::new(tokens);
-            let node = parser.parse_typename();
-            assert!(node.is_ok() && parser.tokens.is_empty(), "{:?}", node);
-        }
-    }
-
-    #[test]
-    fn typename_parser_invalid() {
-        let sources = vec!["", "1_", "*", "[int]", "[int 10]"];
-
-        for source in sources {
-            let tokens = lexer::Lexer::lex(source).expect("lex");
-            let mut parser = parser::Parser::new(tokens);
-            let node = parser.parse_typename();
-            assert!(node.is_err(), "{}", source);
-        }
-    }
-
-    #[test]
-    fn identifier_type_pair_parser_valid() {
-        let sources = vec![
-            "a: int",
-            "a: [[int, 5], 10]",
-            "ident: real",
-            "ident: custom_type",
-        ];
-        for source in sources {
-            let tokens = lexer::Lexer::lex(source).expect("lex");
-            let mut parser = parser::Parser::new(tokens);
-            let node = parser.parse_identifier_type_pair();
-            assert!(node.is_ok() && parser.tokens.is_empty(), "{:?}", node);
-        }
-    }
-
-    #[test]
-    fn identifier_type_pair_parser_invalid() {
-        let sources = vec!["", "a: ", "a int", "1: int", "int: int"];
-        for source in sources {
-            let tokens = lexer::Lexer::lex(source).expect("lex");
-            let mut parser = parser::Parser::new(tokens);
-            let node = parser.parse_identifier_type_pair();
-            assert!(node.is_err(), "{}", source);
-        }
-    }
-
-    #[test]
-    fn expression_parser_valid() {
-        let sources = vec![
-            "1-2-3",
-            "1.234",
-            "[1,2,3]",
-            "true == false & false | true",
-            "a=b - a != b + a | b + c & d",
-            "-a + -b / !c",
-            "a==b + c<d + a<=b + 1>2 + e>=f",
-            "(1/2 + (x+4) / 4) / ((x-5)/2 + (x+4)/(x-5))",
-            r#"a + b/2 - c/(x * 4) * (3 + 4/(5+"hello there"))"#,
-            r#"a + func_call(a, "b" + 2, (a+b) * [1, "abc", (a+b)/2] / 2) / 2"#,
-        ];
-        for source in sources {
-            let tokens = lexer::Lexer::lex(source).expect("lex");
-            let mut parser = parser::Parser::new(tokens);
-            let node = parser.parse_expression();
+            let node = f(&mut parser);
             assert!(
                 node.is_ok() && parser.tokens.is_empty(),
-                "{} {:?}",
+                "source_text: {}, fully_parsed: {}, parsed_element: {:#?}",
+                source,
+                parser.tokens.is_empty(),
+                node
+            );
+        }
+    }
+
+    fn test_parser_invalid<T: std::fmt::Debug>(
+        sources: Vec<&str>,
+        f: fn(&mut parser::Parser) -> Result<T, parser::ParseErr>,
+    ) {
+        for source in sources {
+            let tokens = lexer::Lexer::lex(source).expect("lex");
+            let mut parser = parser::Parser::new(tokens);
+            let node = f(&mut parser);
+            assert!(
+                node.is_err(),
+                "source_text: {}, parsed_element: {:#?}",
                 source,
                 node
             );
-            println!("{:#?}", node.unwrap());
         }
     }
 
-    #[test]
-    fn expression_parser_invalid() {
-        let sources = vec!["", "let", "*", "a=", "(a", "a<="];
-        for source in sources {
-            let tokens = lexer::Lexer::lex(source).expect("lex");
-            let mut parser = parser::Parser::new(tokens);
-            let node = parser.parse_expression();
-            assert!(node.is_err(), "{}", source);
-        }
+    fn test_parser<T: std::fmt::Debug>(
+        valid_sources: Vec<&str>,
+        invalid_sources: Vec<&str>,
+        f: fn(&mut parser::Parser) -> Result<T, parser::ParseErr>,
+    ) {
+        test_parser_valid(valid_sources, f);
+        test_parser_invalid(invalid_sources, f);
     }
 
     #[test]
-    fn statement_parser_valid() {
-        let sources = vec![
-            "{}",
-            ";",
-            "1;",
-            "ret 1;",
-            "let a : int = b;",
-            "if (1);",
-            "if (1); else ;",
-            "while (1) ;",
-            "{ ret 1; let a : int = b; }",
-            "if (a + b) { while (1) { a = b; } ret 1; }",
-            "if (true) { a = b; let a: bool = true; } else { c = d; print(a); }",
-        ];
-        for source in sources {
-            let tokens = lexer::Lexer::lex(source).expect("lex");
-            let mut parser = parser::Parser::new(tokens);
-            let node = parser.parse_statement();
-            assert!(node.is_ok() && parser.tokens.is_empty(), "{:?}", node);
-        }
+    fn parse_module() {
+        test_parser(
+            vec!["", "int main();", "int a(); int b(); int c();"],
+            vec!["i", "int main()", "int a(); int b(); int ();"],
+            Parser::parse_module,
+        );
     }
 
     #[test]
-    fn statement_parser_invalid() {
-        let sources = vec![
-            "",
-            "let",
-            "*",
-            "ret",
-            "let a == 2;",
-            "while a = b {",
-            "if (a = b) }",
-        ];
-        for source in sources {
-            let tokens = lexer::Lexer::lex(source).expect("lex");
-            let mut parser = parser::Parser::new(tokens);
-            let node = parser.parse_statement();
-            assert!(node.is_err(), "{}", source);
-        }
+    fn parse_identifier() {
+        test_parser(
+            vec!["foo", "_before_2000", "TestCase"],
+            vec!["", "2000", "{ 0 }"],
+            Parser::parse_identifier,
+        );
     }
 
     #[test]
-    fn expression_list_parser_vaild() {
-        let sources = vec!["(a, b, (c+d)/2 + b/4)", "((a + b/2 + c*(a+b)/d))"];
-
-        for source in sources {
-            let tokens = lexer::Lexer::lex(source).expect("lex");
-            let mut parser = parser::Parser::new(tokens);
-            let node = parser.parse_expression_list();
-            assert!(node.is_ok() && parser.tokens.is_empty(), "{:?}", node);
-        }
+    fn parse_array_typename() {
+        test_parser(
+            vec!["[[int, 5], 10]", "[real, 5]", "[foo, 5]"],
+            vec!["", "[", "[int, 10", "[int 10]", "[[[["],
+            Parser::parse_array_typename,
+        );
     }
 
     #[test]
-    fn expression_list_parser_invaild() {
-        let sources = vec!["", "(", "a: int", "(a, b,()"];
-
-        for source in sources {
-            let tokens = lexer::Lexer::lex(source).expect("lex");
-            let mut parser = parser::Parser::new(tokens);
-            let node = parser.parse_expression_list();
-            assert!(node.is_err(), "{}", source);
-        }
+    fn parse_typename() {
+        test_parser(
+            vec![
+                "nil",
+                "int",
+                "real",
+                "char",
+                "[[int, 5], 10]",
+                "custom_type",
+            ],
+            vec!["", "2000", "{0}", "[int]", "[int 10]"],
+            Parser::parse_typename,
+        );
     }
 
     #[test]
-    fn function_parameter_parser_vaild() {
-        let sources = vec![
-            "(a: int, b: [bool, 5])",
-            "(a: [[int, 5], 10])",
-            "(a: int, b: bool, c: char, d: [int, 5], e: real)",
-        ];
-
-        for source in sources {
-            let tokens = lexer::Lexer::lex(source).expect("lex");
-            let mut parser = parser::Parser::new(tokens);
-            let node = parser.parse_function_parameters();
-            assert!(node.is_ok() && parser.tokens.is_empty(), "{:?}", node);
-        }
+    fn parse_identifier_type_pair() {
+        test_parser(
+            vec![
+                "a: int",
+                "a: [[int, 5], 10]",
+                "ident: real",
+                "ident: custom_type",
+            ],
+            vec!["", "a: ", "a int", "1: int", "int: int"],
+            Parser::parse_identifier_type_pair,
+        );
     }
 
     #[test]
-    fn function_parameter_parser_invalid() {
-        let sources = vec!["(1a: int)", "(a: _1", "a: int", "(a int)"];
-
-        for source in sources {
-            let tokens = lexer::Lexer::lex(source).expect("lex");
-            let mut parser = parser::Parser::new(tokens);
-            let node = parser.parse_function_parameters();
-            assert!(node.is_err(), "{}", source);
-        }
+    fn parse_expression() {
+        test_parser(
+            vec![
+                "1-2-3",
+                "1.234",
+                "[1,2,3]",
+                "true == false & false | true",
+                "a=b - a != b + a | b + c & d",
+                "-a + -b / !c",
+                "a==b + c<d + a<=b + 1>2 + e>=f",
+                "(1/2 + (x+4) / 4) / ((x-5)/2 + (x+4)/(x-5))",
+                r#"a + b/2 - c/(x * 4) * (3 + 4/(5+"hello there"))"#,
+                r#"a + func_call(a, "b" + 2, (a+b) * [1, "abc", (a+b)/2] / 2) / 2"#,
+            ],
+            vec!["", "let", "*", "a=", "(a", "a<="],
+            Parser::parse_expression,
+        );
     }
 
     #[test]
-    fn function_parser_valid() {
-        let sources = vec![
-            "int main();",
-            "bool main(){}",
-            "int main(a: int, b : int, c: int);",
-            "[bool, 5] main(){}",
-        ];
-
-        for source in sources {
-            let tokens = lexer::Lexer::lex(source).expect("lex");
-            let mut parser = parser::Parser::new(tokens);
-            let node = parser.parse_function();
-            assert!(node.is_ok() && parser.tokens.is_empty(), "{:?}", node);
-        }
+    fn parse_empty_statement() {
+        test_parser(
+            vec![";"],
+            vec!["", "1", "ret 2;"],
+            Parser::parse_empty_statement,
+        )
     }
 
     #[test]
-    fn function_parser_invalid() {
-        let sources = vec![
-            "int main);",
-            "int ();",
-            "int main(c: int;",
-            "int main(a: int)",
-        ];
+    fn parse_simple_statement() {
+        test_parser(
+            vec!["1;", "a+b;", "(a+b);"],
+            vec!["", "1", "ret 2;", ";"],
+            Parser::parse_simple_statement,
+        )
+    }
 
-        for source in sources {
-            let tokens = lexer::Lexer::lex(source).expect("lex");
+    #[test]
+    fn parse_return_statement() {
+        test_parser(
+            vec!["ret 1;", "ret (a+b);", "ret func(call);"],
+            vec!["ret", "ret ;", "ret 1"],
+            Parser::parse_return_statement,
+        )
+    }
 
-            let mut parser = parser::Parser::new(tokens);
-            let node = parser.parse_function();
-            assert!(node.is_err(), "{}", source);
-        }
+    #[test]
+    fn parse_let_statement() {
+        test_parser(
+            vec![
+                r#"let msg : [char, 10] = "Hello World";"#,
+                "let numbers: [int, 4] = [1,2,3,4];",
+                "let primes_numbers: [real, 3] = [2.0, 3.0, 5.0];",
+            ],
+            vec!["", "let count = 0;", "let count: int = 0", "count: int = 0"],
+            Parser::parse_let_statement,
+        )
+    }
+
+    #[test]
+    fn parse_if_statement() {
+        test_parser(
+            vec![
+                "if (true);",
+                "if (true); else;",
+                "if ((a+b)/2) { a; } else ret 2;",
+            ],
+            vec!["if", "if (true)", "if (true) a", "if (true) a; else "],
+            Parser::parse_if_statement,
+        )
+    }
+
+    #[test]
+    fn parse_while_statement() {
+        test_parser(
+            vec![
+                "while (true);",
+                "while (true) ret 2;",
+                "while ((a+b)/2) { a; }",
+            ],
+            vec!["while", "while (true)", "while (true) a", "while (true a"],
+            Parser::parse_while_statement,
+        )
+    }
+
+    #[test]
+    fn parse_compound_statement() {
+        test_parser(
+            vec![
+                "{}",
+                "{;}",
+                "{ ret a; }",
+                "{ let a: [int, 2] = 4; }",
+                r#"{ while (count <= 5) { print("Hello World"); } }"#,
+            ],
+            vec!["", "{", "}", "{ a = 2 }", "{ 2 }"],
+            Parser::parse_compound_statement,
+        )
+    }
+
+    #[test]
+    fn parse_statement() {
+        test_parser(
+            vec![
+                "{}",
+                ";",
+                "1;",
+                "ret 1;",
+                "let a : int = b;",
+                "if (1);",
+                "if (1); else ;",
+                "while (1) ;",
+                "{ ret 1; let a : int = b; }",
+                "if (a + b) { while (1) { a = b; } ret 1; }",
+                "if (true) { a = b; let a: bool = true; } else { c = d; print(a); }",
+            ],
+            vec![
+                "",
+                "{",
+                "x",
+                "let",
+                "*",
+                "ret",
+                "let a == 2;",
+                "while a = b {",
+                "if (a = b) }",
+            ],
+            Parser::parse_statement,
+        );
+    }
+
+    #[test]
+    fn parse_expression_list() {
+        test_parser(
+            vec!["(a, b, (c+d)/2 + b/4)", "((a + b/2 + c*(a+b)/d))"],
+            vec!["", "(", "a: int", "(a, b,()"],
+            Parser::parse_expression_list,
+        )
+    }
+
+    #[test]
+    fn parse_function_parameters() {
+        test_parser(
+            vec![
+                "(a: int, b: [bool, 5])",
+                "(a: [[int, 5], 10])",
+                "(a: int, b: bool, c: char, d: [int, 5], e: real)",
+            ],
+            vec!["(1a: int)", "(a: _1", "a: int", "(a int)"],
+            Parser::parse_function_parameters,
+        );
+    }
+
+    #[test]
+    fn parse_function() {
+        test_parser(
+            vec![
+                "int main();",
+                "bool main(){}",
+                "int main(a: int, b : int, c: int);",
+                "[bool, 5] main(){}",
+            ],
+            vec![
+                "int main);",
+                "int ();",
+                "int main(c: int;",
+                "int main(a: int)",
+            ],
+            Parser::parse_function,
+        );
     }
 
     #[test]
     fn complex() {
-        let source = r#"
+        test_parser_valid(
+            vec![
+                r#"
             int main() {
                 let a: int = 5;
                 let b: int = 6;
@@ -873,10 +857,9 @@ mod tests {
             int sum(a: int, b: int) {
                 ret a + b;
             }
-        "#;
-        let tokens = lexer::Lexer::lex(source).expect("lex");
-        let mut parser = parser::Parser::new(tokens);
-        let node = parser.parse();
-        assert!(node.is_ok() && parser.tokens.is_empty(), "{:?}", node);
+        "#,
+            ],
+            Parser::parse,
+        );
     }
 }
