@@ -38,6 +38,237 @@ impl Parser {
         }
     }
 
+    fn parselet_integer_literal(&mut self) -> Option<Result<Expression, ParseErr>> {
+        let token = self.peek();
+        if let Ok(token) = token
+           && let Token::IntegerLiteral(num) = token.token {
+            self.pop().unwrap();
+            return Some(Ok(Expression::IntegerLiteral(num)))
+        }
+        None
+    }
+
+    fn parselet_string_literal(&mut self) -> Option<Result<Expression, ParseErr>> {
+        let token = self.peek();
+        if let Ok(token) = token
+           && let Token::StringLiteral(_) = token.token {
+               let token = self.pop();
+               if let Ok(token) = token
+                  && let Token::StringLiteral(s) = token.token {
+                    return Some(Ok(Expression::StringLiteral(s)))
+               }
+        }
+        None
+    }
+
+    fn parselet_boolean_literal(&mut self) -> Option<Result<Expression, ParseErr>> {
+        let token = self.peek();
+        if let Ok(token) = token {
+            if matches!(
+                token.token,
+                Token::Keyword(Keyword::True) | Token::Keyword(Keyword::False)
+            ) {
+                let token = self.pop().unwrap();
+                return match token.token {
+                    Token::Keyword(Keyword::True) => Some(Ok(Expression::BoolLiteral(true))),
+                    Token::Keyword(Keyword::False) => Some(Ok(Expression::BoolLiteral(false))),
+                    _ => None,
+                };
+            }
+        }
+        None
+    }
+
+    fn parselet_real_literal(&mut self) -> Option<Result<Expression, ParseErr>> {
+        let token = self.peek();
+        if let Ok(token) = token
+           && let Token::RealLiteral(r) = token.token {
+               self.pop().unwrap();
+               return Some(Ok(Expression::RealLiteral(r)))
+        }
+        None
+    }
+
+    fn parselet_identifier(&mut self) -> Option<Result<Expression, ParseErr>> {
+        let token = self.peek();
+        if let Ok(token) = token
+           && let Token::Identifier(_) = token.token {
+               let token = self.pop();
+               if let Ok(token) = token
+                  && let Token::Identifier(r) = token.token {
+                    return Some(Ok(Expression::Identifier(r)))
+               }
+        }
+        None
+    }
+
+    fn parselet_array_literal(&mut self) -> Option<Result<Expression, ParseErr>> {
+        let token = self.peek();
+        if let Ok(token) = token
+           && let Token::Symbol(Symbol::LeftBracket) = token.token {
+                let expr_list = self.parse_generic_delimited(
+                    Token::Symbol(Symbol::LeftBracket),
+                    Token::Symbol(Symbol::RightBracket),
+                    Token::Symbol(Symbol::Comma),
+                    |s| Parser::pratt_parser(s, 0),
+                );
+                let expr_list = expr_list.map(|e| Expression::Array(e));
+                return Some(expr_list);
+        }
+        None
+    }
+
+    fn parselet_negate_operator(&mut self) -> Option<Result<Expression, ParseErr>> {
+        let token = self.peek();
+        if let Ok(token) = token
+           && let Token::Symbol(Symbol::Minus) = token.token {
+                self.pop().unwrap();
+                let expr = self.pratt_parser(UnaryOp::Negate.get_binding_power());
+                let expr = expr.map(|e| Expression::Unary(UnaryOp::Negate, Box::new(e)));
+                return Some(expr);
+        }
+        None
+    }
+
+    fn parselet_not_operator(&mut self) -> Option<Result<Expression, ParseErr>> {
+        let token = self.peek();
+        if let Ok(token) = token
+           && let Token::Symbol(Symbol::Exclam) = token.token {
+                self.pop().unwrap();
+                let expr = self.pratt_parser(UnaryOp::Not.get_binding_power());
+                let expr = expr.map(|e| Expression::Unary(UnaryOp::Not, Box::new(e)));
+                return Some(expr);
+        }
+        None
+    }
+
+    fn parselet_parenthesized_expression(&mut self) -> Option<Result<Expression, ParseErr>> {
+        let token = self.peek();
+        if let Ok(token) = token
+           && let Token::Symbol(Symbol::LeftParen) = token.token {
+                self.pop().unwrap();
+                let expr = self.pratt_parser(0);
+                let expr = expr.and_then(|e|
+                        self.pop_token(
+                            Token::Symbol(Symbol::RightParen),
+                            "Expected closing paren ) in parenthesized expression: (<expr>)"
+                        )
+                        .map(|_| e)
+                );
+                return Some(expr);
+        }
+        None
+    }
+
+    fn parse_initial_expression(&mut self) -> Result<Expression, ParseErr> {
+        let parselets = [
+            Parser::parselet_integer_literal,
+            Parser::parselet_string_literal,
+            Parser::parselet_boolean_literal,
+            Parser::parselet_real_literal,
+            Parser::parselet_identifier,
+            Parser::parselet_parenthesized_expression,
+            Parser::parselet_array_literal,
+            Parser::parselet_negate_operator,
+            Parser::parselet_not_operator,
+        ];
+
+        for parselet in parselets.iter() {
+            if let Some(v) = parselet(self) {
+                return v;
+            }
+        }
+
+        Err(ParseErr {
+            msg: "Expected expression: <expr>",
+            token: None,
+        })
+    }
+
+    fn parselet_infix_function_call(
+        &mut self,
+        _: InfixOperator,
+        term: Expression,
+    ) -> Result<Expression, ParseErr> {
+        let args = self.parse_expression_list();
+        let expr = args.map(|args| Expression::Call(Box::new(term), args));
+        expr
+    }
+
+    fn parselet_infix_binary_operators(
+        &mut self,
+        op: InfixOperator,
+        binary_op: BinaryOp,
+        left: Expression,
+    ) -> Result<Expression, ParseErr> {
+        self.pop().unwrap();
+        let right = self.pratt_parser(op.get_binding_power());
+        let expr =
+            right.map(|right| Expression::Binary(Box::new(left), binary_op, Box::new(right)));
+        expr
+    }
+
+    fn parselet_infix_operators(
+        &mut self,
+        op: InfixOperator,
+        term: Expression,
+    ) -> Result<Expression, ParseErr> {
+        match op {
+            InfixOperator::Binary(binary_op) => {
+                self.parselet_infix_binary_operators(op, binary_op.clone(), term)
+            }
+            InfixOperator::FunctionCall => self.parselet_infix_function_call(op, term),
+        }
+    }
+
+    fn pratt_parser(&mut self, current_binding_power: u32) -> Result<Expression, ParseErr> {
+        let mut term = self.parse_initial_expression()?;
+        loop {
+            if matches!(self.peek(), Err(_)) {
+                break Ok(term);
+            }
+
+            let token = self.peek().unwrap();
+            if let Some(operator) = InfixOperator::get(&token.token) {
+                let binding_power = operator.get_binding_power();
+                if binding_power > current_binding_power {
+                    term = self.parselet_infix_operators(operator, term)?;
+                } else {
+                    break Ok(term);
+                }
+            } else {
+                break Ok(term);
+            }
+        }
+    }
+
+    fn parse_expression(&mut self) -> Result<Expression, ParseErr> {
+        self.pratt_parser(0)
+    }
+
+    fn parse_identifier(&mut self) -> Result<String, ParseErr> {
+        let token = self.pop()?;
+        match token.token {
+            Token::Identifier(name) => Ok(name),
+            _ => Err(ParseErr {
+                msg: "Identifier expected: <identifier>",
+                token: Some(token),
+            }),
+        }
+    }
+
+    fn parse_identifier_type_pair(&mut self) -> Result<IdentifierTypePair, ParseErr> {
+        let name = self.parse_identifier()?;
+
+        self.pop_token(
+            Token::Symbol(Symbol::Colon),
+            "Expected colon after identifier: <identifier> : <type>",
+        )?;
+
+        let typename = self.parse_typename()?;
+        Ok(IdentifierTypePair { name, typename })
+    }
+
     fn parse_generic_delimited<T>(
         &mut self,
         begin: Token,
@@ -79,107 +310,6 @@ impl Parser {
             msg: "Cannot parse multiple items. Ending token not found.",
             token: self.tokens.last().cloned(),
         })
-    }
-
-    fn parse_identifier(&mut self) -> Result<String, ParseErr> {
-        let token = self.pop()?;
-        match token.token {
-            Token::Identifier(name) => Ok(name),
-            _ => Err(ParseErr {
-                msg: "Identifier expected: <identifier>",
-                token: Some(token),
-            }),
-        }
-    }
-
-    fn parse_identifier_type_pair(&mut self) -> Result<IdentifierTypePair, ParseErr> {
-        let name = self.parse_identifier()?;
-
-        self.pop_token(
-            Token::Symbol(Symbol::Colon),
-            "Expected colon after identifier: <identifier> : <type>",
-        )?;
-
-        let typename = self.parse_typename()?;
-        Ok(IdentifierTypePair { name, typename })
-    }
-
-    fn parse_initial_expression(&mut self) -> Result<Expression, ParseErr> {
-        let token = self.pop()?;
-        match token.token {
-            Token::IntegerLiteral(num) => Ok(Expression::IntegerLiteral(num)),
-            Token::StringLiteral(s) => Ok(Expression::StringLiteral(s)),
-            Token::Keyword(Keyword::True) => Ok(Expression::BoolLiteral(true)),
-            Token::Keyword(Keyword::False) => Ok(Expression::BoolLiteral(false)),
-            Token::RealLiteral(r) => Ok(Expression::RealLiteral(r)),
-            Token::Identifier(name) => Ok(Expression::Variable(name)),
-            Token::Symbol(Symbol::Minus) => Ok(Expression::Unary(
-                UnaryOp::Negate,
-                Box::new(self.pratt_parser(UnaryOp::Negate.get_binding_power())?),
-            )),
-            Token::Symbol(Symbol::Exclam) => Ok(Expression::Unary(
-                UnaryOp::Not,
-                Box::new(self.pratt_parser(UnaryOp::Not.get_binding_power())?),
-            )),
-            Token::Symbol(Symbol::LeftParen) => {
-                let expr = self.pratt_parser(0)?;
-                let token = self.pop()?;
-                if token.token == Token::Symbol(Symbol::RightParen) {
-                    Ok(expr)
-                } else {
-                    Err(ParseErr {
-                        msg: "Expected closing paren ) in parenthesized expression: (<expr>)"
-                            .into(),
-                        token: Some(token),
-                    })
-                }
-            }
-            Token::Symbol(Symbol::LeftBracket) => {
-                self.tokens.push(token);
-                Ok(Expression::Array(self.parse_generic_delimited(
-                    Token::Symbol(Symbol::LeftBracket),
-                    Token::Symbol(Symbol::RightBracket),
-                    Token::Symbol(Symbol::Comma),
-                    |s| Parser::pratt_parser(s, 0),
-                )?))
-            }
-            _ => Err(ParseErr {
-                msg: "Expected expression: <expr>",
-                token: Some(token),
-            }),
-        }
-    }
-
-    // An implementation of pratt expression parsing
-    fn pratt_parser(&mut self, current_binding_power: u32) -> Result<Expression, ParseErr> {
-        let mut term = self.parse_initial_expression()?;
-        loop {
-            if let Ok(token) = self.peek().cloned() {
-                if token.token == Token::Symbol(Symbol::LeftParen) {
-                    let args = self.parse_expression_list()?;
-                    break Ok(Expression::Call(Box::new(term), args));
-                }
-
-                if let Some(operator) = BinaryOp::get(&token.token) {
-                    let binding_power = operator.get_binding_power();
-                    if binding_power > current_binding_power {
-                        self.pop()?;
-                        let right_term = self.pratt_parser(binding_power)?;
-                        term = Expression::Binary(Box::new(term), operator, Box::new(right_term));
-                    } else {
-                        break Ok(term);
-                    }
-                } else {
-                    break Ok(term);
-                }
-            } else {
-                break Ok(term);
-            }
-        }
-    }
-
-    fn parse_expression(&mut self) -> Result<Expression, ParseErr> {
-        self.pratt_parser(0)
     }
 
     fn parse_compound_statement(&mut self) -> Result<Statement, ParseErr> {
@@ -568,7 +698,13 @@ mod tests {
             let tokens = lexer::Lexer::lex(source).expect("lex");
             let mut parser = parser::Parser::new(tokens);
             let node = parser.parse_expression();
-            assert!(node.is_ok() && parser.tokens.is_empty(), "{:?}", node);
+            assert!(
+                node.is_ok() && parser.tokens.is_empty(),
+                "{} {:?}",
+                source,
+                node
+            );
+            println!("{:#?}", node.unwrap());
         }
     }
 
