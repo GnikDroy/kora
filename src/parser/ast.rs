@@ -120,7 +120,7 @@ impl TryFrom<Token> for InfixOperator {
     fn try_from(token: Token) -> Result<Self, Self::Error> {
         use BinaryOp::*;
         use InfixOperator::*;
-        #[rustfmt::skip] 
+        #[rustfmt::skip]
         match token {
             Token::Symbol(Symbol::Equal)        => Ok(Binary(Assign)),
             Token::Symbol(Symbol::Plus)         => Ok(Binary(Add)),

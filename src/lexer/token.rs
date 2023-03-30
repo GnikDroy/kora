@@ -17,7 +17,7 @@ pub enum Keyword {
 impl TryFrom<&str> for Keyword {
     type Error = ();
     fn try_from(s: &str) -> Result<Self, Self::Error> {
-        #[rustfmt::skip] 
+        #[rustfmt::skip]
         match s {
             "ret"   => Ok(Keyword::Ret),
             "let"   => Ok(Keyword::Let),
@@ -130,5 +130,5 @@ pub struct LexerContext {
 #[derive(Debug, Clone, PartialEq)]
 pub struct TokenInfo {
     pub token: Token,
-    pub context: LexerContext
+    pub context: LexerContext,
 }
