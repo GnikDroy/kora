@@ -115,28 +115,33 @@ pub enum InfixOperator {
     FunctionCall,
 }
 
-impl InfixOperator {
-    pub fn get(token: &Token) -> Option<InfixOperator> {
+impl TryFrom<Token> for InfixOperator {
+    type Error = ();
+    fn try_from(token: Token) -> Result<Self, Self::Error> {
+        use BinaryOp::*;
         use InfixOperator::*;
+        #[rustfmt::skip] 
         match token {
-            Token::Symbol(Symbol::Equal) => Some(Binary(BinaryOp::Assign)),
-            Token::Symbol(Symbol::Plus) => Some(Binary(BinaryOp::Add)),
-            Token::Symbol(Symbol::Minus) => Some(Binary(BinaryOp::Subtract)),
-            Token::Symbol(Symbol::Star) => Some(Binary(BinaryOp::Multiply)),
-            Token::Symbol(Symbol::Slash) => Some(Binary(BinaryOp::Divide)),
-            Token::Symbol(Symbol::EqualEqual) => Some(Binary(BinaryOp::Equality)),
-            Token::Symbol(Symbol::ExclamEqual) => Some(Binary(BinaryOp::NotEquality)),
-            Token::Symbol(Symbol::Ampersand) => Some(Binary(BinaryOp::And)),
-            Token::Symbol(Symbol::Pipe) => Some(Binary(BinaryOp::Or)),
-            Token::Symbol(Symbol::Greater) => Some(Binary(BinaryOp::Greater)),
-            Token::Symbol(Symbol::GreaterEqual) => Some(Binary(BinaryOp::GreaterEqual)),
-            Token::Symbol(Symbol::Less) => Some(Binary(BinaryOp::Less)),
-            Token::Symbol(Symbol::LessEqual) => Some(Binary(BinaryOp::LessEqual)),
-            Token::Symbol(Symbol::LeftParen) => Some(FunctionCall),
-            _ => None,
+            Token::Symbol(Symbol::Equal)        => Ok(Binary(Assign)),
+            Token::Symbol(Symbol::Plus)         => Ok(Binary(Add)),
+            Token::Symbol(Symbol::Minus)        => Ok(Binary(Subtract)),
+            Token::Symbol(Symbol::Star)         => Ok(Binary(Multiply)),
+            Token::Symbol(Symbol::Slash)        => Ok(Binary(Divide)),
+            Token::Symbol(Symbol::EqualEqual)   => Ok(Binary(Equality)),
+            Token::Symbol(Symbol::ExclamEqual)  => Ok(Binary(NotEquality)),
+            Token::Symbol(Symbol::Ampersand)    => Ok(Binary(And)),
+            Token::Symbol(Symbol::Pipe)         => Ok(Binary(Or)),
+            Token::Symbol(Symbol::Greater)      => Ok(Binary(Greater)),
+            Token::Symbol(Symbol::GreaterEqual) => Ok(Binary(GreaterEqual)),
+            Token::Symbol(Symbol::Less)         => Ok(Binary(Less)),
+            Token::Symbol(Symbol::LessEqual)    => Ok(Binary(LessEqual)),
+            Token::Symbol(Symbol::LeftParen)    => Ok(FunctionCall),
+            _ => Err(()),
         }
     }
+}
 
+impl InfixOperator {
     pub fn get_binding_power_real(&self) -> u32 {
         match self {
             InfixOperator::Binary(op) => match op {

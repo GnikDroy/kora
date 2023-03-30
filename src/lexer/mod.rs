@@ -1,228 +1,219 @@
 mod errors;
 mod token;
 
+use std::iter::Peekable;
+
 pub use errors::*;
 pub use token::*;
 
-pub struct Lexer {}
+#[derive(Default)]
+pub struct Lexer;
 
 impl Lexer {
+    fn consume_whitespace(
+        _: &LexerContext,
+        _: &mut Peekable<impl Iterator<Item = (usize, char)>>,
+        _: char,
+    ) -> Result<Token, LexerErr> {
+        Ok(Token::Whitespace)
+    }
+
+    fn consume_nothing_with_error(
+        context: &LexerContext,
+        _: &mut Peekable<impl Iterator<Item = (usize, char)>>,
+        _: char,
+    ) -> Result<Token, LexerErr> {
+        Err(LexerErr {
+            msg: "Invalid token",
+            context: context.clone(),
+            suggestion: "Did you perhaps forget to enclose it in quotes?".to_string(),
+        })
+    }
+
+    fn consume_single_symbol(
+        _: &LexerContext,
+        _: &mut Peekable<impl Iterator<Item = (usize, char)>>,
+        first: char,
+    ) -> Result<Token, LexerErr> {
+        Ok(Token::Symbol(Symbol::try_from(first).unwrap()))
+    }
+
+    fn consume_double_symbol(
+        _: &LexerContext,
+        line_iter: &mut Peekable<impl Iterator<Item = (usize, char)>>,
+        first: char,
+    ) -> Result<Token, LexerErr> {
+        if let Some((_, next)) = line_iter.peek() {
+            let symbol = Symbol::try_from([first, *next].iter().collect::<String>().as_str());
+            if let Ok(symbol) = symbol {
+                line_iter.next();
+                return Ok(Token::Symbol(symbol));
+            }
+        }
+        Ok(Token::Symbol(Symbol::try_from(first).unwrap()))
+    }
+
+    fn consume_number(
+        line_iter: &mut Peekable<impl Iterator<Item = (usize, char)>>,
+        first: char,
+    ) -> String {
+        let mut literal = String::new();
+        literal.push(first);
+        while let Some((_, c)) = line_iter.peek() {
+            match c {
+                '0'..='9' => {
+                    literal.push(*c);
+                    line_iter.next();
+                }
+                _ => break,
+            }
+        }
+        return literal;
+    }
+
+    fn consume_identifier_and_keyword(
+        _: &LexerContext,
+        line_iter: &mut Peekable<impl Iterator<Item = (usize, char)>>,
+        first: char,
+    ) -> Result<Token, LexerErr> {
+        let mut identifier = String::new();
+        identifier.push(first);
+
+        while let Some((_, c)) = line_iter.peek() {
+            match c {
+                'A'..='Z' | 'a'..='z' | '_' | '0'..='9' => {
+                    identifier.push(*c);
+                    line_iter.next();
+                }
+                _ => {
+                    break;
+                }
+            }
+        }
+
+        match Keyword::try_from(identifier.as_str()) {
+            Ok(v) => Ok(Token::Keyword(v)),
+            _ => Ok(Token::Identifier(identifier)),
+        }
+    }
+
+    fn consume_string_escape_code(
+        context: &LexerContext,
+        line_iter: &mut Peekable<impl Iterator<Item = (usize, char)>>,
+        _: char,
+    ) -> Result<char, LexerErr> {
+        if let Some((_, escape)) = line_iter.peek() {
+            match escape {
+                '\\' | '"' => {
+                    let escape = *escape;
+                    line_iter.next();
+                    Ok(escape)
+                }
+                _ => Err(LexerErr {
+                    msg: "Invalid escape sequence",
+                    context: context.clone(),
+                    suggestion: "Valid sequences are [\\n, \\\\]".to_string(),
+                }),
+            }
+        } else {
+            Err(LexerErr {
+                msg: "Incomplete escape sequence",
+                context: context.clone(),
+                suggestion: "Valid sequences are [\\n, \\\\]".to_string(),
+            })
+        }
+    }
+
+    fn consume_string_literal(
+        context: &LexerContext,
+        line_iter: &mut Peekable<impl Iterator<Item = (usize, char)>>,
+        _: char,
+    ) -> Result<Token, LexerErr> {
+        let mut literal = String::new();
+        while let Some((_, c)) = line_iter.peek() {
+            let c = *c;
+            line_iter.next();
+            match c {
+                '"' => {
+                    return Ok(Token::StringLiteral(literal));
+                }
+                _ => {
+                    let c = if c == '\\' {
+                        Lexer::consume_string_escape_code(context, line_iter, c)?
+                    } else {
+                        c
+                    };
+                    literal.push(c);
+                }
+            }
+        }
+
+        Err(LexerErr {
+            msg: "Incomplete string literal",
+            context: context.clone(),
+            suggestion: "Did you miss a quotation mark '\"'?".to_string(),
+        })
+    }
+
+    fn consume_numeric(
+        context: &LexerContext,
+        line_iter: &mut Peekable<impl Iterator<Item = (usize, char)>>,
+        first: char,
+    ) -> Result<Token, LexerErr> {
+        let mut literal = Lexer::consume_number(line_iter, first);
+
+        match line_iter.peek() {
+            Some((_, '.')) => {
+                line_iter.next();
+                literal += Lexer::consume_number(line_iter, '.').as_str();
+                return literal
+                    .parse::<f64>()
+                    .map(Token::RealLiteral)
+                    .map_err(|_| LexerErr {
+                        msg: "Real number cannot be fit in 64 bits",
+                        context: context.clone(),
+                        suggestion:
+                            "Select a smaller / less precise real number, or a different data type"
+                                .to_string(),
+                    });
+            }
+            _ => {}
+        }
+
+        literal
+            .parse::<isize>()
+            .map(Token::IntegerLiteral)
+            .map_err(|_| LexerErr {
+                msg: "Integer too big to fit in 64 bits",
+                context: context.clone(),
+                suggestion: "Select a smaller value for the integer, or a different data type"
+                    .to_string(),
+            })
+    }
+
     pub fn lex(source: &str) -> Result<Vec<TokenInfo>, LexerErr> {
-        let mut tokens = Vec::new();
-        let lines = source.split(|b| b == '\n');
-        for (col, line) in lines.enumerate() {
+        let mut tokens = vec![];
+
+        for (row, line) in source.lines().enumerate() {
             let mut line_iter = line.chars().enumerate().peekable();
-            while let Some((row, c)) = line_iter.next() {
-                let tok = match c {
-                    '(' | ')' | '[' | ']' | '{' | '}' | ';' | ':' | ',' | '+' | '-' | '*' | '/'
-                    | '|' | '&' => Ok(Token::Symbol(match c {
-                        '(' => Symbol::LeftParen,
-                        ')' => Symbol::RightParen,
-                        '[' => Symbol::LeftBracket,
-                        ']' => Symbol::RightBracket,
-                        '{' => Symbol::LeftBrace,
-                        '}' => Symbol::RightBrace,
-                        ';' => Symbol::Semicolon,
-                        ':' => Symbol::Colon,
-                        ',' => Symbol::Comma,
-                        '+' => Symbol::Plus,
-                        '-' => Symbol::Minus,
-                        '*' => Symbol::Star,
-                        '/' => Symbol::Slash,
-                        '|' => Symbol::Pipe,
-                        '&' => Symbol::Ampersand,
-                        _ => panic!(),
-                    })),
-                    '=' => {
-                        if let Some((_, c1)) = line_iter.peek() && c1 == &'=' {
-                            line_iter.next();
-                            Ok(Token::Symbol(Symbol::EqualEqual))
-                        } else {
-                            Ok(Token::Symbol(Symbol::Equal))
-                        }
-                    }
-                    '!' => {
-                        if let Some((_, c1)) = line_iter.peek() && c1 == &'=' {
-                            line_iter.next();
-                            Ok(Token::Symbol(Symbol::ExclamEqual))
-                        } else {
-                            Ok(Token::Symbol(Symbol::Exclam))
-                        }
-                    }
-                    '>' => {
-                        if let Some((_, c1)) = line_iter.peek() && c1 == &'=' {
-                            line_iter.next();
-                            Ok(Token::Symbol(Symbol::GreaterEqual))
-                        } else {
-                            Ok(Token::Symbol(Symbol::Greater))
-                        }
-                    }
-                    '<' => {
-                        if let Some((_, c1)) = line_iter.peek() && c1 == &'=' {
-                            line_iter.next();
-                            Ok(Token::Symbol(Symbol::LessEqual))
-                        } else {
-                            Ok(Token::Symbol(Symbol::Less))
-                        }
-                    }
-                    '0'..='9' => {
-                        let mut is_real = false;
-                        let mut literal = String::new();
-                        literal.push(c);
-                        while let Some((_, c1)) = line_iter.peek() {
-                            match c1 {
-                                '0'..='9' => {
-                                    literal.push(*c1);
-                                    line_iter.next();
-                                }
-                                '.' => {
-                                    literal.push('.');
-                                    line_iter.next();
-                                    is_real = true;
-                                    while let Some((_, c2)) = line_iter.peek() {
-                                        match c2 {
-                                            '0'..='9' => {
-                                                literal.push(*c2);
-                                                line_iter.next();
-                                            }
-                                            _ => break,
-                                        }
-                                    }
-                                    break;
-                                }
-                                _ => break,
-                            }
-                        }
-
-                        if is_real {
-                            match literal.parse::<f64>() {
-                            Ok(n) => Ok(Token::RealLiteral(n)),
-                            Err(_) => Err(LexerErr{
-                                msg: "Real number cannot be fit in 64 bits",
-                                col: col + 1,
-                                row: row + 1,
-                                line: line.into(),
-                                suggestion: "Select a smaller / less precise real number, or a different data type".to_string(),
-                            })
-                        }
-                        } else {
-                            match literal.parse::<isize>() {
-                            Ok(n) => Ok(Token::IntegerLiteral(n)),
-                            Err(_) => Err(LexerErr {
-                                msg: "Integer too big to fit in 64 bits",
-                                col: col + 1,
-                                row: row + 1,
-                                line: line.into(),
-                                suggestion: "Select a smaller value for the integer, or a different data type".to_string(),
-                            }),
-                        }
-                        }
-                    }
-                    '"' => {
-                        let mut literal = String::new();
-                        let mut error = None;
-                        let mut string_finished = false;
-                        while let Some((_, c1)) = line_iter.peek() {
-                            match c1 {
-                                '"' => {
-                                    line_iter.next();
-                                    string_finished = true;
-                                    break;
-                                }
-                                _ => {
-                                    if *c1 == '\\' {
-                                        line_iter.next();
-                                        if let Some((_, c2)) = line_iter.peek() {
-                                            match c2 {
-                                                '\\' | '"' => {
-                                                    literal.push(*c2);
-                                                    line_iter.next();
-                                                }
-                                                _ => {
-                                                    error = Some(LexerErr {
-                                                        msg: "Invalid escape sequence",
-                                                        col: col + 1,
-                                                        row: row + 1,
-                                                        line: line.to_string(),
-                                                        suggestion:
-                                                            "Valid sequences are [\\n, \\\\]"
-                                                                .to_string(),
-                                                    });
-                                                    break;
-                                                }
-                                            }
-                                        } else {
-                                            error = Some(LexerErr {
-                                                msg: "Incomplete escape sequence",
-                                                col: col + 1,
-                                                row: row + 1,
-                                                line: line.to_string(),
-                                                suggestion: "Valid sequences are [\\n, \\\\]"
-                                                    .to_string(),
-                                            });
-                                            break;
-                                        }
-                                    } else {
-                                        literal.push(*c1);
-                                        line_iter.next();
-                                    }
-                                }
-                            }
-                        }
-
-                        if !string_finished {
-                            error = Some(LexerErr {
-                                msg: "Incomplete string literal",
-                                col: col + 1,
-                                row: row + 1,
-                                line: line.to_string(),
-                                suggestion: "Did you miss a quotation mark '\"'?".to_string(),
-                            });
-                        }
-
-                        match error {
-                            None => Ok(Token::StringLiteral(literal)),
-                            _ => Err(error.unwrap())
-                        }
-                    }
-                    'A'..='Z' | 'a'..='z' | '_' => {
-                        let mut identifier = String::new();
-                        identifier.push(c);
-
-                        while let Some((_, c1)) = line_iter.peek() {
-                            match c1 {
-                                'A'..='Z' | 'a'..='z' | '_' | '0'..='9' => {
-                                    identifier.push(*c1);
-                                    line_iter.next();
-                                }
-                                _ => {
-                                    break;
-                                }
-                            }
-                        }
-
-                        match Keyword::map(identifier.as_str()) {
-                            Some(k) => Ok(Token::Keyword(k)),
-                            _ => Ok(Token::Identifier(identifier)),
-                        }
-                    }
-                    ' ' | '\t' | '\n' | '\r' => Ok(Token::Whitespace),
-                    _ => Err(LexerErr {
-                        msg: "Invalid token",
-                        col: col + 1,
-                        row: row + 1,
-                        line: line.to_string(),
-                        suggestion: "Did you perhaps forget to enclose it in quotes?".to_string(),
-                    }),
+            while let Some((col, c)) = line_iter.next() {
+                let consumer = match c {
+                    ' ' | '\t' | '\n' | '\r' => Lexer::consume_whitespace,
+                    '0'..='9' => Lexer::consume_numeric,
+                    '"' => Lexer::consume_string_literal,
+                    '=' | '!' | '>' | '<' => Lexer::consume_double_symbol,
+                    'A'..='Z' | 'a'..='z' | '_' => Lexer::consume_identifier_and_keyword,
+                    c if Symbol::try_from(c).is_ok() => Lexer::consume_single_symbol,
+                    _ => Lexer::consume_nothing_with_error,
+                };
+                let context = LexerContext {
+                    col: col + 1,
+                    row: row + 1,
                 };
 
-                let tok = tok?;
-                if tok != Token::Whitespace {
-                    tokens.push(TokenInfo {
-                        token: tok,
-                        col: col + 1,
-                        row: row + 1,
-                    });
+                let token = consumer(&context, &mut line_iter, c)?;
+                if token != Token::Whitespace {
+                    tokens.push(TokenInfo { token, context });
                 }
             }
         }
@@ -233,54 +224,32 @@ impl Lexer {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn invalid() {
-        let sources = vec![
-            r#"
-                bool main() {
-                    ret "incomplete string literal
-                }
-            "#,
-            r#"
-                bool ident_23() {
-                    ret "wrong escape sequence \a";
-                }
-            "#,
-            r#"
-                int ident_23() {
-                    ret "incomplete escape sequence \
-                }
-            "#,
-            "very_long_int_literal = 9293849128374982734",
-            "?",
-        ];
-        for source in sources {
-            let result = super::Lexer::lex(source);
-            assert!(result.is_err(), "{:?}", result);
-        }
+    fn valid() {
+        let source = concat!(
+            "ret let if else while nil int real char bool true false",
+            " ( ) { } [ ] ; : , + - / = > < ! | &",
+            " == >= <= !=",
+            " 42 3.1415",
+            " \"strings\"",
+            " identifiers _id_2000",
+        );
+        let result = super::Lexer::lex(source);
+        assert!(result.is_ok() && source.split(' ').count() == result.unwrap().len());
     }
 
     #[test]
-    fn valid() {
-        let sources = vec![
-            "1",
-            "1981723.234424",
-            "identz",
-            "
-                int main() {
-                    ret 2+4;
-                }
-            ",
-            r#"
-                int ident_23(a: int) {
-                    let a_2 = "Hello, ";
-                    let _b2 = "World";
-                    ret a+b;
-                }
-            "#,
+    fn invalid() {
+        let sources = [
+            "?",
+            r#""incomplete"#,
+            r#""wrong escape sequence \a""#,
+            r#""incomplete escape sequence \ "#,
+            "99999999999999999999999",
         ];
+
         for source in sources {
             let result = super::Lexer::lex(source);
-            assert!(result.is_ok(), "{:?}", result);
+            assert!(result.is_err(), "{:?}", result);
         }
     }
 }

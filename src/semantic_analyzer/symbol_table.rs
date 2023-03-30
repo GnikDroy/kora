@@ -59,7 +59,7 @@ impl ASTVisitor for SymbolTable {
         self.add_symbol(pair.name.clone(), pair.typename.clone());
     }
 
-    fn visit_compound_statement(&mut self, stmts: &Vec<Statement>) {
+    fn visit_compound_statement(&mut self, stmts: &[Statement]) {
         self.push_scope();
         walk_compound_statement(self, stmts);
     }

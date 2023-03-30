@@ -79,7 +79,6 @@ mod tests {
         let tokens = lexer::Lexer::lex(source).expect("lex");
         let mut parser = parser::Parser::new(tokens);
         let module = parser.parse().expect("parse");
-
         let mut symbol_table = SymbolTable::new();
         symbol_table.visit_module(&module);
 
@@ -128,7 +127,6 @@ mod tests {
         let tokens = lexer::Lexer::lex(source).expect("lex");
         let mut parser = parser::Parser::new(tokens);
         let module = parser.parse().expect("parse");
-
         let mut symbol_table = SymbolTable::new();
         symbol_table.visit_module(&module);
 

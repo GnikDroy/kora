@@ -228,7 +228,7 @@ impl Parser {
         loop {
             if !matches!(self.peek(), Err(_)) {
                 let token = self.peek().unwrap();
-                if let Some(operator) = InfixOperator::get(&token.token) {
+                if let Ok(operator) = InfixOperator::try_from(token.token.clone()) {
                     let binding_power = operator.get_binding_power();
                     if binding_power > current_binding_power {
                         term = self.parselet_infix_operators(operator, term)?;
@@ -568,9 +568,9 @@ mod tests {
             let node = f(&mut parser);
             assert!(
                 node.is_ok() && parser.tokens.is_empty(),
-                "source_text: {}, fully_parsed: {}, parsed_element: {:#?}",
+                "source_text: {}, remaining_tokens: {:?}, parsed_element: {:#?}",
                 source,
-                parser.tokens.is_empty(),
+                parser.tokens,
                 node
             );
         }
