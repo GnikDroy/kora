@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use super::symbol_table::*;
 use crate::parser::*;
 
@@ -5,7 +7,7 @@ use crate::parser::*;
 pub struct UnidentifiedIdentifierChecker {
     global_symbols: SymbolTable,
     current_symbols: SymbolTable,
-    unidentified_identifiers: Vec<String>,
+    unidentified_identifiers: HashSet<String>,
 }
 
 impl UnidentifiedIdentifierChecker {
@@ -17,7 +19,7 @@ impl UnidentifiedIdentifierChecker {
         }
     }
 
-    pub fn get_unidentified_identifiers(&self) -> &Vec<String> {
+    pub fn get_unidentified_identifiers(&self) -> &HashSet<String> {
         &self.unidentified_identifiers
     }
 }
@@ -25,7 +27,7 @@ impl UnidentifiedIdentifierChecker {
 impl ASTVisitor for UnidentifiedIdentifierChecker {
     fn visit_identifier(&mut self, name: &String) {
         if self.current_symbols.resolve(name).is_none() {
-            self.unidentified_identifiers.push(name.clone());
+            self.unidentified_identifiers.insert(name.clone());
         }
     }
 
