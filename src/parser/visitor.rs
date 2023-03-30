@@ -21,7 +21,7 @@ pub trait ASTVisitor: Sized {
         walk_identifier_type_pair(self, pair);
     }
 
-    fn visit_array(&mut self, exprs: &Vec<Expression>) {
+    fn visit_array(&mut self, exprs: &[Expression]) {
         walk_array(self, exprs);
     }
 
@@ -33,7 +33,7 @@ pub trait ASTVisitor: Sized {
         walk_unary_expression(self, op, expr);
     }
 
-    fn visit_call_expression(&mut self, expr: &Expression, exprs: &Vec<Expression>) {
+    fn visit_call_expression(&mut self, expr: &Expression, exprs: &[Expression]) {
         walk_call_expression(self, expr, exprs);
     }
 
@@ -49,7 +49,7 @@ pub trait ASTVisitor: Sized {
         walk_return_statement(self, expr);
     }
 
-    fn visit_compound_statement(&mut self, stmts: &Vec<Statement>) {
+    fn visit_compound_statement(&mut self, stmts: &[Statement]) {
         walk_compound_statement(self, stmts);
     }
 
@@ -88,7 +88,7 @@ pub fn walk_identifier_type_pair<V: ASTVisitor>(visitor: &mut V, pair: &Identifi
     visitor.visit_typename(&pair.typename);
 }
 
-pub fn walk_array<V: ASTVisitor>(visitor: &mut V, exprs: &Vec<Expression>) {
+pub fn walk_array<V: ASTVisitor>(visitor: &mut V, exprs: &[Expression]) {
     for e in exprs.iter() {
         visitor.visit_expression(e);
     }
@@ -97,7 +97,7 @@ pub fn walk_array<V: ASTVisitor>(visitor: &mut V, exprs: &Vec<Expression>) {
 pub fn walk_call_expression<V: ASTVisitor>(
     visitor: &mut V,
     expr: &Expression,
-    exprs: &Vec<Expression>,
+    exprs: &[Expression],
 ) {
     visitor.visit_expression(expr);
     for expr in exprs.iter() {
@@ -155,7 +155,7 @@ pub fn walk_simple_statement<V: ASTVisitor>(visitor: &mut V, expr: &Expression) 
     visitor.visit_expression(expr);
 }
 
-pub fn walk_compound_statement<V: ASTVisitor>(visitor: &mut V, stmts: &Vec<Statement>) {
+pub fn walk_compound_statement<V: ASTVisitor>(visitor: &mut V, stmts: &[Statement]) {
     visitor.visit_enter_scope();
     for s in stmts.iter() {
         visitor.visit_statement(s);

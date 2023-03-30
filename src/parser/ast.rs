@@ -18,7 +18,7 @@ impl Function {
         let args = self
             .arguments
             .iter()
-            .map(|IdentifierTypePair { name, typename }| typename.clone())
+            .map(|IdentifierTypePair { name: _, typename }| typename.clone())
             .collect();
         Type::Function(Box::new(self.return_type.clone()), args)
     }
