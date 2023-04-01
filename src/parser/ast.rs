@@ -1,8 +1,16 @@
 use crate::lexer::{Symbol, Token};
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Module {
     pub functions: Vec<Function>,
+    pub extern_functions: Vec<ExternFunction>,
+}
+
+#[derive(Debug)]
+pub struct ExternFunction {
+    pub return_type: Type,
+    pub name: String,
+    pub arguments: Vec<IdentifierTypePair>,
 }
 
 #[derive(Debug)]
@@ -13,15 +21,24 @@ pub struct Function {
     pub statement: Statement,
 }
 
+impl ExternFunction {
+    pub fn get_type(&self) -> Type {
+        get_type(&self.return_type, &self.arguments)
+    }
+}
+
 impl Function {
     pub fn get_type(&self) -> Type {
-        let args = self
-            .arguments
-            .iter()
-            .map(|IdentifierTypePair { name: _, typename }| typename.clone())
-            .collect();
-        Type::Function(Box::new(self.return_type.clone()), args)
+        get_type(&self.return_type, &self.arguments)
     }
+}
+
+fn get_type(return_type: &Type, args: &Vec<IdentifierTypePair>) -> Type {
+    let args = args
+        .iter()
+        .map(|IdentifierTypePair { name: _, typename }| typename.clone())
+        .collect();
+    Type::Function(Box::new(return_type.clone()), args)
 }
 
 #[derive(Debug)]

@@ -55,6 +55,8 @@ mod tests {
     #[test]
     fn valid() {
         let source = r#"
+            extern nil print(b: [char, 1], a: int);
+
             int main() {
                 let a: int = 5;
                 let b: int = 6;
@@ -65,14 +67,7 @@ mod tests {
                 print("Oh no!", 5);
                 ret a;
             }
-            
-            nil print(b: [char, 1], a: int) {
-                while (a) {
-                    print(b);
-                    a = a - 1;
-                }
-            }
-            
+
             int sum(a: int, b: int) {
                 ret a + b;
             }
@@ -99,6 +94,8 @@ mod tests {
     #[test]
     fn invalid() {
         let source = r#"
+            extern nil print(b: [char, 1], a: int);
+
             int main() {
                 let a: int = 5;
                 let b: int = 6;
@@ -108,18 +105,11 @@ mod tests {
                     unident_3;
                     print("Hello World", 5);
                 }
+                unident_4;
                 print("Oh no!", 5);
                 ret a;
             }
-            
-            nil print(b: [char, 1], a: int) {
-                while (a) {
-                    print(b);
-                    unident_4;
-                    a = a - 1;
-                }
-            }
-            
+
             int sum(a: int, b: int) {
                 unident_5;
                 ret a + b;

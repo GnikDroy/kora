@@ -78,6 +78,10 @@ pub trait ASTVisitor: Sized {
         walk_function(self, func);
     }
 
+    fn visit_extern_function(&mut self, func: &ExternFunction) {
+        walk_extern_function(self, func);
+    }
+
     fn visit_module(&mut self, module: &Module) {
         walk_module(self, module);
     }
@@ -229,8 +233,22 @@ pub fn walk_function<V: ASTVisitor>(visitor: &mut V, func: &Function) {
     visitor.visit_exit_scope();
 }
 
+pub fn walk_extern_function<V: ASTVisitor>(visitor: &mut V, func: &ExternFunction) {
+    visitor.visit_enter_scope();
+    visitor.visit_typename(&func.return_type);
+    visitor.visit_identifier(&func.name);
+    for arg in func.arguments.iter() {
+        visitor.visit_identifier_type_pair(arg);
+    }
+    visitor.visit_exit_scope();
+}
+
 pub fn walk_module<V: ASTVisitor>(visitor: &mut V, module: &Module) {
     visitor.visit_enter_scope();
+    for func in module.extern_functions.iter() {
+        visitor.visit_extern_function(func);
+    }
+
     for func in module.functions.iter() {
         visitor.visit_function(func);
     }

@@ -12,6 +12,7 @@ pub enum Keyword {
     Bool,
     True,
     False,
+    Extern,
 }
 
 impl TryFrom<&str> for Keyword {
@@ -19,18 +20,19 @@ impl TryFrom<&str> for Keyword {
     fn try_from(s: &str) -> Result<Self, Self::Error> {
         #[rustfmt::skip]
         match s {
-            "ret"   => Ok(Keyword::Ret),
-            "let"   => Ok(Keyword::Let),
-            "if"    => Ok(Keyword::If),
-            "else"  => Ok(Keyword::Else),
-            "while" => Ok(Keyword::While),
-            "nil"   => Ok(Keyword::Nil),
-            "int"   => Ok(Keyword::Int),
-            "real"  => Ok(Keyword::Real),
-            "char"  => Ok(Keyword::Char),
-            "bool"  => Ok(Keyword::Bool),
-            "true"  => Ok(Keyword::True),
-            "false" => Ok(Keyword::False),
+            "ret"    => Ok(Keyword::Ret),
+            "let"    => Ok(Keyword::Let),
+            "if"     => Ok(Keyword::If),
+            "else"   => Ok(Keyword::Else),
+            "while"  => Ok(Keyword::While),
+            "nil"    => Ok(Keyword::Nil),
+            "int"    => Ok(Keyword::Int),
+            "real"   => Ok(Keyword::Real),
+            "char"   => Ok(Keyword::Char),
+            "bool"   => Ok(Keyword::Bool),
+            "true"   => Ok(Keyword::True),
+            "false"  => Ok(Keyword::False),
+            "extern" => Ok(Keyword::Extern),
             _ => Err(()),
         }
     }

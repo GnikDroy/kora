@@ -64,6 +64,14 @@ impl ASTVisitor for SymbolTable {
         walk_compound_statement(self, stmts);
     }
 
+    fn visit_extern_function(&mut self, func: &ExternFunction) {
+        self.push_scope();
+        for pair in func.arguments.iter() {
+            self.add_symbol(pair.name.clone(), pair.typename.clone());
+        }
+        walk_extern_function(self, func);
+    }
+
     fn visit_function(&mut self, func: &Function) {
         self.push_scope();
         for pair in func.arguments.iter() {
@@ -74,6 +82,9 @@ impl ASTVisitor for SymbolTable {
 
     fn visit_module(&mut self, module: &Module) {
         self.push_scope();
+        for func in module.extern_functions.iter() {
+            self.add_symbol(func.name.clone(), func.get_type());
+        }
         for func in module.functions.iter() {
             self.add_symbol(func.name.clone(), func.get_type());
         }

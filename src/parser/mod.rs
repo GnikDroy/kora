@@ -530,6 +530,28 @@ impl Parser {
         )
     }
 
+    fn parse_extern_function(&mut self) -> Result<ExternFunction, ParseErr> {
+        self.pop_token(
+            Token::Keyword(Keyword::Extern),
+            "Expected function declaration",
+        )?;
+
+        let return_type = self.parse_typename()?;
+        let name = self.parse_identifier()?;
+        let arguments = self.parse_function_parameters()?;
+
+        self.pop_token(
+            Token::Symbol(Symbol::Semicolon),
+            "Expected semicolon ; to end extern function declaration",
+        )?;
+
+        Ok(ExternFunction {
+            return_type,
+            name,
+            arguments,
+        })
+    }
+
     fn parse_function(&mut self) -> Result<Function, ParseErr> {
         Ok(Function {
             return_type: self.parse_typename()?,
@@ -540,9 +562,15 @@ impl Parser {
     }
 
     fn parse_module(&mut self) -> Result<Module, ParseErr> {
-        let mut module = Module { functions: vec![] };
+        let mut module = Module {
+            ..Default::default()
+        };
         while !self.tokens.is_empty() {
-            module.functions.push(self.parse_function()?);
+            if self.peek()?.token == Token::Keyword(Keyword::Extern) {
+                module.extern_functions.push(self.parse_extern_function()?);
+            } else {
+                module.functions.push(self.parse_function()?);
+            }
         }
         Ok(module)
     }
@@ -605,7 +633,7 @@ mod tests {
     #[test]
     fn parse_module() {
         test_parser(
-            &["", "int main();", "int a(); int b(); int c();"],
+            &["", "int main();", "extern int a(); int b(); int c();"],
             &["i", "int main()", "int a(); int b(); int ();"],
             Parser::parse_module,
         );
@@ -806,6 +834,24 @@ mod tests {
             ],
             &["(1a: int)", "(a: _1", "a: int", "(a int)"],
             Parser::parse_function_parameters,
+        );
+    }
+
+    fn parse_extern_function() {
+        test_parser(
+            &[
+                "extern int main();",
+                "extern bool main();",
+                "extern int main(a: int, b : int, c: int);",
+                "extern [bool, 5] main();",
+            ],
+            &[
+                "extern int main(){}",
+                "extern int ();",
+                "extern int main(c: int;",
+                "extern int main(a: int)",
+            ],
+            Parser::parse_extern_function,
         );
     }
 
