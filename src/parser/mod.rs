@@ -224,12 +224,23 @@ impl Parser {
         right.map(|right| Expression::Binary(Box::new(left), binary_op, Box::new(right)))
     }
 
+    fn parselet_infix_cast_operator(
+        &mut self,
+        _: InfixOperator,
+        left: Expression,
+    ) -> Result<Expression, ParseErr> {
+        self.pop().unwrap();
+        self.parse_typename()
+            .map(|t| Expression::Cast(Box::new(left), t))
+    }
+
     fn parselet_infix_operators(
         &mut self,
         op: InfixOperator,
         term: Expression,
     ) -> Result<Expression, ParseErr> {
         match op {
+            InfixOperator::Binary(BinaryOp::Cast) => self.parselet_infix_cast_operator(op, term),
             InfixOperator::Binary(binary_op) => {
                 self.parselet_infix_binary_operators(op, binary_op, term)
             }
@@ -706,7 +717,7 @@ mod tests {
         test_parser(
             &[
                 "1-2-3",
-                "1.234",
+                "(1.234 as real) as int",
                 r#"'a'+"abc"+'a'"#,
                 "[1,2,3]",
                 "true == false & false | true",

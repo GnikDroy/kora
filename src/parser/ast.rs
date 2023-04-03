@@ -1,4 +1,4 @@
-use crate::lexer::{Symbol, Token};
+use crate::lexer::{Keyword, Symbol, Token};
 
 #[derive(Debug, Default)]
 pub struct Module {
@@ -82,6 +82,7 @@ pub enum Expression {
     Binary(Box<Expression>, BinaryOp, Box<Expression>),
     Unary(UnaryOp, Box<Expression>),
     Call(Box<Expression>, Vec<Expression>),
+    Cast(Box<Expression>, Type),
 }
 
 #[derive(Debug)]
@@ -104,6 +105,7 @@ pub enum BinaryOp {
     Less,
     GreaterEqual,
     LessEqual,
+    Cast,
 }
 
 impl BinaryOp {}
@@ -153,6 +155,7 @@ impl TryFrom<Token> for InfixOperator {
             Token::Symbol(Symbol::GreaterEqual) => Ok(Binary(GreaterEqual)),
             Token::Symbol(Symbol::Less)         => Ok(Binary(Less)),
             Token::Symbol(Symbol::LessEqual)    => Ok(Binary(LessEqual)),
+            Token::Keyword(Keyword::As)         => Ok(Binary(Cast)),
             Token::Symbol(Symbol::LeftParen)    => Ok(FunctionCall),
             _ => Err(()),
         }
@@ -173,6 +176,7 @@ impl InfixOperator {
                 | BinaryOp::LessEqual => 10,
                 BinaryOp::Add | BinaryOp::Subtract => 12,
                 BinaryOp::Multiply | BinaryOp::Divide => 14,
+                BinaryOp::Cast => 16,
             },
             InfixOperator::FunctionCall => 202,
         }
@@ -181,7 +185,8 @@ impl InfixOperator {
     pub fn is_left_associative(&self) -> bool {
         match self {
             InfixOperator::Binary(op) => match op {
-                BinaryOp::Add
+                BinaryOp::Cast
+                | BinaryOp::Add
                 | BinaryOp::Subtract
                 | BinaryOp::Multiply
                 | BinaryOp::Divide

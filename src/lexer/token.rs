@@ -13,6 +13,7 @@ pub enum Keyword {
     True,
     False,
     Extern,
+    As,
 }
 
 impl TryFrom<&str> for Keyword {
@@ -33,6 +34,7 @@ impl TryFrom<&str> for Keyword {
             "true"   => Ok(Keyword::True),
             "false"  => Ok(Keyword::False),
             "extern" => Ok(Keyword::Extern),
+            "as"     => Ok(Keyword::As),
             _ => Err(()),
         }
     }

@@ -97,7 +97,7 @@ mod tests {
             extern nil print(b: [char, 1], a: int);
 
             int main() {
-                let a: int = 5;
+                let a: int = 5 as int;
                 let b: int = 6;
                 let c: real = 6.2345 + unident_1;
                 unident_2;

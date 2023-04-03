@@ -291,11 +291,11 @@ mod tests {
     #[test]
     fn valid() {
         let source = concat!(
-            "ret let if else while nil int real char bool true false",
+            "ret let if else while nil int real char bool true false extern as",
             " ( ) { } [ ] ; : , + - / = > < ! | &",
             " == >= <= !=",
             " 42 3.1415",
-            " \"strings\"",
+            " \"字\"",
             " 'a' '\\'' '\\\\'",
             " identifiers _id_2000",
         );

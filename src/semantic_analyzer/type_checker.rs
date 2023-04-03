@@ -18,11 +18,11 @@ impl TypeChecker {
         }
     }
 
-    fn get_type_errors(&self) -> &Vec<TypeErr> {
+    fn get_type_errors(&self) -> &[TypeErr] {
         &self.errors
     }
 
-    pub fn get_array_type(&self, exprs: &[Expression]) -> Result<Type, TypeErr> {
+    fn get_array_type(&self, exprs: &[Expression]) -> Result<Type, TypeErr> {
         let types = exprs
             .iter()
             .map(|e| self.get_expression_type(e))
@@ -43,7 +43,7 @@ impl TypeChecker {
         }
     }
 
-    pub fn get_binary_expression_type(
+    fn get_binary_expression_type(
         &self,
         left: &Expression,
         op: &BinaryOp,
@@ -100,11 +100,7 @@ impl TypeChecker {
         }
     }
 
-    pub fn get_unary_expression_type(
-        &self,
-        op: &UnaryOp,
-        expr: &Expression,
-    ) -> Result<Type, TypeErr> {
+    fn get_unary_expression_type(&self, op: &UnaryOp, expr: &Expression) -> Result<Type, TypeErr> {
         use Type::*;
         use UnaryOp::*;
 
@@ -122,7 +118,7 @@ impl TypeChecker {
         }
     }
 
-    pub fn get_call_expression_type(
+    fn get_call_expression_type(
         &self,
         f: &Expression,
         args: &Vec<Expression>,
@@ -150,7 +146,37 @@ impl TypeChecker {
         }
     }
 
-    pub fn get_expression_type(&self, expr: &Expression) -> Result<Type, TypeErr> {
+    fn is_cast_possible(from: &Type, to: &Type) -> bool {
+        use Type::*;
+        #[rustfmt::skip]
+        match (from, to) {
+            (Int, Real)
+            | (Int, Char)
+            | (Real, Int)
+            | (Real, Char)
+            | (Char, Int)
+            | (Char, Real)
+            => true,
+            _ => false
+        }
+    }
+
+    fn get_cast_expression_type(
+        &self,
+        expr: &Expression,
+        typename: &Type,
+    ) -> Result<Type, TypeErr> {
+        let expr_type = self.get_expression_type(expr)?;
+        if TypeChecker::is_cast_possible(&expr_type, typename) {
+            Ok(typename.clone())
+        } else {
+            return Err(TypeErr {
+                msg: "Cannot cast to type",
+            });
+        }
+    }
+
+    fn get_expression_type(&self, expr: &Expression) -> Result<Type, TypeErr> {
         use Expression::*;
         match expr {
             IntegerLiteral(_) => Ok(Type::Int),
@@ -163,9 +189,10 @@ impl TypeChecker {
             Binary(left, op, right) => self.get_binary_expression_type(left, op, right),
             Unary(op, term) => self.get_unary_expression_type(op, term),
             Call(f, args) => self.get_call_expression_type(f, args),
+            Cast(expr, typename) => self.get_cast_expression_type(expr, typename),
         }
     }
-    pub fn ensure_type(&mut self, expr: &Expression, expected: &Type) {
+    fn ensure_type(&mut self, expr: &Expression, expected: &Type) {
         let expr_type = self.get_expression_type(expr);
         match expr_type {
             Ok(typename) if typename == *expected => {}
