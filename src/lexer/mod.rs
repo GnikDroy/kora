@@ -292,7 +292,7 @@ mod tests {
     fn valid() {
         let source = concat!(
             "ret let if else while nil int real char bool true false extern as",
-            " ( ) { } [ ] ; : , + - / = > < ! | &",
+            " ( ) { } [ ] ; : , + - / % = > < ! | &",
             " == >= <= !=",
             " 42 3.1415",
             " \"字\"",

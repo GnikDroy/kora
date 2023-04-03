@@ -97,6 +97,7 @@ pub enum BinaryOp {
     Subtract,
     Multiply,
     Divide,
+    Modulo,
     Equality,
     NotEquality,
     And,
@@ -147,6 +148,7 @@ impl TryFrom<Token> for InfixOperator {
             Token::Symbol(Symbol::Minus)        => Ok(Binary(Subtract)),
             Token::Symbol(Symbol::Star)         => Ok(Binary(Multiply)),
             Token::Symbol(Symbol::Slash)        => Ok(Binary(Divide)),
+            Token::Symbol(Symbol::Percent)      => Ok(Binary(Modulo)),
             Token::Symbol(Symbol::EqualEqual)   => Ok(Binary(Equality)),
             Token::Symbol(Symbol::ExclamEqual)  => Ok(Binary(NotEquality)),
             Token::Symbol(Symbol::Ampersand)    => Ok(Binary(And)),
@@ -175,7 +177,7 @@ impl InfixOperator {
                 | BinaryOp::GreaterEqual
                 | BinaryOp::LessEqual => 10,
                 BinaryOp::Add | BinaryOp::Subtract => 12,
-                BinaryOp::Multiply | BinaryOp::Divide => 14,
+                BinaryOp::Multiply | BinaryOp::Divide | BinaryOp::Modulo => 14,
                 BinaryOp::Cast => 16,
             },
             InfixOperator::FunctionCall => 202,
@@ -190,6 +192,7 @@ impl InfixOperator {
                 | BinaryOp::Subtract
                 | BinaryOp::Multiply
                 | BinaryOp::Divide
+                | BinaryOp::Modulo
                 | BinaryOp::Equality
                 | BinaryOp::NotEquality
                 | BinaryOp::Greater

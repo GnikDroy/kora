@@ -716,7 +716,7 @@ mod tests {
     fn parse_expression() {
         test_parser(
             &[
-                "1-2-3",
+                "1-2-3%3",
                 "(1.234 as real) as int",
                 r#"'a'+"abc"+'a'"#,
                 "[1,2,3]",
