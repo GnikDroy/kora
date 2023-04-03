@@ -155,6 +155,7 @@ impl TypeChecker {
         match expr {
             IntegerLiteral(_) => Ok(Type::Int),
             RealLiteral(_) => Ok(Type::Real),
+            CharLiteral(_) => Ok(Type::Char),
             StringLiteral(s) => Ok(Type::Array(Box::new(Type::Char), s.len() as isize)),
             BoolLiteral(_) => Ok(Type::Bool),
             Array(exprs) => self.get_array_type(exprs),
@@ -247,6 +248,7 @@ mod tests {
                 let a: int = 5;
                 let b: int = 6;
                 let c: real = 6.2345;
+                let d: char = 'a';
                 if (a - b == 1) {
                     print(a, b);
                 }

@@ -118,6 +118,7 @@ pub enum Token {
     Symbol(Symbol),
     Identifier(String),
     StringLiteral(String),
+    CharLiteral(u8),
     IntegerLiteral(isize),
     RealLiteral(f64),
     Whitespace,

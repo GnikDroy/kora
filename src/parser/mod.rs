@@ -54,6 +54,19 @@ impl Parser {
         None
     }
 
+    fn parselet_char_literal(&mut self) -> Option<Result<Expression, ParseErr>> {
+        let token = self.peek();
+        if let Ok(token) = token
+           && let Token::CharLiteral(_) = token.token {
+               let token = self.pop();
+               if let Ok(token) = token
+                  && let Token::CharLiteral(c) = token.token {
+                    return Some(Ok(Expression::CharLiteral(c)))
+               }
+        }
+        None
+    }
+
     fn parselet_string_literal(&mut self) -> Option<Result<Expression, ParseErr>> {
         let token = self.peek();
         if let Ok(token) = token
@@ -169,6 +182,7 @@ impl Parser {
     fn parse_initial_expression(&mut self) -> Result<Expression, ParseErr> {
         let parselets = [
             Parser::parselet_integer_literal,
+            Parser::parselet_char_literal,
             Parser::parselet_string_literal,
             Parser::parselet_boolean_literal,
             Parser::parselet_real_literal,
@@ -693,6 +707,7 @@ mod tests {
             &[
                 "1-2-3",
                 "1.234",
+                r#"'a'+"abc"+'a'"#,
                 "[1,2,3]",
                 "true == false & false | true",
                 "a=b - a != b + a | b + c & d",

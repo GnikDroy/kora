@@ -11,6 +11,8 @@ pub trait ASTVisitor: Sized {
 
     fn visit_boolean_literal(&mut self, _: &bool) {}
 
+    fn visit_char_literal(&mut self, _: &u8) {}
+
     fn visit_string_literal(&mut self, _: &String) {}
 
     fn visit_identifier(&mut self, _: &String) {}
@@ -130,6 +132,9 @@ pub fn walk_expression<V: ASTVisitor>(visitor: &mut V, expr: &Expression) {
         }
         Expression::BoolLiteral(b) => {
             visitor.visit_boolean_literal(b);
+        }
+        Expression::CharLiteral(c) => {
+            visitor.visit_char_literal(c);
         }
         Expression::StringLiteral(s) => {
             visitor.visit_string_literal(s);

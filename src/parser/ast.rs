@@ -73,6 +73,7 @@ pub enum Statement {
 #[derive(Debug)]
 pub enum Expression {
     IntegerLiteral(isize),
+    CharLiteral(u8),
     StringLiteral(String),
     BoolLiteral(bool),
     RealLiteral(f64),

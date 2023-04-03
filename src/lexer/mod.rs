@@ -97,6 +97,70 @@ impl Lexer {
         }
     }
 
+    fn consume_char_escape_code(
+        context: &LexerContext,
+        line_iter: &mut Peekable<impl Iterator<Item = (usize, char)>>,
+        _: char,
+    ) -> Result<u8, LexerErr> {
+        if let Some((_, escape)) = line_iter.peek() {
+            match escape {
+                '\\' | '\'' => {
+                    let escape = *escape;
+                    line_iter.next();
+                    Ok(*escape.to_string().as_bytes().first().unwrap())
+                }
+                _ => Err(LexerErr {
+                    msg: "Invalid escape sequence",
+                    context: context.clone(),
+                    suggestion: "Valid sequences are [\\', \\\\]".to_string(),
+                }),
+            }
+        } else {
+            Err(LexerErr {
+                msg: "Incomplete escape sequence",
+                context: context.clone(),
+                suggestion: "Valid sequences are [\\', \\\\]".to_string(),
+            })
+        }
+    }
+
+    fn consume_char_literal(
+        context: &LexerContext,
+        line_iter: &mut Peekable<impl Iterator<Item = (usize, char)>>,
+        _: char,
+    ) -> Result<Token, LexerErr> {
+        if let Some((_, c)) = line_iter.next() && c != '\'' {
+            let byte = match c {
+                _ if c.len_utf8() != 1 => {
+                    return Err(LexerErr {
+                        msg: "Char literals must only occupy one byte",
+                        context: context.clone(),
+                        suggestion: "Perhaps you need a string literal? ' -> \"".to_string(),
+                    })
+                }
+                _ if c == '\\' => Lexer::consume_char_escape_code(context, line_iter, c)?,
+                _ => *c.to_string().as_bytes().first().unwrap(),
+            };
+
+            if let Some((_, quote)) = line_iter.next() && quote == '\'' {
+                Ok(Token::CharLiteral(byte))
+            } else {
+                println!("Error char: {}", c);
+                Err(LexerErr {
+                    msg: "Char literals must end in '",
+                    context: context.clone(),
+                    suggestion: "Did you miss a '?".to_string(),
+                })
+            }
+        } else {
+            Err(LexerErr {
+                msg: "Incomplete char literal",
+                context: context.clone(),
+                suggestion: "Did you forget to include a character?".to_string(),
+            })
+        }
+    }
+
     fn consume_string_escape_code(
         context: &LexerContext,
         line_iter: &mut Peekable<impl Iterator<Item = (usize, char)>>,
@@ -201,6 +265,7 @@ impl Lexer {
                     ' ' | '\t' | '\n' | '\r' => Lexer::consume_whitespace,
                     '0'..='9' => Lexer::consume_numeric,
                     '"' => Lexer::consume_string_literal,
+                    '\'' => Lexer::consume_char_literal,
                     '=' | '!' | '>' | '<' => Lexer::consume_double_symbol,
                     'A'..='Z' | 'a'..='z' | '_' => Lexer::consume_identifier_and_keyword,
                     c if Symbol::try_from(c).is_ok() => Lexer::consume_single_symbol,
@@ -231,16 +296,26 @@ mod tests {
             " == >= <= !=",
             " 42 3.1415",
             " \"strings\"",
+            " 'a' '\\'' '\\\\'",
             " identifiers _id_2000",
         );
         let result = super::Lexer::lex(source);
-        assert!(result.is_ok() && source.split(' ').count() == result.unwrap().len());
+        assert!(
+            result.is_ok() && source.split(' ').count() == result.as_ref().unwrap().len(),
+            "result: {:?}",
+            result
+        );
     }
 
     #[test]
     fn invalid() {
         let sources = [
             "?",
+            "'字'",
+            "'a",
+            "'\\'",
+            "'\\\\",
+            r#""incomplete"#,
             r#""incomplete"#,
             r#""wrong escape sequence \a""#,
             r#""incomplete escape sequence \ "#,
