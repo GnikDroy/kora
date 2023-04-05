@@ -18,7 +18,7 @@ impl TypeChecker {
         }
     }
 
-    fn get_type_errors(&self) -> &[TypeErr] {
+    pub fn get_type_errors(&self) -> &[TypeErr] {
         &self.errors
     }
 

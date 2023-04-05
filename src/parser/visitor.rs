@@ -47,6 +47,8 @@ pub trait ASTVisitor: Sized {
         walk_expression(self, expr);
     }
 
+    fn visit_empty_statement(&mut self) {}
+
     fn visit_simple_statement(&mut self, expr: &Expression) {
         walk_simple_statement(self, expr);
     }
@@ -217,7 +219,7 @@ pub fn walk_if_statement<V: ASTVisitor>(
 
 pub fn walk_statement<V: ASTVisitor>(visitor: &mut V, stmt: &Statement) {
     match stmt {
-        Statement::Empty => {}
+        Statement::Empty => visitor.visit_empty_statement(),
         Statement::Simple(expr) => {
             visitor.visit_simple_statement(expr);
         }
