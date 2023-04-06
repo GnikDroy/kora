@@ -18,8 +18,12 @@ impl TypeChecker {
         }
     }
 
-    pub fn get_type_errors(&self) -> &[TypeErr] {
-        &self.errors
+    pub fn check(&self) -> Result<(), &[TypeErr]> {
+        if self.errors.is_empty() {
+            Ok(())
+        } else {
+            Err(&self.errors)
+        }
     }
 
     fn get_array_type(&self, exprs: &[Expression]) -> Result<Type, TypeErr> {
@@ -154,7 +158,7 @@ impl TypeChecker {
         let left_type = self.get_expression_type(left)?;
         let right_type = self.get_expression_type(right)?;
         match (left_type, right_type) {
-            (Type::Array(item_type), Type::Int) => Ok(*item_type.clone()),
+            (Type::Array(item_type), Type::Int) => Ok(*item_type),
             _ => Err(TypeErr {
                 msg: "Array index expression must have array type on the left, and integer on the right",
             }),
@@ -164,16 +168,13 @@ impl TypeChecker {
     fn is_cast_possible(from: &Type, to: &Type) -> bool {
         use Type::*;
         #[rustfmt::skip]
-        match (from, to) {
+        matches!((from, to),
             (Int, Real)
             | (Int, Char)
             | (Real, Int)
             | (Real, Char)
             | (Char, Int)
-            | (Char, Real)
-            => true,
-            _ => false
-        }
+            | (Char, Real))
     }
 
     fn get_cast_expression_type(
@@ -185,9 +186,9 @@ impl TypeChecker {
         if TypeChecker::is_cast_possible(&expr_type, typename) {
             Ok(typename.clone())
         } else {
-            return Err(TypeErr {
+            Err(TypeErr {
                 msg: "Cannot cast to type",
-            });
+            })
         }
     }
 
@@ -197,7 +198,7 @@ impl TypeChecker {
             IntegerLiteral(_) => Ok(Type::Int),
             RealLiteral(_) => Ok(Type::Real),
             CharLiteral(_) => Ok(Type::Char),
-            StringLiteral(s) => Ok(Type::Array(Box::new(Type::Char))),
+            StringLiteral(_) => Ok(Type::Array(Box::new(Type::Char))),
             BoolLiteral(_) => Ok(Type::Bool),
             Array(exprs) => self.get_array_type(exprs),
             Identifier(name) => Ok(self.current_symbols.resolve(name).unwrap()),
@@ -322,12 +323,12 @@ mod tests {
         let mut checker = TypeChecker::new(symbol_table.clone());
         checker.visit_module(&module);
         assert_eq!(
-            checker.get_type_errors().len(),
-            0,
+            checker.check().is_ok(),
+            true,
             "source_text: {}, symbol_table: {:#?} errors: {:?}",
             source,
             symbol_table,
-            checker.get_type_errors()
+            checker.check().unwrap_err()
         );
     }
 
@@ -368,12 +369,12 @@ mod tests {
         let mut checker = TypeChecker::new(symbol_table.clone());
         checker.visit_module(&module);
         assert_eq!(
-            checker.get_type_errors().len(),
-            3,
+            checker.check().is_err() && checker.check().unwrap_err().len() == 3,
+            true,
             "source_text: {}, symbol_table: {:#?} errors: {:?}",
             source,
             symbol_table,
-            checker.get_type_errors()
+            checker.check().unwrap()
         );
     }
 }

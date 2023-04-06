@@ -223,7 +223,7 @@ impl Parser {
         self.pop_token(
             Token::Symbol(Symbol::RightBracket),
             "Expected closing bracket ] after expression: [<expr>]",
-        );
+        )?;
         right.map(|right| Expression::ArrayIndex(Box::new(term), Box::new(right)))
     }
 

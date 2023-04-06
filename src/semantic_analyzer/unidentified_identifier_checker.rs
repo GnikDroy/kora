@@ -19,8 +19,12 @@ impl UnidentifiedIdentifierChecker {
         }
     }
 
-    pub fn get_unidentified_identifiers(&self) -> &HashSet<String> {
-        &self.unidentified_identifiers
+    pub fn check(&self) -> Result<(), &HashSet<String>> {
+        if self.unidentified_identifiers.is_empty() {
+            Ok(())
+        } else {
+            Err(&self.unidentified_identifiers)
+        }
     }
 }
 
@@ -82,12 +86,12 @@ mod tests {
         let mut checker = UnidentifiedIdentifierChecker::new(symbol_table.clone());
         checker.visit_module(&module);
         assert_eq!(
-            checker.get_unidentified_identifiers().len(),
-            0,
+            checker.check().is_ok(),
+            true,
             "source_text: {}, symbol_table: {:#?} unidentified: {:?}",
             source,
             symbol_table,
-            checker.get_unidentified_identifiers()
+            checker.check().unwrap_err()
         );
     }
 
@@ -125,12 +129,12 @@ mod tests {
         let mut checker = UnidentifiedIdentifierChecker::new(symbol_table.clone());
         checker.visit_module(&module);
         assert_eq!(
-            checker.get_unidentified_identifiers().len(),
-            5,
+            checker.check().is_err() && checker.check().unwrap_err().len() == 5,
+            true,
             "source_text: {}, symbol_table: {:#?} unidentified: {:?}",
             source,
             symbol_table,
-            checker.get_unidentified_identifiers()
+            checker.check().unwrap_err()
         );
     }
 }

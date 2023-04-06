@@ -33,7 +33,7 @@ impl Function {
     }
 }
 
-fn get_type(return_type: &Type, args: &Vec<IdentifierTypePair>) -> Type {
+fn get_type(return_type: &Type, args: &[IdentifierTypePair]) -> Type {
     let args = args
         .iter()
         .map(|IdentifierTypePair { name: _, typename }| typename.clone())

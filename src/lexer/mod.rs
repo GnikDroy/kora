@@ -68,7 +68,7 @@ impl Lexer {
                 _ => break,
             }
         }
-        return literal;
+        literal
     }
 
     fn consume_identifier_and_keyword(
@@ -226,22 +226,19 @@ impl Lexer {
     ) -> Result<Token, LexerErr> {
         let mut literal = Lexer::consume_number(line_iter, first);
 
-        match line_iter.peek() {
-            Some((_, '.')) => {
-                line_iter.next();
-                literal += Lexer::consume_number(line_iter, '.').as_str();
-                return literal
-                    .parse::<f64>()
-                    .map(Token::RealLiteral)
-                    .map_err(|_| LexerErr {
-                        msg: "Real number cannot be fit in 64 bits",
-                        context: context.clone(),
-                        suggestion:
-                            "Select a smaller / less precise real number, or a different data type"
-                                .to_string(),
-                    });
-            }
-            _ => {}
+        if let Some((_, '.')) = line_iter.peek() {
+            line_iter.next();
+            literal += Lexer::consume_number(line_iter, '.').as_str();
+            return literal
+                .parse::<f64>()
+                .map(Token::RealLiteral)
+                .map_err(|_| LexerErr {
+                    msg: "Real number cannot be fit in 64 bits",
+                    context: context.clone(),
+                    suggestion:
+                        "Select a smaller / less precise real number, or a different data type"
+                            .to_string(),
+                });
         }
 
         literal
