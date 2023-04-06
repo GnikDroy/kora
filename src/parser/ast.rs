@@ -54,7 +54,7 @@ pub enum Type {
     Real,
     Bool,
     Char,
-    Array(Box<Type>, isize),
+    Array(Box<Type>),
     Struct(String),
     Function(Box<Type>, Vec<Type>),
 }

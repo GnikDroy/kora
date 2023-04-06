@@ -489,32 +489,17 @@ impl Parser {
     fn parse_array_typename(&mut self) -> Result<Type, ParseErr> {
         self.pop_token(
             Token::Symbol(Symbol::LeftBracket),
-            "Expected array type: [<type>, <size>]",
+            "Expected array type: [<type>]",
         )?;
 
         let typename = self.parse_typename()?;
 
         self.pop_token(
-            Token::Symbol(Symbol::Comma),
-            "Expected comma after type: [<type>, <size>]",
-        )?;
-
-        let token = self.pop()?;
-        let size = if let Token::IntegerLiteral(num) = token.token {
-            num
-        } else {
-            return Err(ParseErr {
-                msg: "Expected number to specify size: [<type>, <size>]",
-                token: Some(token),
-            });
-        };
-
-        self.pop_token(
             Token::Symbol(Symbol::RightBracket),
-            "Expected ] to end type specification: [<type>, <size>]",
+            "Expected ] to end type specification: [<type>]",
         )?;
 
-        Ok(Type::Array(Box::new(typename), size))
+        Ok(Type::Array(Box::new(typename)))
     }
 
     fn parse_typename(&mut self) -> Result<Type, ParseErr> {
@@ -676,8 +661,8 @@ mod tests {
     #[test]
     fn parse_array_typename() {
         test_parser(
-            &["[[int, 5], 10]", "[real, 5]", "[foo, 5]"],
-            &["", "[", "[int, 10", "[int 10]", "[[[["],
+            &["[[int]]", "[real]", "[foo]"],
+            &["", "[", "[int", "int]", "[[[["],
             Parser::parse_array_typename,
         );
     }
@@ -685,15 +670,8 @@ mod tests {
     #[test]
     fn parse_typename() {
         test_parser(
-            &[
-                "nil",
-                "int",
-                "real",
-                "char",
-                "[[int, 5], 10]",
-                "custom_type",
-            ],
-            &["", "2000", "{0}", "[int]", "[int 10]"],
+            &["nil", "int", "real", "char", "[[int]]", "custom_type"],
+            &["", "2000", "{0}", "[int", "]"],
             Parser::parse_typename,
         );
     }
@@ -701,12 +679,7 @@ mod tests {
     #[test]
     fn parse_identifier_type_pair() {
         test_parser(
-            &[
-                "a: int",
-                "a: [[int, 5], 10]",
-                "ident: real",
-                "ident: custom_type",
-            ],
+            &["a: int", "a: [[int]]", "ident: real", "ident: custom_type"],
             &["", "a: ", "a int", "1: int", "int: int"],
             Parser::parse_identifier_type_pair,
         );
@@ -760,9 +733,9 @@ mod tests {
     fn parse_let_statement() {
         test_parser(
             &[
-                r#"let msg : [char, 10] = "Hello World";"#,
-                "let numbers: [int, 4] = [1,2,3,4];",
-                "let primes_numbers: [real, 3] = [2.0, 3.0, 5.0];",
+                r#"let msg : [char] = "Hello World";"#,
+                "let numbers: [int] = [1,2,3,4];",
+                "let primes_numbers: [real] = [2.0, 3.0, 5.0];",
             ],
             &["", "let count = 0;", "let count: int = 0", "count: int = 0"],
             Parser::parse_let_statement,
@@ -802,7 +775,7 @@ mod tests {
                 "{}",
                 "{;}",
                 "{ ret a; }",
-                "{ let a: [int, 2] = 4; }",
+                "{ let a: [int] = 4; }",
                 r#"{ while (count <= 5) { print("Hello World"); } }"#,
             ],
             &["", "{", "}", "{ a = 2 }", "{ 2 }"],
@@ -854,9 +827,9 @@ mod tests {
     fn parse_function_parameters() {
         test_parser(
             &[
-                "(a: int, b: [bool, 5])",
-                "(a: [[int, 5], 10])",
-                "(a: int, b: bool, c: char, d: [int, 5], e: real)",
+                "(a: int, b: [bool])",
+                "(a: [[int]])",
+                "(a: int, b: bool, c: char, d: [int], e: real)",
             ],
             &["(1a: int)", "(a: _1", "a: int", "(a int)"],
             Parser::parse_function_parameters,
@@ -869,7 +842,7 @@ mod tests {
                 "extern int main();",
                 "extern bool main();",
                 "extern int main(a: int, b : int, c: int);",
-                "extern [bool, 5] main();",
+                "extern [bool] main();",
             ],
             &[
                 "extern int main(){}",
@@ -888,7 +861,7 @@ mod tests {
                 "int main();",
                 "bool main(){}",
                 "int main(a: int, b : int, c: int);",
-                "[bool, 5] main(){}",
+                "[bool] main(){}",
             ],
             &[
                 "int main);",
@@ -915,7 +888,7 @@ mod tests {
                 ret a;
             }
             
-            nil print(b: [char, 1], a: int) {
+            nil print(b: [char], a: int) {
                 while (a) {
                     print(b);
                     a = a - 1;

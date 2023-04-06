@@ -55,7 +55,7 @@ mod tests {
     #[test]
     fn valid() {
         let source = r#"
-            extern nil print(b: [char, 1], a: int);
+            extern nil print(b: [char], a: int);
 
             int main() {
                 let a: int = 5;
@@ -94,7 +94,7 @@ mod tests {
     #[test]
     fn invalid() {
         let source = r#"
-            extern nil print(b: [char, 1], a: int);
+            extern nil print(b: [char], a: int);
 
             int main() {
                 let a: int = 5 as int;
