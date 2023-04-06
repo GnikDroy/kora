@@ -43,6 +43,10 @@ pub trait ASTVisitor: Sized {
         walk_cast_expression(self, expr, typename);
     }
 
+    fn visit_array_index_expression(&mut self, left: &Expression, right: &Expression) {
+        walk_array_index_expression(self, left, right);
+    }
+
     fn visit_expression(&mut self, expr: &Expression) {
         walk_expression(self, expr);
     }
@@ -122,6 +126,15 @@ pub fn walk_cast_expression<V: ASTVisitor>(visitor: &mut V, expr: &Expression, t
     visitor.visit_typename(typename);
 }
 
+pub fn walk_array_index_expression<V: ASTVisitor>(
+    visitor: &mut V,
+    left: &Expression,
+    right: &Expression,
+) {
+    visitor.visit_expression(left);
+    visitor.visit_expression(right);
+}
+
 pub fn walk_unary_expression<V: ASTVisitor>(visitor: &mut V, _: &UnaryOp, expr: &Expression) {
     visitor.visit_expression(expr);
 }
@@ -170,6 +183,9 @@ pub fn walk_expression<V: ASTVisitor>(visitor: &mut V, expr: &Expression) {
         }
         Expression::Cast(expr, typename) => {
             visitor.visit_cast_expression(expr, typename);
+        }
+        Expression::ArrayIndex(left, right) => {
+            visitor.visit_array_index_expression(left, right);
         }
     }
 }

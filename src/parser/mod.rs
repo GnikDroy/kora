@@ -213,6 +213,20 @@ impl Parser {
         args.map(|args| Expression::Call(Box::new(term), args))
     }
 
+    fn parselet_infix_array_index(
+        &mut self,
+        _: InfixOperator,
+        term: Expression,
+    ) -> Result<Expression, ParseErr> {
+        self.pop().unwrap();
+        let right = self.pratt_parser(0);
+        self.pop_token(
+            Token::Symbol(Symbol::RightBracket),
+            "Expected closing bracket ] after expression: [<expr>]",
+        );
+        right.map(|right| Expression::ArrayIndex(Box::new(term), Box::new(right)))
+    }
+
     fn parselet_infix_binary_operators(
         &mut self,
         op: InfixOperator,
@@ -245,6 +259,7 @@ impl Parser {
                 self.parselet_infix_binary_operators(op, binary_op, term)
             }
             InfixOperator::FunctionCall => self.parselet_infix_function_call(op, term),
+            InfixOperator::ArrayIndex => self.parselet_infix_array_index(op, term),
         }
     }
 
@@ -692,9 +707,9 @@ mod tests {
                 "1-2-3%3",
                 "(1.234 as real) as int",
                 r#"'a'+"abc"+'a'"#,
-                "[1,2,3]",
+                "[1,2,3][2]",
                 "true == false & false | true",
-                "a=b - a != b + a | b + c & d",
+                "a=b - a[2] != b + a | b + c & d",
                 "-a + -b / !c",
                 "a==b + c<d + a<=b + 1>2 + e>=f",
                 "(1/2 + (x+4) / 4) / ((x-5)/2 + (x+4)/(x-5))",

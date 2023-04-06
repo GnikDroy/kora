@@ -82,6 +82,7 @@ pub enum Expression {
     Binary(Box<Expression>, BinaryOp, Box<Expression>),
     Unary(UnaryOp, Box<Expression>),
     Call(Box<Expression>, Vec<Expression>),
+    ArrayIndex(Box<Expression>, Box<Expression>),
     Cast(Box<Expression>, Type),
 }
 
@@ -134,6 +135,7 @@ impl UnaryOp {
 pub enum InfixOperator {
     Binary(BinaryOp),
     FunctionCall,
+    ArrayIndex,
 }
 
 impl TryFrom<Token> for InfixOperator {
@@ -159,6 +161,7 @@ impl TryFrom<Token> for InfixOperator {
             Token::Symbol(Symbol::LessEqual)    => Ok(Binary(LessEqual)),
             Token::Keyword(Keyword::As)         => Ok(Binary(Cast)),
             Token::Symbol(Symbol::LeftParen)    => Ok(FunctionCall),
+            Token::Symbol(Symbol::LeftBracket)  => Ok(ArrayIndex),
             _ => Err(()),
         }
     }
@@ -180,7 +183,7 @@ impl InfixOperator {
                 BinaryOp::Multiply | BinaryOp::Divide | BinaryOp::Modulo => 14,
                 BinaryOp::Cast => 16,
             },
-            InfixOperator::FunctionCall => 202,
+            InfixOperator::FunctionCall | InfixOperator::ArrayIndex => 202,
         }
     }
 
@@ -203,7 +206,7 @@ impl InfixOperator {
                 | BinaryOp::Or => true,
                 BinaryOp::Assign => false,
             },
-            InfixOperator::FunctionCall => true,
+            InfixOperator::FunctionCall | InfixOperator::ArrayIndex => true,
         }
     }
 

@@ -146,6 +146,21 @@ impl TypeChecker {
         }
     }
 
+    fn get_array_index_expression_type(
+        &self,
+        left: &Expression,
+        right: &Expression,
+    ) -> Result<Type, TypeErr> {
+        let left_type = self.get_expression_type(left)?;
+        let right_type = self.get_expression_type(right)?;
+        match (left_type, right_type) {
+            (Type::Array(item_type), Type::Int) => Ok(*item_type.clone()),
+            _ => Err(TypeErr {
+                msg: "Array index expression must have array type on the left, and integer on the right",
+            }),
+        }
+    }
+
     fn is_cast_possible(from: &Type, to: &Type) -> bool {
         use Type::*;
         #[rustfmt::skip]
@@ -190,6 +205,7 @@ impl TypeChecker {
             Unary(op, term) => self.get_unary_expression_type(op, term),
             Call(f, args) => self.get_call_expression_type(f, args),
             Cast(expr, typename) => self.get_cast_expression_type(expr, typename),
+            ArrayIndex(left, right) => self.get_array_index_expression_type(left, right),
         }
     }
     fn ensure_type(&mut self, expr: &Expression, expected: &Type) {
