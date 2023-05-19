@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Online Compiler</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+      integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw=="
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer"
+    />
+    <script
+      defer
+      src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"
+    ></script>
+
+    <link
+      rel="stylesheet"
+      data-name="vs/editor/editor.main"
+      href="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.20.0/min/vs/editor/editor.main.min.css"
+    />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.26.1/min/vs/loader.min.js"></script>
+    <script defer>
+      require.config({
+        paths: {
+          vs: "https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.26.1/min/vs",
+        },
+      });
+      require(["vs/editor/editor.main"], () => {
+        window.editor = monaco.editor.create(
+          document.getElementById("editor"),
+          {
+            value: `function x() {
+  console.log("Hello world!");                                                                                                                                              <space>
+}`,
+            language: "javascript",
+            theme: "vs-dark",
+            automaticLayout: true,
+            padding: { top: 15, left: 15, right: 15 },
+          }
+        );
+      });
+    </script>
+    <script type="module">
+      import init, { compile } from "./pkg/compiler.js";
+      init().then(() => {
+        window.compile = compile;
+      });
+    </script>
+  </head>
+  <body class="bg-neutral-900 text-white overflow-hidden">
+    <div
+      class="bg-neutral-900 w-full h-12 py-2 px-3 absolute z-50 flex flex-row items-center justify-between"
+    >
+      <h1 class="text-3xl">Online Compiler</h1>
+      <div>
+        <button
+          class="bg-green-700 hover:bg-green-900 text-white font-bold px-4 py-2 rounded"
+        >
+          <i class="fa-solid fa-play"></i>
+        </button>
+        <button
+          class="bg-green-700 hover:bg-green-900 text-white font-bold px-4 py-2 rounded"
+        >
+          <i class="fa-solid fa-robot"></i>
+        </button>
+      </div>
+    </div>
+
+    <main class="flex flex-col w-screen h-screen pt-12">
+      <div class="flex flex-row flex-grow w-full h-full">
+        <div id="editor" class="h-full w-1/2"></div>
+        <div class="h-full w-1/2 m-4 p-3 flex flex-col align-start">
+          <div id="stdout" class="flex-grow mb-8 overflow-auto"></div>
+          <div class="flex">
+            <input
+              id="stdin"
+              type="text"
+              class="peer block w-full rounded border-0 py-1 px-3 my-3 leading-2 outline-none text-black"
+              placeholder="Standard input"
+            />
+          </div>
+        </div>
+      </div>
+    </main>
+  </body>
+</html>

@@ -1,18 +1,28 @@
+#![feature(exclusive_range_pattern)]
+#![feature(let_chains)]
+#![feature(stmt_expr_attributes)]
+#![feature(result_option_inspect)]
+#![feature(iter_intersperse)]
 #![allow(dead_code)]
 
 mod lexer;
 mod loader;
 mod parser;
 mod semantic_analyzer;
+mod js_transpiler;
 
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
 use std::path::Path;
 
+use wasm_bindgen::prelude::*;
+
 use loader::{LoadedProgram, Loader};
 use parser::{ASTVisitor, NodeId, Type};
 use semantic_analyzer::{ArrayMethod, Resolver, ReturnChecker, SymbolId, SymbolTable, TypeChecker};
+
+use js_transpiler::JsTranspiler;
 
 pub use lexer::LexerErr;
 pub use loader::LoadErr;
@@ -58,7 +68,7 @@ impl fmt::Display for CompileErr {
 }
 
 /// Compiler for the frontend
-pub fn compile<P>(entry: &str, provider: P) -> Result<CompiledProgram, Vec<CompileErr>>
+pub fn compile_frontend<P>(entry: &str, provider: P) -> Result<CompiledProgram, Vec<CompileErr>>
 where
     P: Fn(&Path) -> Option<String>,
 {
@@ -128,7 +138,7 @@ mod tests {
 
     #[test]
     fn test_compiles_a_multi_module_program() {
-        let result = compile(
+        let result = compile_frontend(
             "main.kora",
             provider(vec![
                 (
@@ -145,7 +155,7 @@ mod tests {
 
     #[test]
     fn test_reports_analyze_errors_across_modules() {
-        let Err(errors) = compile(
+        let Err(errors) = compile_frontend(
             "main.kora",
             provider(vec![
                 (
@@ -162,7 +172,7 @@ mod tests {
 
     #[test]
     fn test_reports_missing_return() {
-        let Err(errors) = compile("main.kora", provider(vec![("main.kora", "int main() { }")]))
+        let Err(errors) = compile_frontend("main.kora", provider(vec![("main.kora", "int main() { }")]))
         else {
             panic!("expected a return error");
         };
@@ -171,7 +181,7 @@ mod tests {
 
     #[test]
     fn test_reports_load_error_for_a_missing_import() {
-        let Err(errors) = compile(
+        let Err(errors) = compile_frontend(
             "main.kora",
             provider(vec![(
                 "main.kora",
@@ -185,10 +195,52 @@ mod tests {
 
     #[test]
     fn test_reports_parse_error() {
-        let Err(errors) = compile("main.kora", provider(vec![("main.kora", "int main() {")]))
+        let Err(errors) = compile_frontend("main.kora", provider(vec![("main.kora", "int main() {")]))
         else {
             panic!("expected a parse error");
         };
         assert!(matches!(errors.as_slice(), [CompileErr::Parse(_)]));
     }
+}
+
+#[wasm_bindgen]
+pub fn compile(source: &str) -> Result<String, String> {
+    let mut out = String::from(
+        r#"
+        async function clear() {
+            document.getElementById("stdout").innerText = "";
+        }
+        async function print(a) {
+            document.getElementById("stdout").innerText += a;
+        }
+        async function input() {
+            return document.getElementById("stdin").value;
+        }
+        "#,
+    );
+    let mut in_ = String::from(
+        r#"
+        extern nil clear();
+        extern nil print(a: [char]);
+        extern [char] input();
+        "#,
+    );
+    in_.push_str(source);
+    let source = &in_;
+    let compiled = compile_frontend(source, || None);
+
+    let mut transpiler = JsTranspiler::new();
+    transpiler.visit_module(&module);
+    let output = transpiler
+        .get_source()
+        .map(|s| s.to_string())
+        .map_err(|e| {
+            e.iter()
+                .map(|x| x.to_string())
+                .intersperse("\n".to_string())
+                .collect::<String>()
+        })?;
+
+    out.push_str(output.as_str());
+    Ok(out)
 }
