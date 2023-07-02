@@ -161,6 +161,34 @@ impl Parser {
         None
     }
 
+    fn parselet_new_operator(&mut self) -> Option<Result<Expression, ParseErr>> {
+        let token = self.peek();
+        if let Ok(token) = token
+           && let Token::Keyword(Keyword::New) = token.token {
+               let expr = || -> Result<Expression, ParseErr> {
+                    self.pop().unwrap();
+                    let typename = self.parse_typename()?;
+                    let token = self.peek();
+                    if let Ok(token) = token
+                    && let Token::Symbol(Symbol::LeftBracket) = token.token {
+                        self.pop().unwrap();
+                        let expr = self.pratt_parser(0)
+                            .map(|e| Expression::Construct(typename, Some(Box::new(e))))?;
+                        self.pop_token(
+                            Token::Symbol(Symbol::RightBracket),
+                             "Expected ] after array constructor: new <type>[<expr>]"
+                        )?;
+                        return Ok(expr);
+                    }
+                    else {
+                        return Ok(Expression::Construct(typename, None));
+                    }
+                }();
+                return Some(expr);
+        }
+        None
+    }
+
     fn parselet_parenthesized_expression(&mut self) -> Option<Result<Expression, ParseErr>> {
         let token = self.peek();
         if let Ok(token) = token
@@ -191,6 +219,7 @@ impl Parser {
             Parser::parselet_array_literal,
             Parser::parselet_negate_operator,
             Parser::parselet_not_operator,
+            Parser::parselet_new_operator,
         ];
 
         parselets.iter().find_map(|f| f(self)).map_or_else(
@@ -211,20 +240,6 @@ impl Parser {
     ) -> Result<Expression, ParseErr> {
         let args = self.parse_expression_list();
         args.map(|args| Expression::Call(Box::new(term), args))
-    }
-
-    fn parselet_infix_array_index(
-        &mut self,
-        _: InfixOperator,
-        term: Expression,
-    ) -> Result<Expression, ParseErr> {
-        self.pop().unwrap();
-        let right = self.pratt_parser(0);
-        self.pop_token(
-            Token::Symbol(Symbol::RightBracket),
-            "Expected closing bracket ] after expression: [<expr>]",
-        )?;
-        right.map(|right| Expression::ArrayIndex(Box::new(term), Box::new(right)))
     }
 
     fn parselet_infix_binary_operators(
@@ -248,6 +263,30 @@ impl Parser {
             .map(|t| Expression::Cast(Box::new(left), t))
     }
 
+    fn parselet_infix_array_index(
+        &mut self,
+        _: InfixOperator,
+        term: Expression,
+    ) -> Result<Expression, ParseErr> {
+        self.pop().unwrap();
+        let right = self.pratt_parser(0);
+        self.pop_token(
+            Token::Symbol(Symbol::RightBracket),
+            "Expected closing bracket ] after expression: [<expr>]",
+        )?;
+        right.map(|right| Expression::ArrayIndex(Box::new(term), Box::new(right)))
+    }
+
+    fn parselet_infix_access(
+        &mut self,
+        op: InfixOperator,
+        term: Expression,
+    ) -> Result<Expression, ParseErr> {
+        self.pop().unwrap();
+        let right = self.pratt_parser(op.get_binding_power());
+        right.map(|right| Expression::Access(Box::new(term), Box::new(right)))
+    }
+
     fn parselet_infix_operators(
         &mut self,
         op: InfixOperator,
@@ -260,6 +299,7 @@ impl Parser {
             }
             InfixOperator::FunctionCall => self.parselet_infix_function_call(op, term),
             InfixOperator::ArrayIndex => self.parselet_infix_array_index(op, term),
+            InfixOperator::Access => self.parselet_infix_access(op, term),
         }
     }
 
@@ -586,15 +626,37 @@ impl Parser {
         })
     }
 
+    fn parse_struct(&mut self) -> Result<Struct, ParseErr> {
+        self.pop_token(
+            Token::Keyword(Keyword::Struct),
+            "Expected struct declaration to start with 'struct': struct <name> {...}",
+        )?;
+        let name = self.parse_identifier()?;
+        let members = self.parse_generic_delimited(
+            Token::Symbol(Symbol::LeftBrace),
+            Token::Symbol(Symbol::RightBrace),
+            Token::Symbol(Symbol::Comma),
+            Parser::parse_identifier_type_pair,
+        )?;
+        Ok(Struct { name, members })
+    }
+
     fn parse_module(&mut self) -> Result<Module, ParseErr> {
         let mut module = Module {
             ..Default::default()
         };
         while !self.tokens.is_empty() {
-            if self.peek()?.token == Token::Keyword(Keyword::Extern) {
-                module.extern_functions.push(self.parse_extern_function()?);
-            } else {
-                module.functions.push(self.parse_function()?);
+            let token = self.peek()?;
+            match token.token {
+                Token::Keyword(Keyword::Struct) => {
+                    module.structs.push(self.parse_struct()?);
+                }
+                Token::Keyword(Keyword::Extern) => {
+                    module.extern_functions.push(self.parse_extern_function()?);
+                }
+                _ => {
+                    module.functions.push(self.parse_function()?);
+                }
             }
         }
         Ok(module)
@@ -665,6 +727,15 @@ mod tests {
     }
 
     #[test]
+    fn parse_struct() {
+        test_parser(
+            &["struct Person { age: int, name: [char]}", "struct Foo {}"],
+            &["struct Foo", "struct {}", "struct Foo { foo, bar }"],
+            Parser::parse_struct,
+        );
+    }
+
+    #[test]
     fn parse_identifier() {
         test_parser(
             &["foo", "_before_2000", "TestCase"],
@@ -710,6 +781,8 @@ mod tests {
                 "[1,2,3][2]",
                 "true == false & false | true",
                 "a=b - a[2] != b + a | b + c & d",
+                "arr.length / 2",
+                "person_pair.first.age / 10",
                 "-a + -b / !c",
                 "a==b + c<d + a<=b + 1>2 + e>=f",
                 "(1/2 + (x+4) / 4) / ((x-5)/2 + (x+4)/(x-5))",

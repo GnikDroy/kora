@@ -165,6 +165,24 @@ impl TypeChecker {
         }
     }
 
+    fn get_access_expression_type(
+        &self,
+        left: &Expression,
+        right: &Expression,
+    ) -> Result<Type, TypeErr> {
+        let left_type = self.get_expression_type(left)?;
+        if  let Type::Struct(name) = left_type 
+            && let Expression::Identifier(member) = right {
+            self.current_symbols.resolve_struct_member(&name, &member).ok_or(TypeErr{
+                msg: "Invalid member for struct"
+            })
+        } else {
+            Err(TypeErr {
+                msg: "Access operator must have struct type on left and identifier on the right",
+            })
+        }
+    }
+
     fn is_cast_possible(from: &Type, to: &Type) -> bool {
         use Type::*;
         #[rustfmt::skip]
@@ -192,6 +210,26 @@ impl TypeChecker {
         }
     }
 
+    fn get_construct_expression_type(
+        &self,
+        typename: &Type,
+        size: &Option<Box<Expression>>,
+    ) -> Result<Type, TypeErr> {
+        match size {
+            Some(size) => {
+                let expr_type = self.get_expression_type(&size)?;
+                if expr_type != Type::Int {
+                    Err(TypeErr {
+                        msg: "Must be int",
+                    })
+                } else {
+                    Ok(Type::Array(Box::new(typename.clone())))
+                }
+            }
+            _ => Ok(typename.clone())
+        }
+    }
+
     fn get_expression_type(&self, expr: &Expression) -> Result<Type, TypeErr> {
         use Expression::*;
         match expr {
@@ -207,8 +245,11 @@ impl TypeChecker {
             Call(f, args) => self.get_call_expression_type(f, args),
             Cast(expr, typename) => self.get_cast_expression_type(expr, typename),
             ArrayIndex(left, right) => self.get_array_index_expression_type(left, right),
+            Access(left, right) => self.get_access_expression_type(left, right),
+            Construct(typename, size) => self.get_construct_expression_type(typename, size)
         }
     }
+
     fn ensure_type(&mut self, expr: &Expression, expected: &Type) {
         let expr_type = self.get_expression_type(expr);
         match expr_type {
@@ -288,6 +329,11 @@ mod tests {
     #[test]
     fn valid() {
         let source = r#"
+            struct Person {
+                name: [char],
+                age: int,
+            }
+            
             int main() {
                 let a: int = 5;
                 let b: int = 6;

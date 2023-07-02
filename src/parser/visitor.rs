@@ -47,6 +47,14 @@ pub trait ASTVisitor: Sized {
         walk_array_index_expression(self, left, right);
     }
 
+    fn visit_access_expression(&mut self, left: &Expression, right: &Expression) {
+        walk_access_expression(self, left, right);
+    }
+
+    fn visit_construct_expression(&mut self, typename: &Type, size: &Option<Box<Expression>>) {
+        walk_construct_expression(self, typename, size);
+    }
+
     fn visit_expression(&mut self, expr: &Expression) {
         walk_expression(self, expr);
     }
@@ -135,6 +143,26 @@ pub fn walk_array_index_expression<V: ASTVisitor>(
     visitor.visit_expression(right);
 }
 
+pub fn walk_access_expression<V: ASTVisitor>(
+    visitor: &mut V,
+    left: &Expression,
+    right: &Expression,
+) {
+    visitor.visit_expression(left);
+    visitor.visit_expression(right);
+}
+
+pub fn walk_construct_expression<V: ASTVisitor>(
+    visitor: &mut V,
+    typename: &Type,
+    size: &Option<Box<Expression>>,
+) {
+    visitor.visit_typename(typename);
+    if let Some(size) = size {
+        visitor.visit_expression(size);
+    }
+}
+
 pub fn walk_unary_expression<V: ASTVisitor>(visitor: &mut V, _: &UnaryOp, expr: &Expression) {
     visitor.visit_expression(expr);
 }
@@ -186,6 +214,12 @@ pub fn walk_expression<V: ASTVisitor>(visitor: &mut V, expr: &Expression) {
         }
         Expression::ArrayIndex(left, right) => {
             visitor.visit_array_index_expression(left, right);
+        }
+        Expression::Access(left, right) => {
+            visitor.visit_access_expression(left, right);
+        }
+        Expression::Construct(typename, size) => {
+            visitor.visit_construct_expression(typename, size);
         }
     }
 }

@@ -9,6 +9,7 @@ pub struct Scope {
 #[derive(Debug, Default, Clone)]
 pub struct SymbolTable {
     scopes: Vec<Scope>,
+    struct_members: HashMap<(String, String), Type>,
 }
 
 impl SymbolTable {
@@ -51,6 +52,12 @@ impl SymbolTable {
             .next()
             .cloned()
     }
+
+    pub fn resolve_struct_member(&self, name: &String, member: &String) -> Option<Type> {
+        self.struct_members
+            .get(&(name.to_owned(), member.to_owned()))
+            .cloned()
+    }
 }
 
 impl ASTVisitor for SymbolTable {
@@ -82,6 +89,14 @@ impl ASTVisitor for SymbolTable {
 
     fn visit_module(&mut self, module: &Module) {
         self.push_scope();
+        for struct_ in module.structs.iter() {
+            for member in struct_.members.iter() {
+                self.struct_members.insert(
+                    (struct_.name.clone(), member.name.clone()),
+                    member.typename.clone(),
+                );
+            }
+        }
         for func in module.extern_functions.iter() {
             self.add_symbol(func.name.clone(), func.get_type());
         }

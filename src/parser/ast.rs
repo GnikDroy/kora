@@ -2,8 +2,15 @@ use crate::lexer::{Keyword, Symbol, Token};
 
 #[derive(Debug, Default)]
 pub struct Module {
-    pub functions: Vec<Function>,
+    pub structs: Vec<Struct>,
     pub extern_functions: Vec<ExternFunction>,
+    pub functions: Vec<Function>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Struct {
+    pub name: String,
+    pub members: Vec<IdentifierTypePair>,
 }
 
 #[derive(Debug)]
@@ -41,7 +48,7 @@ fn get_type(return_type: &Type, args: &[IdentifierTypePair]) -> Type {
     Type::Function(Box::new(return_type.clone()), args)
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct IdentifierTypePair {
     pub typename: Type,
     pub name: String,
@@ -84,6 +91,8 @@ pub enum Expression {
     Call(Box<Expression>, Vec<Expression>),
     ArrayIndex(Box<Expression>, Box<Expression>),
     Cast(Box<Expression>, Type),
+    Access(Box<Expression>, Box<Expression>),
+    Construct(Type, Option<Box<Expression>>),
 }
 
 #[derive(Debug)]
@@ -116,18 +125,19 @@ impl BinaryOp {}
 pub enum UnaryOp {
     Not,
     Negate,
+    New,
 }
 
 impl UnaryOp {
     pub fn get_binding_power(&self) -> u32 {
         match self {
-            UnaryOp::Not | UnaryOp::Negate => 102,
+            UnaryOp::Not | UnaryOp::Negate | UnaryOp::New => 102,
         }
     }
 
     pub fn is_left_associative(&self) -> bool {
         match self {
-            UnaryOp::Not | UnaryOp::Negate => false,
+            UnaryOp::Not | UnaryOp::Negate | UnaryOp::New => false,
         }
     }
 }
@@ -136,6 +146,7 @@ pub enum InfixOperator {
     Binary(BinaryOp),
     FunctionCall,
     ArrayIndex,
+    Access,
 }
 
 impl TryFrom<Token> for InfixOperator {
@@ -162,6 +173,7 @@ impl TryFrom<Token> for InfixOperator {
             Token::Keyword(Keyword::As)         => Ok(Binary(Cast)),
             Token::Symbol(Symbol::LeftParen)    => Ok(FunctionCall),
             Token::Symbol(Symbol::LeftBracket)  => Ok(ArrayIndex),
+            Token::Symbol(Symbol::Dot)          => Ok(Access),
             _ => Err(()),
         }
     }
@@ -183,7 +195,7 @@ impl InfixOperator {
                 BinaryOp::Multiply | BinaryOp::Divide | BinaryOp::Modulo => 14,
                 BinaryOp::Cast => 16,
             },
-            InfixOperator::FunctionCall | InfixOperator::ArrayIndex => 202,
+            InfixOperator::FunctionCall | InfixOperator::ArrayIndex | InfixOperator::Access => 202,
         }
     }
 
@@ -206,7 +218,7 @@ impl InfixOperator {
                 | BinaryOp::Or => true,
                 BinaryOp::Assign => false,
             },
-            InfixOperator::FunctionCall | InfixOperator::ArrayIndex => true,
+            InfixOperator::FunctionCall | InfixOperator::ArrayIndex | InfixOperator::Access => true,
         }
     }
 

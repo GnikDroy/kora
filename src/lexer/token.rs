@@ -14,6 +14,8 @@ pub enum Keyword {
     False,
     Extern,
     As,
+    Struct,
+    New,
 }
 
 impl TryFrom<&str> for Keyword {
@@ -35,6 +37,8 @@ impl TryFrom<&str> for Keyword {
             "false"  => Ok(Keyword::False),
             "extern" => Ok(Keyword::Extern),
             "as"     => Ok(Keyword::As),
+            "struct" => Ok(Keyword::Struct),
+            "new"    => Ok(Keyword::New),
             _ => Err(()),
         }
     }
@@ -66,6 +70,7 @@ pub enum Symbol {
     ExclamEqual,
     Pipe,
     Ampersand,
+    Dot,
 }
 
 impl TryFrom<char> for Symbol {
@@ -93,6 +98,7 @@ impl TryFrom<char> for Symbol {
             '!' => Ok(Exclam),
             '|' => Ok(Pipe),
             '&' => Ok(Ampersand),
+            '.' => Ok(Dot),
             _ => Err(()),
         }
     }
