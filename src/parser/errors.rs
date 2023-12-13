@@ -15,7 +15,7 @@ impl fmt::Display for ParseErr {
             Some(token) => write!(
                 f,
                 "error: {}\n{}:{}\n{:?}",
-                self.msg, token.context.row, token.context.col, token.token
+                self.msg, token.start.row, token.start.col, token.token
             ),
 
             None => write!(f, "error: {}\nEOF", self.msg),

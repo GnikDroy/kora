@@ -255,7 +255,8 @@ impl Lexer {
     pub fn lex(source: &str) -> Result<Vec<TokenInfo>, LexerErr> {
         let mut tokens = vec![];
 
-        for (row, line) in source.lines().enumerate() {
+        let mut source_iter = source.lines().enumerate().peekable();
+        while let Some((row, line)) = source_iter.next() {
             let mut line_iter = line.chars().enumerate().peekable();
             while let Some((col, c)) = line_iter.next() {
                 let consumer = match c {
@@ -268,14 +269,28 @@ impl Lexer {
                     c if Symbol::try_from(c).is_ok() => Lexer::consume_single_symbol,
                     _ => Lexer::consume_nothing_with_error,
                 };
-                let context = LexerContext {
-                    col: col + 1,
-                    row: row + 1,
+
+                let start_context = LexerContext {
+                    col: col as isize + 1,
+                    row: row as isize + 1,
                 };
 
-                let token = consumer(&context, &mut line_iter, c)?;
+                let token = consumer(&start_context, &mut line_iter, c)?;
+
+                let mut end_context = LexerContext { col: -1, row: -1 };
+                if let Some((col, _)) = line_iter.peek() {
+                    end_context.col = *col as isize;
+                }
+                if let Some((row, _)) = source_iter.peek() {
+                    end_context.row = *row as isize;
+                }
+
                 if token != Token::Whitespace {
-                    tokens.push(TokenInfo { token, context });
+                    tokens.push(TokenInfo {
+                        token,
+                        start: start_context,
+                        end: end_context,
+                    });
                 }
             }
         }

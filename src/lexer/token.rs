@@ -136,12 +136,13 @@ pub enum Token {
 
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct LexerContext {
-    pub col: usize,
-    pub row: usize,
+    pub col: isize,
+    pub row: isize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TokenInfo {
     pub token: Token,
-    pub context: LexerContext,
+    pub start: LexerContext,
+    pub end: LexerContext,
 }
