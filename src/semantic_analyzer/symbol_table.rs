@@ -48,8 +48,7 @@ impl SymbolTable {
         self.scopes
             .iter()
             .rev()
-            .filter_map(|scope| scope.symbols.get(name))
-            .next()
+            .find_map(|scope| scope.symbols.get(name))
             .cloned()
     }
 

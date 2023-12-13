@@ -178,10 +178,10 @@ impl Parser {
                             Token::Symbol(Symbol::RightBracket),
                              "Expected ] after array constructor: new <type>[<expr>]"
                         )?;
-                        return Ok(expr);
+                        Ok(expr)
                     }
                     else {
-                        return Ok(Expression::Construct(typename, None));
+                        Ok(Expression::Construct(typename, None))
                     }
                 }();
                 return Some(expr);
@@ -294,9 +294,7 @@ impl Parser {
     ) -> Result<Expression, ParseErr> {
         match op {
             InfixOperator::Binary(BinaryOp::Cast) => self.parselet_infix_cast_operator(op, term),
-            InfixOperator::Binary(binary_op) => {
-                self.parselet_infix_binary_operators(op, binary_op, term)
-            }
+            InfixOperator::Binary(o) => self.parselet_infix_binary_operators(op, o, term),
             InfixOperator::FunctionCall => self.parselet_infix_function_call(op, term),
             InfixOperator::ArrayIndex => self.parselet_infix_array_index(op, term),
             InfixOperator::Access => self.parselet_infix_access(op, term),
