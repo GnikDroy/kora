@@ -34,7 +34,7 @@ impl TypeChecker {
 
         if let Some(first) = types.first() {
             if types.iter().all(|x| x == first) {
-                Ok(first.clone())
+                Ok(Type::Array(Box::new(first.clone())))
             } else {
                 Err(TypeErr {
                     msg: "Array doesn't consist of homogeneous types.",
@@ -61,7 +61,6 @@ impl TypeChecker {
 
         #[rustfmt::skip]
         match (left_type, op, right_type) {
-            (Int, Assign, Int)         => Ok(Int),
             (Int, Add, Int)            => Ok(Int),
             (Int, Subtract, Int)       => Ok(Int),
             (Int, Multiply, Int)       => Ok(Int),
@@ -73,7 +72,6 @@ impl TypeChecker {
             (Int, GreaterEqual, Int)   => Ok(Bool),
             (Int, LessEqual, Int)      => Ok(Bool),
 
-            (Real, Assign, Real)       => Ok(Int),
             (Real, Add, Real)          => Ok(Real),
             (Real, Subtract, Real)     => Ok(Real),
             (Real, Multiply, Real)     => Ok(Real),
@@ -85,22 +83,36 @@ impl TypeChecker {
             (Real, GreaterEqual, Real) => Ok(Bool),
             (Real, LessEqual, Real)    => Ok(Bool),
 
-            (Bool, Assign, Bool)       => Ok(Int),
             (Bool, Equality, Bool)     => Ok(Bool),
             (Bool, NotEquality, Bool)  => Ok(Bool),
             (Bool, And, Bool)          => Ok(Bool),
             (Bool, Or, Bool)           => Ok(Bool),
 
-            (Char, Assign, Char)       => Ok(Int),
             (Char, Equality, Char)     => Ok(Bool),
             (Char, NotEquality, Char)  => Ok(Bool),
             (Char, Greater, Char)      => Ok(Bool),
             (Char, Less, Char)         => Ok(Bool),
             (Char, GreaterEqual, Char) => Ok(Bool),
             (Char, LessEqual, Char)    => Ok(Bool),
-            _ => Err(TypeErr {
+            (left_type, Assign, right_type) => {
+                if !self.is_assignable(left) {
+                    Err(TypeErr{
+                        msg: "LHS of assign expression is not assignable"
+                    })
+                } else if left_type != right_type {
+                    Err(TypeErr{
+                        msg: "LHS and RHS of assign expression don't match"
+                    })
+                } else {
+                    Ok(left_type)
+                }
+            },
+            _ => {
+                println!("{:?} {:?} {:?}", left, op, right);
+                Err(TypeErr {
                 msg: "Binary operator cannot be applied to the types",
-            }),
+            })
+            },
         }
     }
 
@@ -113,7 +125,7 @@ impl TypeChecker {
         #[rustfmt::skip]
         match (op, typename) {
             (Negate, Int)  => Ok(Int),
-            (Negate, Real) => Ok(Int),
+            (Negate, Real) => Ok(Real),
 
             (Not, Bool)    => Ok(Bool),
             _ => Err(TypeErr {
@@ -171,11 +183,14 @@ impl TypeChecker {
         right: &Expression,
     ) -> Result<Type, TypeErr> {
         let left_type = self.get_expression_type(left)?;
-        if  let Type::Struct(name) = left_type 
-            && let Expression::Identifier(member) = right {
-            self.current_symbols.resolve_struct_member(&name, &member).ok_or(TypeErr{
-                msg: "Invalid member for struct"
-            })
+        if let Type::Struct(name) = left_type
+            && let Expression::Identifier(member) = right
+        {
+            self.global_symbols
+                .resolve_struct_member(&name, member)
+                .ok_or(TypeErr {
+                    msg: "Invalid member for struct",
+                })
         } else {
             Err(TypeErr {
                 msg: "Access operator must have struct type on left and identifier on the right",
@@ -217,16 +232,36 @@ impl TypeChecker {
     ) -> Result<Type, TypeErr> {
         match size {
             Some(size) => {
-                let expr_type = self.get_expression_type(&size)?;
-                if expr_type != Type::Int {
-                    Err(TypeErr {
-                        msg: "Must be int",
-                    })
-                } else {
+                let expr_type = self.get_expression_type(size)?;
+                if expr_type == Type::Int {
                     Ok(Type::Array(Box::new(typename.clone())))
+                } else {
+                    Err(TypeErr {
+                        msg: "Array constructor must be passed an integer inside []",
+                    })
                 }
             }
-            _ => Ok(typename.clone())
+            _ => Ok(typename.clone()),
+        }
+    }
+
+    fn is_assignable(&self, expr: &Expression) -> bool {
+        use Expression::*;
+        match expr {
+            IntegerLiteral(_) => false,
+            RealLiteral(_) => false,
+            CharLiteral(_) => false,
+            StringLiteral(_) => false,
+            BoolLiteral(_) => false,
+            Array(_) => false,
+            Identifier(_) => true,
+            Binary(_, _, _) => false,
+            Unary(_, _) => false,
+            Call(_, _) => true,
+            Cast(_, _) => false,
+            ArrayIndex(_, _) => true,
+            Access(_, _) => true,
+            Construct(_, _) => false,
         }
     }
 
@@ -246,7 +281,7 @@ impl TypeChecker {
             Cast(expr, typename) => self.get_cast_expression_type(expr, typename),
             ArrayIndex(left, right) => self.get_array_index_expression_type(left, right),
             Access(left, right) => self.get_access_expression_type(left, right),
-            Construct(typename, size) => self.get_construct_expression_type(typename, size)
+            Construct(typename, size) => self.get_construct_expression_type(typename, size),
         }
     }
 
@@ -339,6 +374,10 @@ mod tests {
                 let b: int = 6;
                 let c: real = 6.2345;
                 let d: char = 'a';
+                let e: [Person] = new Person[23];
+                e[0].name = "Name";
+                e[0].age = 23;
+                e[1] = new Person;
                 if (a - b == 1) {
                     print(a, b);
                 }
@@ -391,6 +430,7 @@ mod tests {
                 if (c / 2.0 == 10.0) {
                     let d: real = c / 2.0 + 10;
                 }
+                2 = 4;
                 ret a;
             }
             
@@ -415,7 +455,7 @@ mod tests {
         let mut checker = TypeChecker::new(symbol_table.clone());
         checker.visit_module(&module);
         assert_eq!(
-            checker.check().is_err() && checker.check().unwrap_err().len() == 3,
+            checker.check().is_err() && checker.check().unwrap_err().len() == 4,
             true,
             "source_text: {}, symbol_table: {:#?} errors: {:?}",
             source,
