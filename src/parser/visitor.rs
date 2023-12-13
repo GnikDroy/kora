@@ -98,6 +98,8 @@ pub trait ASTVisitor: Sized {
         walk_function(self, func);
     }
 
+    fn visit_struct(&mut self, _: &Struct) {}
+
     fn visit_extern_function(&mut self, func: &ExternFunction) {
         walk_extern_function(self, func);
     }
@@ -318,8 +320,13 @@ pub fn walk_module<V: ASTVisitor>(visitor: &mut V, module: &Module) {
         visitor.visit_extern_function(func);
     }
 
+    for _struct in module.structs.iter() {
+        visitor.visit_struct(_struct);
+    }
+
     for func in module.functions.iter() {
         visitor.visit_function(func);
     }
+
     visitor.visit_exit_scope();
 }
