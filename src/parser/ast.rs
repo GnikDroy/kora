@@ -91,7 +91,7 @@ pub enum Expression {
     Call(Box<Expression>, Vec<Expression>),
     ArrayIndex(Box<Expression>, Box<Expression>),
     Cast(Box<Expression>, Type),
-    Access(Box<Expression>, Box<Expression>),
+    Access(Box<Expression>, String),
     Construct(Type, Option<Box<Expression>>),
 }
 

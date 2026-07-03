@@ -47,8 +47,8 @@ pub trait ASTVisitor: Sized {
         walk_array_index_expression(self, left, right);
     }
 
-    fn visit_access_expression(&mut self, left: &Expression, right: &Expression) {
-        walk_access_expression(self, left, right);
+    fn visit_access_expression(&mut self, left: &Expression, member: &str) {
+        walk_access_expression(self, left, member);
     }
 
     fn visit_construct_expression(&mut self, typename: &Type, size: &Option<Box<Expression>>) {
@@ -145,13 +145,8 @@ pub fn walk_array_index_expression<V: ASTVisitor>(
     visitor.visit_expression(right);
 }
 
-pub fn walk_access_expression<V: ASTVisitor>(
-    visitor: &mut V,
-    left: &Expression,
-    right: &Expression,
-) {
+pub fn walk_access_expression<V: ASTVisitor>(visitor: &mut V, left: &Expression, _member: &str) {
     visitor.visit_expression(left);
-    visitor.visit_expression(right);
 }
 
 pub fn walk_construct_expression<V: ASTVisitor>(
@@ -217,8 +212,8 @@ pub fn walk_expression<V: ASTVisitor>(visitor: &mut V, expr: &Expression) {
         Expression::ArrayIndex(left, right) => {
             visitor.visit_array_index_expression(left, right);
         }
-        Expression::Access(left, right) => {
-            visitor.visit_access_expression(left, right);
+        Expression::Access(left, member) => {
+            visitor.visit_access_expression(left, member);
         }
         Expression::Construct(typename, size) => {
             visitor.visit_construct_expression(typename, size);

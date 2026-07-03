@@ -179,20 +179,18 @@ impl TypeChecker {
     fn get_access_expression_type(
         &self,
         left: &Expression,
-        right: &Expression,
+        member: &str,
     ) -> Result<Type, TypeErr> {
         let left_type = self.get_expression_type(left)?;
-        if let Type::Struct(name) = left_type
-            && let Expression::Identifier(member) = right
-        {
+        if let Type::Struct(name) = left_type {
             self.global_symbols
-                .resolve_struct_member(&name, member)
+                .resolve_struct_member(&name, &member.to_string())
                 .ok_or(TypeErr {
                     msg: "Invalid member for struct",
                 })
         } else {
             Err(TypeErr {
-                msg: "Access operator must have struct type on left and identifier on the right",
+                msg: "Access operator must have struct type on the left",
             })
         }
     }
@@ -279,7 +277,7 @@ impl TypeChecker {
             Call(f, args) => self.get_call_expression_type(f, args),
             Cast(expr, typename) => self.get_cast_expression_type(expr, typename),
             ArrayIndex(left, right) => self.get_array_index_expression_type(left, right),
-            Access(left, right) => self.get_access_expression_type(left, right),
+            Access(left, member) => self.get_access_expression_type(left, member),
             Construct(typename, size) => self.get_construct_expression_type(typename, size),
         }
     }

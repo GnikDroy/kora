@@ -279,12 +279,12 @@ impl Parser {
 
     fn parselet_infix_access(
         &mut self,
-        op: InfixOperator,
+        _: InfixOperator,
         term: Expression,
     ) -> Result<Expression, ParseErr> {
         self.pop().unwrap();
-        let right = self.pratt_parser(op.get_binding_power());
-        right.map(|right| Expression::Access(Box::new(term), Box::new(right)))
+        let member = self.parse_identifier()?;
+        Ok(Expression::Access(Box::new(term), member))
     }
 
     fn parselet_infix_operators(
