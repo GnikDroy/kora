@@ -922,6 +922,7 @@ mod tests {
         );
     }
 
+    #[test]
     fn parse_extern_function() {
         test_parser(
             &[

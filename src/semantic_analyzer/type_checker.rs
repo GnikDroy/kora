@@ -108,7 +108,6 @@ impl TypeChecker {
                 }
             },
             _ => {
-                println!("{:?} {:?} {:?}", left, op, right);
                 Err(TypeErr {
                 msg: "Binary operator cannot be applied to the types",
             })
