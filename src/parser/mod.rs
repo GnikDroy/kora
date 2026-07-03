@@ -6,16 +6,20 @@ pub use ast::*;
 pub use errors::*;
 pub use visitor::*;
 
-use crate::lexer::{Keyword, Symbol, Token, TokenInfo};
+use crate::lexer::{Keyword, LexerContext, Symbol, Token, TokenInfo};
 
 pub struct Parser {
     tokens: Vec<TokenInfo>,
+    last_end: LexerContext,
 }
 
 impl Parser {
     pub fn new(mut tokens: Vec<TokenInfo>) -> Parser {
         tokens.reverse();
-        Parser { tokens }
+        Parser {
+            tokens,
+            last_end: LexerContext::default(),
+        }
     }
 
     fn peek(&mut self) -> Result<&TokenInfo, ParseErr> {
@@ -26,10 +30,25 @@ impl Parser {
     }
 
     fn pop(&mut self) -> Result<TokenInfo, ParseErr> {
-        self.tokens.pop().ok_or(ParseErr {
+        let token = self.tokens.pop().ok_or(ParseErr {
             msg: "Unexpected EOF.",
             token: None,
-        })
+        })?;
+        self.last_end = token.end.clone();
+        Ok(token)
+    }
+
+    fn current_start(&self) -> LexerContext {
+        self.tokens
+            .last()
+            .map_or_else(|| self.last_end.clone(), |t| t.start.clone())
+    }
+
+    fn span_from(&self, start: LexerContext) -> Span {
+        Span {
+            start,
+            end: self.last_end.clone(),
+        }
     }
 
     fn pop_token(&mut self, t: Token, msg: &'static str) -> Result<(), ParseErr> {
@@ -200,14 +219,14 @@ impl Parser {
                         Token::Symbol(Symbol::RightParen),
                         "Expected closing paren ) in parenthesized expression: (<expr>)"
                     )
-                    .map(|_| e)
+                    .map(|_| e.node)
                 );
                 return Some(expr);
         }
         None
     }
 
-    fn parse_initial_expression(&mut self) -> Result<Expression, ParseErr> {
+    fn parse_initial_expression(&mut self) -> Result<Spanned<Expression>, ParseErr> {
         let parselets = [
             Parser::parselet_integer_literal,
             Parser::parselet_char_literal,
@@ -222,7 +241,8 @@ impl Parser {
             Parser::parselet_new_operator,
         ];
 
-        parselets.iter().find_map(|f| f(self)).map_or_else(
+        let start = self.current_start();
+        let node = parselets.iter().find_map(|f| f(self)).map_or_else(
             || {
                 Err(ParseErr {
                     msg: "Expected expression: <expr>",
@@ -230,13 +250,14 @@ impl Parser {
                 })
             },
             |r| r,
-        )
+        )?;
+        Ok(Spanned::new(node, self.span_from(start)))
     }
 
     fn parselet_infix_function_call(
         &mut self,
         _: InfixOperator,
-        term: Expression,
+        term: Spanned<Expression>,
     ) -> Result<Expression, ParseErr> {
         let args = self.parse_expression_list();
         args.map(|args| Expression::Call(Box::new(term), args))
@@ -246,7 +267,7 @@ impl Parser {
         &mut self,
         op: InfixOperator,
         binary_op: BinaryOp,
-        left: Expression,
+        left: Spanned<Expression>,
     ) -> Result<Expression, ParseErr> {
         self.pop().unwrap();
         let right = self.pratt_parser(op.get_binding_power());
@@ -256,7 +277,7 @@ impl Parser {
     fn parselet_infix_cast_operator(
         &mut self,
         _: InfixOperator,
-        left: Expression,
+        left: Spanned<Expression>,
     ) -> Result<Expression, ParseErr> {
         self.pop().unwrap();
         self.parse_typename()
@@ -266,7 +287,7 @@ impl Parser {
     fn parselet_infix_array_index(
         &mut self,
         _: InfixOperator,
-        term: Expression,
+        term: Spanned<Expression>,
     ) -> Result<Expression, ParseErr> {
         self.pop().unwrap();
         let right = self.pratt_parser(0);
@@ -280,7 +301,7 @@ impl Parser {
     fn parselet_infix_access(
         &mut self,
         _: InfixOperator,
-        term: Expression,
+        term: Spanned<Expression>,
     ) -> Result<Expression, ParseErr> {
         self.pop().unwrap();
         let member = self.parse_identifier()?;
@@ -290,7 +311,7 @@ impl Parser {
     fn parselet_infix_operators(
         &mut self,
         op: InfixOperator,
-        term: Expression,
+        term: Spanned<Expression>,
     ) -> Result<Expression, ParseErr> {
         match op {
             InfixOperator::Binary(BinaryOp::Cast) => self.parselet_infix_cast_operator(op, term),
@@ -301,7 +322,7 @@ impl Parser {
         }
     }
 
-    fn pratt_parser(&mut self, current_binding_power: u32) -> Result<Expression, ParseErr> {
+    fn pratt_parser(&mut self, current_binding_power: u32) -> Result<Spanned<Expression>, ParseErr> {
         let mut term = self.parse_initial_expression()?;
         loop {
             if !matches!(self.peek(), Err(_)) {
@@ -309,7 +330,9 @@ impl Parser {
                 if let Ok(operator) = InfixOperator::try_from(token.token.clone()) {
                     let binding_power = operator.get_binding_power();
                     if binding_power > current_binding_power {
-                        term = self.parselet_infix_operators(operator, term)?;
+                        let start = term.span.start.clone();
+                        let node = self.parselet_infix_operators(operator, term)?;
+                        term = Spanned::new(node, self.span_from(start));
                         continue;
                     }
                 }
@@ -318,7 +341,7 @@ impl Parser {
         }
     }
 
-    fn parse_expression(&mut self) -> Result<Expression, ParseErr> {
+    fn parse_expression(&mut self) -> Result<Spanned<Expression>, ParseErr> {
         self.pratt_parser(0)
     }
 
@@ -333,7 +356,8 @@ impl Parser {
         }
     }
 
-    fn parse_identifier_type_pair(&mut self) -> Result<IdentifierTypePair, ParseErr> {
+    fn parse_identifier_type_pair(&mut self) -> Result<Spanned<IdentifierTypePair>, ParseErr> {
+        let start = self.current_start();
         let name = self.parse_identifier()?;
 
         self.pop_token(
@@ -342,7 +366,10 @@ impl Parser {
         )?;
 
         let typename = self.parse_typename()?;
-        Ok(IdentifierTypePair { name, typename })
+        Ok(Spanned::new(
+            IdentifierTypePair { name, typename },
+            self.span_from(start),
+        ))
     }
 
     fn parse_generic_delimited<T>(
@@ -526,9 +553,10 @@ impl Parser {
         Ok(Statement::Empty)
     }
 
-    fn parse_statement(&mut self) -> Result<Statement, ParseErr> {
+    fn parse_statement(&mut self) -> Result<Spanned<Statement>, ParseErr> {
+        let start = self.current_start();
         let token = self.peek()?;
-        match token.token {
+        let node = match token.token {
             Token::Symbol(Symbol::Semicolon) => self.parse_empty_statement(),
             Token::Symbol(Symbol::LeftBrace) => self.parse_compound_statement(),
             Token::Keyword(Keyword::Ret) => self.parse_return_statement(),
@@ -536,7 +564,8 @@ impl Parser {
             Token::Keyword(Keyword::While) => self.parse_while_statement(),
             Token::Keyword(Keyword::If) => self.parse_if_statement(),
             _ => self.parse_simple_statement(),
-        }
+        }?;
+        Ok(Spanned::new(node, self.span_from(start)))
     }
 
     fn parse_array_typename(&mut self) -> Result<Type, ParseErr> {
@@ -557,13 +586,17 @@ impl Parser {
 
     fn parse_typename(&mut self) -> Result<Type, ParseErr> {
         let token = self.pop()?;
+        let span = Span {
+            start: token.start.clone(),
+            end: token.end.clone(),
+        };
         match token.token {
             Token::Keyword(Keyword::Nil) => Ok(Type::Nil),
             Token::Keyword(Keyword::Int) => Ok(Type::Int),
             Token::Keyword(Keyword::Real) => Ok(Type::Real),
             Token::Keyword(Keyword::Char) => Ok(Type::Char),
             Token::Keyword(Keyword::Bool) => Ok(Type::Bool),
-            Token::Identifier(name) => Ok(Type::Struct(name)),
+            Token::Identifier(name) => Ok(Type::Struct(Spanned::new(name, span))),
             Token::Symbol(Symbol::LeftBracket) => {
                 self.tokens.push(token);
                 self.parse_array_typename()
@@ -575,7 +608,7 @@ impl Parser {
         }
     }
 
-    fn parse_expression_list(&mut self) -> Result<Vec<Expression>, ParseErr> {
+    fn parse_expression_list(&mut self) -> Result<Vec<Spanned<Expression>>, ParseErr> {
         self.parse_generic_delimited(
             Token::Symbol(Symbol::LeftParen),
             Token::Symbol(Symbol::RightParen),
@@ -584,7 +617,7 @@ impl Parser {
         )
     }
 
-    fn parse_function_parameters(&mut self) -> Result<Vec<IdentifierTypePair>, ParseErr> {
+    fn parse_function_parameters(&mut self) -> Result<Vec<Spanned<IdentifierTypePair>>, ParseErr> {
         self.parse_generic_delimited(
             Token::Symbol(Symbol::LeftParen),
             Token::Symbol(Symbol::RightParen),
@@ -593,7 +626,8 @@ impl Parser {
         )
     }
 
-    fn parse_extern_function(&mut self) -> Result<ExternFunction, ParseErr> {
+    fn parse_extern_function(&mut self) -> Result<Spanned<ExternFunction>, ParseErr> {
+        let start = self.current_start();
         self.pop_token(
             Token::Keyword(Keyword::Extern),
             "Expected function declaration",
@@ -608,23 +642,29 @@ impl Parser {
             "Expected semicolon ; to end extern function declaration",
         )?;
 
-        Ok(ExternFunction {
-            return_type,
-            name,
-            arguments,
-        })
+        Ok(Spanned::new(
+            ExternFunction {
+                return_type,
+                name,
+                arguments,
+            },
+            self.span_from(start),
+        ))
     }
 
-    fn parse_function(&mut self) -> Result<Function, ParseErr> {
-        Ok(Function {
+    fn parse_function(&mut self) -> Result<Spanned<Function>, ParseErr> {
+        let start = self.current_start();
+        let function = Function {
             return_type: self.parse_typename()?,
             name: self.parse_identifier()?,
             arguments: self.parse_function_parameters()?,
             statement: self.parse_statement()?,
-        })
+        };
+        Ok(Spanned::new(function, self.span_from(start)))
     }
 
-    fn parse_struct(&mut self) -> Result<Struct, ParseErr> {
+    fn parse_struct(&mut self) -> Result<Spanned<Struct>, ParseErr> {
+        let start = self.current_start();
         self.pop_token(
             Token::Keyword(Keyword::Struct),
             "Expected struct declaration to start with 'struct': struct <name> {...}",
@@ -636,7 +676,7 @@ impl Parser {
             Token::Symbol(Symbol::Comma),
             Parser::parse_identifier_type_pair,
         )?;
-        Ok(Struct { name, members })
+        Ok(Spanned::new(Struct { name, members }, self.span_from(start)))
     }
 
     fn parse_module(&mut self) -> Result<Module, ParseErr> {

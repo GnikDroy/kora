@@ -19,88 +19,105 @@ pub trait ASTVisitor: Sized {
 
     fn visit_typename(&mut self, _: &Type) {}
 
-    fn visit_identifier_type_pair(&mut self, pair: &IdentifierTypePair) {
+    fn visit_identifier_type_pair(&mut self, pair: &Spanned<IdentifierTypePair>) {
         walk_identifier_type_pair(self, pair);
     }
 
-    fn visit_array(&mut self, exprs: &[Expression]) {
+    fn visit_array(&mut self, exprs: &[Spanned<Expression>]) {
         walk_array(self, exprs);
     }
 
-    fn visit_binary_expression(&mut self, left: &Expression, op: &BinaryOp, right: &Expression) {
+    fn visit_binary_expression(
+        &mut self,
+        left: &Spanned<Expression>,
+        op: &BinaryOp,
+        right: &Spanned<Expression>,
+    ) {
         walk_binary_expression(self, left, op, right);
     }
 
-    fn visit_unary_expression(&mut self, op: &UnaryOp, expr: &Expression) {
+    fn visit_unary_expression(&mut self, op: &UnaryOp, expr: &Spanned<Expression>) {
         walk_unary_expression(self, op, expr);
     }
 
-    fn visit_call_expression(&mut self, expr: &Expression, exprs: &[Expression]) {
+    fn visit_call_expression(&mut self, expr: &Spanned<Expression>, exprs: &[Spanned<Expression>]) {
         walk_call_expression(self, expr, exprs);
     }
 
-    fn visit_cast_expression(&mut self, expr: &Expression, typename: &Type) {
+    fn visit_cast_expression(&mut self, expr: &Spanned<Expression>, typename: &Type) {
         walk_cast_expression(self, expr, typename);
     }
 
-    fn visit_array_index_expression(&mut self, left: &Expression, right: &Expression) {
+    fn visit_array_index_expression(
+        &mut self,
+        left: &Spanned<Expression>,
+        right: &Spanned<Expression>,
+    ) {
         walk_array_index_expression(self, left, right);
     }
 
-    fn visit_access_expression(&mut self, left: &Expression, member: &str) {
+    fn visit_access_expression(&mut self, left: &Spanned<Expression>, member: &str) {
         walk_access_expression(self, left, member);
     }
 
-    fn visit_construct_expression(&mut self, typename: &Type, size: &Option<Box<Expression>>) {
+    fn visit_construct_expression(
+        &mut self,
+        typename: &Type,
+        size: &Option<Box<Spanned<Expression>>>,
+    ) {
         walk_construct_expression(self, typename, size);
     }
 
-    fn visit_expression(&mut self, expr: &Expression) {
+    fn visit_expression(&mut self, expr: &Spanned<Expression>) {
         walk_expression(self, expr);
     }
 
     fn visit_empty_statement(&mut self) {}
 
-    fn visit_simple_statement(&mut self, expr: &Expression) {
+    fn visit_simple_statement(&mut self, expr: &Spanned<Expression>) {
         walk_simple_statement(self, expr);
     }
 
-    fn visit_return_statement(&mut self, expr: &Expression) {
+    fn visit_return_statement(&mut self, expr: &Spanned<Expression>) {
         walk_return_statement(self, expr);
     }
 
-    fn visit_compound_statement(&mut self, stmts: &[Statement]) {
+    fn visit_compound_statement(&mut self, stmts: &[Spanned<Statement>]) {
         walk_compound_statement(self, stmts);
     }
 
-    fn visit_let_statement(&mut self, pair: &IdentifierTypePair, expr: &Expression) {
+    fn visit_let_statement(
+        &mut self,
+        pair: &Spanned<IdentifierTypePair>,
+        expr: &Spanned<Expression>,
+    ) {
         walk_let_statement(self, pair, expr);
     }
 
-    fn visit_while_statement(&mut self, cond: &Expression, stmt: &Statement) {
+    fn visit_while_statement(&mut self, cond: &Spanned<Expression>, stmt: &Spanned<Statement>) {
         walk_while_statement(self, cond, stmt);
     }
 
     fn visit_if_statement(
         &mut self,
-        cond: &Expression,
-        if_case: &Statement,
-        else_case: Option<&Statement>,
+        cond: &Spanned<Expression>,
+        if_case: &Spanned<Statement>,
+        else_case: Option<&Spanned<Statement>>,
     ) {
         walk_if_statement(self, cond, if_case, else_case);
     }
 
-    fn visit_statement(&mut self, stmt: &Statement) {
+    fn visit_statement(&mut self, stmt: &Spanned<Statement>) {
         walk_statement(self, stmt);
     }
 
-    fn visit_function(&mut self, func: &Function) {
+    fn visit_function(&mut self, func: &Spanned<Function>) {
         walk_function(self, func);
     }
 
-    fn visit_struct(&mut self, _: &Struct) {}
+    fn visit_struct(&mut self, _: &Spanned<Struct>) {}
 
-    fn visit_extern_function(&mut self, func: &ExternFunction) {
+    fn visit_extern_function(&mut self, func: &Spanned<ExternFunction>) {
         walk_extern_function(self, func);
     }
 
@@ -109,12 +126,15 @@ pub trait ASTVisitor: Sized {
     }
 }
 
-pub fn walk_identifier_type_pair<V: ASTVisitor>(visitor: &mut V, pair: &IdentifierTypePair) {
-    visitor.visit_identifier(&pair.name);
-    visitor.visit_typename(&pair.typename);
+pub fn walk_identifier_type_pair<V: ASTVisitor>(
+    visitor: &mut V,
+    pair: &Spanned<IdentifierTypePair>,
+) {
+    visitor.visit_identifier(&pair.node.name);
+    visitor.visit_typename(&pair.node.typename);
 }
 
-pub fn walk_array<V: ASTVisitor>(visitor: &mut V, exprs: &[Expression]) {
+pub fn walk_array<V: ASTVisitor>(visitor: &mut V, exprs: &[Spanned<Expression>]) {
     for e in exprs.iter() {
         visitor.visit_expression(e);
     }
@@ -122,8 +142,8 @@ pub fn walk_array<V: ASTVisitor>(visitor: &mut V, exprs: &[Expression]) {
 
 pub fn walk_call_expression<V: ASTVisitor>(
     visitor: &mut V,
-    expr: &Expression,
-    exprs: &[Expression],
+    expr: &Spanned<Expression>,
+    exprs: &[Spanned<Expression>],
 ) {
     visitor.visit_expression(expr);
     for expr in exprs.iter() {
@@ -131,28 +151,36 @@ pub fn walk_call_expression<V: ASTVisitor>(
     }
 }
 
-pub fn walk_cast_expression<V: ASTVisitor>(visitor: &mut V, expr: &Expression, typename: &Type) {
+pub fn walk_cast_expression<V: ASTVisitor>(
+    visitor: &mut V,
+    expr: &Spanned<Expression>,
+    typename: &Type,
+) {
     visitor.visit_expression(expr);
     visitor.visit_typename(typename);
 }
 
 pub fn walk_array_index_expression<V: ASTVisitor>(
     visitor: &mut V,
-    left: &Expression,
-    right: &Expression,
+    left: &Spanned<Expression>,
+    right: &Spanned<Expression>,
 ) {
     visitor.visit_expression(left);
     visitor.visit_expression(right);
 }
 
-pub fn walk_access_expression<V: ASTVisitor>(visitor: &mut V, left: &Expression, _member: &str) {
+pub fn walk_access_expression<V: ASTVisitor>(
+    visitor: &mut V,
+    left: &Spanned<Expression>,
+    _member: &str,
+) {
     visitor.visit_expression(left);
 }
 
 pub fn walk_construct_expression<V: ASTVisitor>(
     visitor: &mut V,
     typename: &Type,
-    size: &Option<Box<Expression>>,
+    size: &Option<Box<Spanned<Expression>>>,
 ) {
     visitor.visit_typename(typename);
     if let Some(size) = size {
@@ -160,22 +188,26 @@ pub fn walk_construct_expression<V: ASTVisitor>(
     }
 }
 
-pub fn walk_unary_expression<V: ASTVisitor>(visitor: &mut V, _: &UnaryOp, expr: &Expression) {
+pub fn walk_unary_expression<V: ASTVisitor>(
+    visitor: &mut V,
+    _: &UnaryOp,
+    expr: &Spanned<Expression>,
+) {
     visitor.visit_expression(expr);
 }
 
 pub fn walk_binary_expression<V: ASTVisitor>(
     visitor: &mut V,
-    left: &Expression,
+    left: &Spanned<Expression>,
     _: &BinaryOp,
-    right: &Expression,
+    right: &Spanned<Expression>,
 ) {
     visitor.visit_expression(left);
     visitor.visit_expression(right);
 }
 
-pub fn walk_expression<V: ASTVisitor>(visitor: &mut V, expr: &Expression) {
-    match expr {
+pub fn walk_expression<V: ASTVisitor>(visitor: &mut V, expr: &Spanned<Expression>) {
+    match &expr.node {
         Expression::IntegerLiteral(i) => {
             visitor.visit_integer_literal(i);
         }
@@ -221,11 +253,11 @@ pub fn walk_expression<V: ASTVisitor>(visitor: &mut V, expr: &Expression) {
     }
 }
 
-pub fn walk_simple_statement<V: ASTVisitor>(visitor: &mut V, expr: &Expression) {
+pub fn walk_simple_statement<V: ASTVisitor>(visitor: &mut V, expr: &Spanned<Expression>) {
     visitor.visit_expression(expr);
 }
 
-pub fn walk_compound_statement<V: ASTVisitor>(visitor: &mut V, stmts: &[Statement]) {
+pub fn walk_compound_statement<V: ASTVisitor>(visitor: &mut V, stmts: &[Spanned<Statement>]) {
     visitor.visit_enter_scope();
     for s in stmts.iter() {
         visitor.visit_statement(s);
@@ -233,29 +265,33 @@ pub fn walk_compound_statement<V: ASTVisitor>(visitor: &mut V, stmts: &[Statemen
     visitor.visit_exit_scope();
 }
 
-pub fn walk_return_statement<V: ASTVisitor>(visitor: &mut V, expr: &Expression) {
+pub fn walk_return_statement<V: ASTVisitor>(visitor: &mut V, expr: &Spanned<Expression>) {
     visitor.visit_expression(expr);
 }
 
 pub fn walk_let_statement<V: ASTVisitor>(
     visitor: &mut V,
-    pair: &IdentifierTypePair,
-    expr: &Expression,
+    pair: &Spanned<IdentifierTypePair>,
+    expr: &Spanned<Expression>,
 ) {
     visitor.visit_identifier_type_pair(pair);
     visitor.visit_expression(expr);
 }
 
-pub fn walk_while_statement<V: ASTVisitor>(visitor: &mut V, cond: &Expression, stmt: &Statement) {
+pub fn walk_while_statement<V: ASTVisitor>(
+    visitor: &mut V,
+    cond: &Spanned<Expression>,
+    stmt: &Spanned<Statement>,
+) {
     visitor.visit_expression(cond);
     visitor.visit_statement(stmt);
 }
 
 pub fn walk_if_statement<V: ASTVisitor>(
     visitor: &mut V,
-    cond: &Expression,
-    if_case: &Statement,
-    else_case: Option<&Statement>,
+    cond: &Spanned<Expression>,
+    if_case: &Spanned<Statement>,
+    else_case: Option<&Spanned<Statement>>,
 ) {
     visitor.visit_expression(cond);
     visitor.visit_statement(if_case);
@@ -264,8 +300,8 @@ pub fn walk_if_statement<V: ASTVisitor>(
     }
 }
 
-pub fn walk_statement<V: ASTVisitor>(visitor: &mut V, stmt: &Statement) {
-    match stmt {
+pub fn walk_statement<V: ASTVisitor>(visitor: &mut V, stmt: &Spanned<Statement>) {
+    match &stmt.node {
         Statement::Empty => visitor.visit_empty_statement(),
         Statement::Simple(expr) => {
             visitor.visit_simple_statement(expr);
@@ -288,22 +324,22 @@ pub fn walk_statement<V: ASTVisitor>(visitor: &mut V, stmt: &Statement) {
     }
 }
 
-pub fn walk_function<V: ASTVisitor>(visitor: &mut V, func: &Function) {
+pub fn walk_function<V: ASTVisitor>(visitor: &mut V, func: &Spanned<Function>) {
     visitor.visit_enter_scope();
-    visitor.visit_typename(&func.return_type);
-    visitor.visit_identifier(&func.name);
-    for arg in func.arguments.iter() {
+    visitor.visit_typename(&func.node.return_type);
+    visitor.visit_identifier(&func.node.name);
+    for arg in func.node.arguments.iter() {
         visitor.visit_identifier_type_pair(arg);
     }
-    visitor.visit_statement(&func.statement);
+    visitor.visit_statement(&func.node.statement);
     visitor.visit_exit_scope();
 }
 
-pub fn walk_extern_function<V: ASTVisitor>(visitor: &mut V, func: &ExternFunction) {
+pub fn walk_extern_function<V: ASTVisitor>(visitor: &mut V, func: &Spanned<ExternFunction>) {
     visitor.visit_enter_scope();
-    visitor.visit_typename(&func.return_type);
-    visitor.visit_identifier(&func.name);
-    for arg in func.arguments.iter() {
+    visitor.visit_typename(&func.node.return_type);
+    visitor.visit_identifier(&func.node.name);
+    for arg in func.node.arguments.iter() {
         visitor.visit_identifier_type_pair(arg);
     }
     visitor.visit_exit_scope();

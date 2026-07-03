@@ -60,28 +60,28 @@ impl SymbolTable {
 }
 
 impl ASTVisitor for SymbolTable {
-    fn visit_let_statement(&mut self, pair: &IdentifierTypePair, expr: &Expression) {
+    fn visit_let_statement(&mut self, pair: &Spanned<IdentifierTypePair>, expr: &Spanned<Expression>) {
         walk_let_statement(self, pair, expr);
-        self.add_symbol(pair.name.clone(), pair.typename.clone());
+        self.add_symbol(pair.node.name.clone(), pair.node.typename.clone());
     }
 
-    fn visit_compound_statement(&mut self, stmts: &[Statement]) {
+    fn visit_compound_statement(&mut self, stmts: &[Spanned<Statement>]) {
         self.push_scope();
         walk_compound_statement(self, stmts);
     }
 
-    fn visit_extern_function(&mut self, func: &ExternFunction) {
+    fn visit_extern_function(&mut self, func: &Spanned<ExternFunction>) {
         self.push_scope();
-        for pair in func.arguments.iter() {
-            self.add_symbol(pair.name.clone(), pair.typename.clone());
+        for pair in func.node.arguments.iter() {
+            self.add_symbol(pair.node.name.clone(), pair.node.typename.clone());
         }
         walk_extern_function(self, func);
     }
 
-    fn visit_function(&mut self, func: &Function) {
+    fn visit_function(&mut self, func: &Spanned<Function>) {
         self.push_scope();
-        for pair in func.arguments.iter() {
-            self.add_symbol(pair.name.clone(), pair.typename.clone());
+        for pair in func.node.arguments.iter() {
+            self.add_symbol(pair.node.name.clone(), pair.node.typename.clone());
         }
         walk_function(self, func);
     }
@@ -89,18 +89,18 @@ impl ASTVisitor for SymbolTable {
     fn visit_module(&mut self, module: &Module) {
         self.push_scope();
         for struct_ in module.structs.iter() {
-            for member in struct_.members.iter() {
+            for member in struct_.node.members.iter() {
                 self.struct_members.insert(
-                    (struct_.name.clone(), member.name.clone()),
-                    member.typename.clone(),
+                    (struct_.node.name.clone(), member.node.name.clone()),
+                    member.node.typename.clone(),
                 );
             }
         }
         for func in module.extern_functions.iter() {
-            self.add_symbol(func.name.clone(), func.get_type());
+            self.add_symbol(func.node.name.clone(), func.node.get_type());
         }
         for func in module.functions.iter() {
-            self.add_symbol(func.name.clone(), func.get_type());
+            self.add_symbol(func.node.name.clone(), func.node.get_type());
         }
         walk_module(self, module);
     }

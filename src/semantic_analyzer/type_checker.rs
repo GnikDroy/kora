@@ -26,7 +26,7 @@ impl TypeChecker {
         }
     }
 
-    fn get_array_type(&self, exprs: &[Expression]) -> Result<Type, TypeErr> {
+    fn get_array_type(&self, exprs: &[Spanned<Expression>], span: &Span) -> Result<Type, TypeErr> {
         let types = exprs
             .iter()
             .map(|e| self.get_expression_type(e))
@@ -38,20 +38,23 @@ impl TypeChecker {
             } else {
                 Err(TypeErr {
                     msg: "Array doesn't consist of homogeneous types.",
+                    span: span.clone(),
                 })
             }
         } else {
             Err(TypeErr {
-               msg: "Cannot infer type of empty array. An empty static array makes no sense either way."
+               msg: "Cannot infer type of empty array. An empty static array makes no sense either way.",
+               span: span.clone(),
             })
         }
     }
 
     fn get_binary_expression_type(
         &self,
-        left: &Expression,
+        left: &Spanned<Expression>,
         op: &BinaryOp,
-        right: &Expression,
+        right: &Spanned<Expression>,
+        span: &Span,
     ) -> Result<Type, TypeErr> {
         use BinaryOp::*;
         use Type::*;
@@ -97,11 +100,13 @@ impl TypeChecker {
             (left_type, Assign, right_type) => {
                 if !self.is_assignable(left) {
                     Err(TypeErr{
-                        msg: "LHS of assign expression is not assignable"
+                        msg: "LHS of assign expression is not assignable",
+                        span: span.clone(),
                     })
                 } else if left_type != right_type {
                     Err(TypeErr{
-                        msg: "LHS and RHS of assign expression don't match"
+                        msg: "LHS and RHS of assign expression don't match",
+                        span: span.clone(),
                     })
                 } else {
                     Ok(left_type)
@@ -110,12 +115,18 @@ impl TypeChecker {
             _ => {
                 Err(TypeErr {
                 msg: "Binary operator cannot be applied to the types",
+                span: span.clone(),
             })
             },
         }
     }
 
-    fn get_unary_expression_type(&self, op: &UnaryOp, expr: &Expression) -> Result<Type, TypeErr> {
+    fn get_unary_expression_type(
+        &self,
+        op: &UnaryOp,
+        expr: &Spanned<Expression>,
+        span: &Span,
+    ) -> Result<Type, TypeErr> {
         use Type::*;
         use UnaryOp::*;
 
@@ -128,21 +139,24 @@ impl TypeChecker {
 
             (Not, Bool)    => Ok(Bool),
             _ => Err(TypeErr {
-                msg: "Unary operator cannot be applied to the types"
+                msg: "Unary operator cannot be applied to the types",
+                span: span.clone(),
             })
         }
     }
 
     fn get_call_expression_type(
         &self,
-        f: &Expression,
-        args: &Vec<Expression>,
+        f: &Spanned<Expression>,
+        args: &[Spanned<Expression>],
+        span: &Span,
     ) -> Result<Type, TypeErr> {
         match self.get_expression_type(f)? {
             Type::Function(ret_type, args_types) => {
                 if args.len() != args_types.len() {
                     return Err(TypeErr {
                         msg: "Function has different number of arguments",
+                        span: span.clone(),
                     });
                 }
 
@@ -150,6 +164,7 @@ impl TypeChecker {
                     if self.get_expression_type(arg)? != arg_type {
                         return Err(TypeErr {
                             msg: "Arguments passed to function do not match type signature for function",
+                            span: arg.span.clone(),
                         });
                     }
                 }
@@ -157,14 +172,16 @@ impl TypeChecker {
             }
             _ => Err(TypeErr {
                 msg: "Call expression must have function type",
+                span: span.clone(),
             }),
         }
     }
 
     fn get_array_index_expression_type(
         &self,
-        left: &Expression,
-        right: &Expression,
+        left: &Spanned<Expression>,
+        right: &Spanned<Expression>,
+        span: &Span,
     ) -> Result<Type, TypeErr> {
         let left_type = self.get_expression_type(left)?;
         let right_type = self.get_expression_type(right)?;
@@ -172,25 +189,29 @@ impl TypeChecker {
             (Type::Array(item_type), Type::Int) => Ok(*item_type),
             _ => Err(TypeErr {
                 msg: "Array index expression must have array type on the left, and integer on the right",
+                span: span.clone(),
             }),
         }
     }
 
     fn get_access_expression_type(
         &self,
-        left: &Expression,
+        left: &Spanned<Expression>,
         member: &str,
+        span: &Span,
     ) -> Result<Type, TypeErr> {
         let left_type = self.get_expression_type(left)?;
         if let Type::Struct(name) = left_type {
             self.global_symbols
-                .resolve_struct_member(&name, &member.to_string())
+                .resolve_struct_member(&name.node, &member.to_string())
                 .ok_or(TypeErr {
                     msg: "Invalid member for struct",
+                    span: span.clone(),
                 })
         } else {
             Err(TypeErr {
                 msg: "Access operator must have struct type on the left",
+                span: span.clone(),
             })
         }
     }
@@ -209,8 +230,9 @@ impl TypeChecker {
 
     fn get_cast_expression_type(
         &self,
-        expr: &Expression,
+        expr: &Spanned<Expression>,
         typename: &Type,
+        span: &Span,
     ) -> Result<Type, TypeErr> {
         let expr_type = self.get_expression_type(expr)?;
         if TypeChecker::is_cast_possible(&expr_type, typename) {
@@ -218,6 +240,7 @@ impl TypeChecker {
         } else {
             Err(TypeErr {
                 msg: "Cannot cast to type",
+                span: span.clone(),
             })
         }
     }
@@ -225,7 +248,8 @@ impl TypeChecker {
     fn get_construct_expression_type(
         &self,
         typename: &Type,
-        size: &Option<Box<Expression>>,
+        size: &Option<Box<Spanned<Expression>>>,
+        span: &Span,
     ) -> Result<Type, TypeErr> {
         match size {
             Some(size) => {
@@ -235,6 +259,7 @@ impl TypeChecker {
                 } else {
                     Err(TypeErr {
                         msg: "Array constructor must be passed an integer inside []",
+                        span: span.clone(),
                     })
                 }
             }
@@ -242,9 +267,9 @@ impl TypeChecker {
         }
     }
 
-    fn is_assignable(&self, expr: &Expression) -> bool {
+    fn is_assignable(&self, expr: &Spanned<Expression>) -> bool {
         use Expression::*;
-        match expr {
+        match &expr.node {
             IntegerLiteral(_) => false,
             RealLiteral(_) => false,
             CharLiteral(_) => false,
@@ -262,33 +287,35 @@ impl TypeChecker {
         }
     }
 
-    fn get_expression_type(&self, expr: &Expression) -> Result<Type, TypeErr> {
+    fn get_expression_type(&self, expr: &Spanned<Expression>) -> Result<Type, TypeErr> {
         use Expression::*;
-        match expr {
+        let span = &expr.span;
+        match &expr.node {
             IntegerLiteral(_) => Ok(Type::Int),
             RealLiteral(_) => Ok(Type::Real),
             CharLiteral(_) => Ok(Type::Char),
             StringLiteral(_) => Ok(Type::Array(Box::new(Type::Char))),
             BoolLiteral(_) => Ok(Type::Bool),
-            Array(exprs) => self.get_array_type(exprs),
+            Array(exprs) => self.get_array_type(exprs, span),
             Identifier(name) => Ok(self.current_symbols.resolve(name).unwrap()),
-            Binary(left, op, right) => self.get_binary_expression_type(left, op, right),
-            Unary(op, term) => self.get_unary_expression_type(op, term),
-            Call(f, args) => self.get_call_expression_type(f, args),
-            Cast(expr, typename) => self.get_cast_expression_type(expr, typename),
-            ArrayIndex(left, right) => self.get_array_index_expression_type(left, right),
-            Access(left, member) => self.get_access_expression_type(left, member),
-            Construct(typename, size) => self.get_construct_expression_type(typename, size),
+            Binary(left, op, right) => self.get_binary_expression_type(left, op, right, span),
+            Unary(op, term) => self.get_unary_expression_type(op, term, span),
+            Call(f, args) => self.get_call_expression_type(f, args, span),
+            Cast(expr, typename) => self.get_cast_expression_type(expr, typename, span),
+            ArrayIndex(left, right) => self.get_array_index_expression_type(left, right, span),
+            Access(left, member) => self.get_access_expression_type(left, member, span),
+            Construct(typename, size) => self.get_construct_expression_type(typename, size, span),
         }
     }
 
-    fn ensure_type(&mut self, expr: &Expression, expected: &Type) {
+    fn ensure_type(&mut self, expr: &Spanned<Expression>, expected: &Type) {
         let expr_type = self.get_expression_type(expr);
         match expr_type {
             Ok(typename) if typename == *expected => {}
             Err(type_err) => self.errors.push(type_err),
             _ => self.errors.push(TypeErr {
                 msg: "Types don't match",
+                span: expr.span.clone(),
             }),
         };
     }
@@ -304,39 +331,39 @@ impl ASTVisitor for TypeChecker {
         self.current_symbols.pop_scope();
     }
 
-    fn visit_function(&mut self, func: &Function) {
-        self.current_function_name = func.name.clone();
+    fn visit_function(&mut self, func: &Spanned<Function>) {
+        self.current_function_name = func.node.name.clone();
         walk_function(self, func);
     }
 
-    fn visit_let_statement(&mut self, pair: &IdentifierTypePair, expr: &Expression) {
-        self.ensure_type(expr, &pair.typename);
+    fn visit_let_statement(&mut self, pair: &Spanned<IdentifierTypePair>, expr: &Spanned<Expression>) {
+        self.ensure_type(expr, &pair.node.typename);
         walk_let_statement(self, pair, expr);
     }
 
     fn visit_if_statement(
         &mut self,
-        cond: &Expression,
-        if_case: &Statement,
-        else_case: Option<&Statement>,
+        cond: &Spanned<Expression>,
+        if_case: &Spanned<Statement>,
+        else_case: Option<&Spanned<Statement>>,
     ) {
         self.ensure_type(cond, &Type::Bool);
         walk_if_statement(self, cond, if_case, else_case);
     }
 
-    fn visit_while_statement(&mut self, cond: &Expression, stmt: &Statement) {
+    fn visit_while_statement(&mut self, cond: &Spanned<Expression>, stmt: &Spanned<Statement>) {
         self.ensure_type(cond, &Type::Bool);
         walk_while_statement(self, cond, stmt);
     }
 
-    fn visit_simple_statement(&mut self, expr: &Expression) {
+    fn visit_simple_statement(&mut self, expr: &Spanned<Expression>) {
         if let Err(e) = self.get_expression_type(expr) {
             self.errors.push(e);
         }
         walk_simple_statement(self, expr);
     }
 
-    fn visit_return_statement(&mut self, expr: &Expression) {
+    fn visit_return_statement(&mut self, expr: &Spanned<Expression>) {
         let func_type = self
             .current_symbols
             .resolve(&self.current_function_name)
@@ -459,5 +486,26 @@ mod tests {
             symbol_table,
             checker.check().unwrap()
         );
+    }
+
+    #[test]
+    fn error_carries_span() {
+        // The `true` mismatched against `int` sits on line 3; the type error
+        // must point there rather than at a default (0, 0) location.
+        let source = "int main() {\n\n    let x: int = true;\n}\n";
+
+        let tokens = lexer::Lexer::lex(source).expect("lex");
+        let mut parser = parser::Parser::new(tokens);
+        let module = parser.parse().expect("parse");
+        let mut symbol_table = SymbolTable::new();
+        symbol_table.visit_module(&module);
+
+        let mut checker = TypeChecker::new(symbol_table);
+        checker.visit_module(&module);
+
+        let errors = checker.check().expect_err("expected a type error");
+        assert_eq!(errors.len(), 1, "errors: {:?}", errors);
+        assert_eq!(errors[0].span.start.row, 3, "span: {:?}", errors[0].span);
+        assert!(errors[0].span.start.col > 0, "span: {:?}", errors[0].span);
     }
 }

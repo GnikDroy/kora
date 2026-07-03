@@ -1,31 +1,84 @@
-use crate::lexer::{Keyword, Symbol, Token};
+use crate::lexer::{Keyword, LexerContext, Symbol, Token};
+use std::fmt;
+use std::hash::{Hash, Hasher};
+
+/// Source range for an AST node
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct Span {
+    pub start: LexerContext,
+    pub end: LexerContext,
+}
+
+impl Span {
+    pub fn to(&self, other: &Span) -> Span {
+        Span {
+            start: self.start.clone(),
+            end: other.end.clone(),
+        }
+    }
+}
+
+/// An AST node annotated with where it was written. 
+/// Equality and `Debug` ignore the span so comparisons and type hashes
+/// work as if the span weren't there.
+#[derive(Clone)]
+pub struct Spanned<T> {
+    pub node: T,
+    pub span: Span,
+}
+
+impl<T> Spanned<T> {
+    pub fn new(node: T, span: Span) -> Self {
+        Spanned { node, span }
+    }
+}
+
+impl<T: fmt::Debug> fmt::Debug for Spanned<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.node.fmt(f)
+    }
+}
+
+impl<T: PartialEq> PartialEq for Spanned<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.node == other.node
+    }
+}
+
+impl<T: Eq> Eq for Spanned<T> {}
+
+impl<T: Hash> Hash for Spanned<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.node.hash(state);
+    }
+}
 
 #[derive(Debug, Default)]
 pub struct Module {
-    pub structs: Vec<Struct>,
-    pub extern_functions: Vec<ExternFunction>,
-    pub functions: Vec<Function>,
+    pub structs: Vec<Spanned<Struct>>,
+    pub extern_functions: Vec<Spanned<ExternFunction>>,
+    pub functions: Vec<Spanned<Function>>,
 }
 
 #[derive(Debug, Clone)]
 pub struct Struct {
     pub name: String,
-    pub members: Vec<IdentifierTypePair>,
+    pub members: Vec<Spanned<IdentifierTypePair>>,
 }
 
 #[derive(Debug)]
 pub struct ExternFunction {
     pub return_type: Type,
     pub name: String,
-    pub arguments: Vec<IdentifierTypePair>,
+    pub arguments: Vec<Spanned<IdentifierTypePair>>,
 }
 
 #[derive(Debug)]
 pub struct Function {
     pub return_type: Type,
     pub name: String,
-    pub arguments: Vec<IdentifierTypePair>,
-    pub statement: Statement,
+    pub arguments: Vec<Spanned<IdentifierTypePair>>,
+    pub statement: Spanned<Statement>,
 }
 
 impl ExternFunction {
@@ -40,10 +93,10 @@ impl Function {
     }
 }
 
-fn get_type(return_type: &Type, args: &[IdentifierTypePair]) -> Type {
+fn get_type(return_type: &Type, args: &[Spanned<IdentifierTypePair>]) -> Type {
     let args = args
         .iter()
-        .map(|IdentifierTypePair { name: _, typename }| typename.clone())
+        .map(|pair| pair.node.typename.clone())
         .collect();
     Type::Function(Box::new(return_type.clone()), args)
 }
@@ -62,19 +115,23 @@ pub enum Type {
     Bool,
     Char,
     Array(Box<Type>),
-    Struct(String),
+    Struct(Spanned<String>),
     Function(Box<Type>, Vec<Type>),
 }
 
 #[derive(Debug)]
 pub enum Statement {
     Empty,
-    Simple(Expression),
-    Return(Expression),
-    Let(IdentifierTypePair, Expression),
-    While(Expression, Box<Statement>),
-    If(Expression, Box<Statement>, Option<Box<Statement>>),
-    Compound(Vec<Statement>),
+    Simple(Spanned<Expression>),
+    Return(Spanned<Expression>),
+    Let(Spanned<IdentifierTypePair>, Spanned<Expression>),
+    While(Spanned<Expression>, Box<Spanned<Statement>>),
+    If(
+        Spanned<Expression>,
+        Box<Spanned<Statement>>,
+        Option<Box<Spanned<Statement>>>,
+    ),
+    Compound(Vec<Spanned<Statement>>),
 }
 
 #[derive(Debug)]
@@ -84,15 +141,15 @@ pub enum Expression {
     StringLiteral(String),
     BoolLiteral(bool),
     RealLiteral(f64),
-    Array(Vec<Expression>),
+    Array(Vec<Spanned<Expression>>),
     Identifier(String),
-    Binary(Box<Expression>, BinaryOp, Box<Expression>),
-    Unary(UnaryOp, Box<Expression>),
-    Call(Box<Expression>, Vec<Expression>),
-    ArrayIndex(Box<Expression>, Box<Expression>),
-    Cast(Box<Expression>, Type),
-    Access(Box<Expression>, String),
-    Construct(Type, Option<Box<Expression>>),
+    Binary(Box<Spanned<Expression>>, BinaryOp, Box<Spanned<Expression>>),
+    Unary(UnaryOp, Box<Spanned<Expression>>),
+    Call(Box<Spanned<Expression>>, Vec<Spanned<Expression>>),
+    ArrayIndex(Box<Spanned<Expression>>, Box<Spanned<Expression>>),
+    Cast(Box<Spanned<Expression>>, Type),
+    Access(Box<Spanned<Expression>>, String),
+    Construct(Type, Option<Box<Spanned<Expression>>>),
 }
 
 #[derive(Debug)]
