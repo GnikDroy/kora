@@ -155,11 +155,6 @@ pub enum Expression {
     Construct(Type, Option<Box<Spanned<Expression>>>),
 }
 
-#[derive(Debug)]
-pub struct FunctionArgument {
-    pub name: String,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinaryOp {
     Assign,
@@ -185,19 +180,18 @@ impl BinaryOp {}
 pub enum UnaryOp {
     Not,
     Negate,
-    New,
 }
 
 impl UnaryOp {
     pub fn get_binding_power(&self) -> u32 {
         match self {
-            UnaryOp::Not | UnaryOp::Negate | UnaryOp::New => 102,
+            UnaryOp::Not | UnaryOp::Negate => 102,
         }
     }
 
     pub fn is_left_associative(&self) -> bool {
         match self {
-            UnaryOp::Not | UnaryOp::Negate | UnaryOp::New => false,
+            UnaryOp::Not | UnaryOp::Negate => false,
         }
     }
 }
