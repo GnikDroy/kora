@@ -65,7 +65,7 @@ impl<'a> TypeChecker<'a> {
             (Int, Add, Int)            => Ok(Int),
             (Int, Subtract, Int)       => Ok(Int),
             (Int, Multiply, Int)       => Ok(Int),
-            (Int, Divide, Int)         => Ok(Real),
+            (Int, Divide, Int)         => Ok(Int),
             (Int, Equality, Int)       => Ok(Bool),
             (Int, NotEquality, Int)    => Ok(Bool),
             (Int, Greater, Int)        => Ok(Bool),
@@ -493,6 +493,21 @@ mod tests {
         assert_eq!(errors.len(), 1, "errors: {:?}", errors);
         assert_eq!(errors[0].span.start.row, 3, "span: {:?}", errors[0].span);
         assert!(errors[0].span.start.col > 0, "span: {:?}", errors[0].span);
+    }
+
+    #[test]
+    fn int_division_yields_int() {
+        let ok = r#"int main() { let x: int = 7 / 2; ret 0; }"#;
+        let bad = r#"int main() { let x: real = 7 / 2; ret 0; }"#;
+
+        for (source, expect_ok) in [(ok, true), (bad, false)] {
+            let tokens = lexer::Lexer::lex(source).expect("lex");
+            let module = parser::Parser::new(tokens).parse().expect("parse");
+            let symbols = Resolver::new().resolve(&module).expect("resolve");
+            let mut checker = TypeChecker::new(&symbols);
+            checker.visit_module(&module);
+            assert_eq!(checker.check().is_ok(), expect_ok, "source: {}", source);
+        }
     }
 
     #[test]
