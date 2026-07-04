@@ -397,13 +397,18 @@ impl ASTVisitor for TypeChecker<'_> {
         walk_simple_statement(self, expr);
     }
 
-    fn visit_return_statement(&mut self, expr: &Spanned<Expression>) {
-        match self.current_return_type.clone() {
-            Some(ret_type) => self.ensure_type(expr, &ret_type),
-            None => self.errors.push(TypeErr {
+    fn visit_return_statement(&mut self, expr: Option<&Spanned<Expression>>, span: &Span) {
+        match (self.current_return_type.clone(), expr) {
+            (Some(ret_type), Some(expr)) => self.ensure_type(expr, &ret_type),
+            (Some(_), None) => self.errors.push(TypeErr {
+                msg: "A function with a return type must return a value",
+                span: span.clone(),
+            }),
+            (None, Some(expr)) => self.errors.push(TypeErr {
                 msg: "A void function cannot return a value",
                 span: expr.span.clone(),
             }),
+            (None, None) => {}
         }
         walk_return_statement(self, expr);
     }
@@ -680,6 +685,19 @@ mod tests {
                 r#"int main() { let a: [int] = new [int]; return 0; }"#,
                 false,
             ),
+        ]);
+    }
+
+    #[test]
+    fn bare_return_matrix() {
+        check_cases(&[
+            (
+                r#"void f(a: bool) { if (a) { return; } a = !a; } int main() { return 0; }"#,
+                true,
+            ),
+            (r#"int f() { return 1; } int main() { return 0; }"#, true),
+            (r#"int f() { return; } int main() { return 0; }"#, false),
+            (r#"void f() { return 1; } int main() { return 0; }"#, false),
         ]);
     }
 

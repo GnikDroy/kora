@@ -468,13 +468,18 @@ impl Parser {
             "Expected return statement: return <expr>;",
         )?;
 
+        if self.peek()?.token == Token::Symbol(Symbol::Semicolon) {
+            self.pop()?;
+            return Ok(Statement::Return(None));
+        }
+
         let expr = self.parse_expression()?;
 
         self.pop_token(
             Token::Symbol(Symbol::Semicolon),
             "Expected semicolon: return <expr>;",
         )?;
-        Ok(Statement::Return(expr))
+        Ok(Statement::Return(Some(expr)))
     }
 
     fn parse_simple_statement(&mut self) -> Result<Statement, ParseErr> {
@@ -917,8 +922,8 @@ mod tests {
     #[test]
     fn parse_return_statement() {
         test_parser(
-            &["return 1;", "return (a+b);", "return func(call);"],
-            &["return", "return ;", "return 1"],
+            &["return 1;", "return (a+b);", "return func(call);", "return;", "return ;"],
+            &["return", "return 1"],
             Parser::parse_return_statement,
         )
     }

@@ -434,7 +434,7 @@ mod tests {
         let Statement::Compound(stmts) = &body.node else {
             panic!("expected compound body");
         };
-        let Statement::Return(expr) = &stmts[0].node else {
+        let Statement::Return(Some(expr)) = &stmts[0].node else {
             panic!("expected return statement");
         };
         assert!(matches!(expr.node, Expression::Identifier(_)));

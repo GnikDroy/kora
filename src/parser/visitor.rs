@@ -78,7 +78,7 @@ pub trait ASTVisitor: Sized {
         walk_simple_statement(self, expr);
     }
 
-    fn visit_return_statement(&mut self, expr: &Spanned<Expression>) {
+    fn visit_return_statement(&mut self, expr: Option<&Spanned<Expression>>, _span: &Span) {
         walk_return_statement(self, expr);
     }
 
@@ -265,8 +265,10 @@ pub fn walk_compound_statement<V: ASTVisitor>(visitor: &mut V, stmts: &[Spanned<
     visitor.visit_exit_scope();
 }
 
-pub fn walk_return_statement<V: ASTVisitor>(visitor: &mut V, expr: &Spanned<Expression>) {
-    visitor.visit_expression(expr);
+pub fn walk_return_statement<V: ASTVisitor>(visitor: &mut V, expr: Option<&Spanned<Expression>>) {
+    if let Some(expr) = expr {
+        visitor.visit_expression(expr);
+    }
 }
 
 pub fn walk_let_statement<V: ASTVisitor>(
@@ -310,7 +312,7 @@ pub fn walk_statement<V: ASTVisitor>(visitor: &mut V, stmt: &Spanned<Statement>)
             visitor.visit_compound_statement(stmts);
         }
         Statement::Return(expr) => {
-            visitor.visit_return_statement(expr);
+            visitor.visit_return_statement(expr.as_ref(), &stmt.span);
         }
         Statement::Let(pair, expr) => {
             visitor.visit_let_statement(pair, expr);

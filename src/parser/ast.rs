@@ -125,7 +125,7 @@ pub enum Type {
 pub enum Statement {
     Empty,
     Simple(Spanned<Expression>),
-    Return(Spanned<Expression>),
+    Return(Option<Spanned<Expression>>),
     Let(Spanned<IdentifierTypePair>, Spanned<Expression>),
     While(Spanned<Expression>, Box<Spanned<Statement>>),
     If(
