@@ -44,7 +44,7 @@ impl ReturnChecker {
 
 impl ASTVisitor for ReturnChecker {
     fn visit_function(&mut self, func: &Spanned<Function>) {
-        if func.node.return_type != Type::Nil && !Self::always_returns(&func.node.statement.node) {
+        if func.node.return_type.is_some() && !Self::always_returns(&func.node.statement.node) {
             self.errors.push(TypeErr {
                 msg: "Function with non-nil return type does not return on all paths",
                 span: func.span.clone(),

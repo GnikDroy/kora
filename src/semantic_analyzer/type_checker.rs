@@ -3,7 +3,7 @@ use crate::parser::*;
 
 pub struct TypeChecker<'a> {
     symbols: &'a SymbolTable,
-    current_return_type: Type,
+    current_return_type: Option<Type>,
     errors: Vec<TypeErr>,
 }
 
@@ -11,7 +11,7 @@ impl<'a> TypeChecker<'a> {
     pub fn new(symbols: &'a SymbolTable) -> TypeChecker<'a> {
         TypeChecker {
             symbols,
-            current_return_type: Type::Nil,
+            current_return_type: None,
             errors: Vec::new(),
         }
     }
@@ -143,12 +143,36 @@ impl<'a> TypeChecker<'a> {
         }
     }
 
-    fn get_call_expression_type(
+    fn get_len_intrinsic_type(
+        &self,
+        args: &[Spanned<Expression>],
+        span: &Span,
+    ) -> Result<Type, TypeErr> {
+        let [arg] = args else {
+            return Err(TypeErr {
+                msg: "len expects exactly one argument",
+                span: span.clone(),
+            });
+        };
+        match self.get_expression_type(arg)? {
+            Type::Array(_) => Ok(Type::Int),
+            _ => Err(TypeErr {
+                msg: "len expects an array or string argument",
+                span: span.clone(),
+            }),
+        }
+    }
+
+    fn get_call_type(
         &self,
         f: &Spanned<Expression>,
         args: &[Spanned<Expression>],
         span: &Span,
-    ) -> Result<Type, TypeErr> {
+    ) -> Result<Option<Type>, TypeErr> {
+        if matches!(&f.node, Expression::Identifier(name) if name == "len") {
+            return self.get_len_intrinsic_type(args, span).map(Some);
+        }
+
         match self.get_expression_type(f)? {
             Type::Function(ret_type, args_types) => {
                 if args.len() != args_types.len() {
@@ -166,7 +190,7 @@ impl<'a> TypeChecker<'a> {
                         });
                     }
                 }
-                Ok(*ret_type)
+                Ok(ret_type.map(|ret| *ret))
             }
             _ => Err(TypeErr {
                 msg: "Call expression must have function type",
@@ -301,7 +325,10 @@ impl<'a> TypeChecker<'a> {
             }),
             Binary(left, op, right) => self.get_binary_expression_type(left, op, right, span),
             Unary(op, term) => self.get_unary_expression_type(op, term, span),
-            Call(f, args) => self.get_call_expression_type(f, args, span),
+            Call(f, args) => self.get_call_type(f, args, span)?.ok_or_else(|| TypeErr {
+                msg: "A nil function returns no value and cannot be used as a value",
+                span: span.clone(),
+            }),
             Cast(expr, typename) => self.get_cast_expression_type(expr, typename, span),
             ArrayIndex(left, right) => self.get_array_index_expression_type(left, right, span),
             Access(left, member) => self.get_access_expression_type(left, member, span),
@@ -353,15 +380,24 @@ impl ASTVisitor for TypeChecker<'_> {
     }
 
     fn visit_simple_statement(&mut self, expr: &Spanned<Expression>) {
-        if let Err(e) = self.get_expression_type(expr) {
+        let result = match &expr.node {
+            Expression::Call(f, args) => self.get_call_type(f, args, &expr.span).map(|_| ()),
+            _ => self.get_expression_type(expr).map(|_| ()),
+        };
+        if let Err(e) = result {
             self.errors.push(e);
         }
         walk_simple_statement(self, expr);
     }
 
     fn visit_return_statement(&mut self, expr: &Spanned<Expression>) {
-        let ret_type = self.current_return_type.clone();
-        self.ensure_type(expr, &ret_type);
+        match self.current_return_type.clone() {
+            Some(ret_type) => self.ensure_type(expr, &ret_type),
+            None => self.errors.push(TypeErr {
+                msg: "A nil function cannot return a value",
+                span: expr.span.clone(),
+            }),
+        }
         walk_return_statement(self, expr);
     }
 }
@@ -390,6 +426,7 @@ mod tests {
                 let c: real = 6.2345;
                 let d: char = 'a';
                 let e: [Person] = new Person[23];
+                e[0] = new Person;
                 e[0].name = "Name";
                 e[0].age = 23;
                 e[1] = new Person;
@@ -511,6 +548,65 @@ mod tests {
     }
 
     #[test]
+    fn len_intrinsic_types() {
+        let cases = [
+            // array/string argument yields an int
+            (
+                r#"int main() { let a: [int] = new int[3]; ret len(a); }"#,
+                true,
+            ),
+            (r#"int main() { ret len("hi"); }"#, true),
+            // len result is an int, not something else
+            (
+                r#"real main() { let a: [int] = new int[3]; ret len(a); }"#,
+                false,
+            ),
+            // non-array argument is rejected
+            (r#"int main() { ret len(5); }"#, false),
+            // wrong arity is rejected
+            (
+                r#"int main() { let a: [int] = new int[3]; ret len(a, a); }"#,
+                false,
+            ),
+        ];
+
+        for (source, expect_ok) in cases {
+            let tokens = lexer::Lexer::lex(source).expect("lex");
+            let module = parser::Parser::new(tokens).parse().expect("parse");
+            let symbols = Resolver::new().resolve(&module).expect("resolve");
+            let mut checker = TypeChecker::new(&symbols);
+            checker.visit_module(&module);
+            assert_eq!(checker.check().is_ok(), expect_ok, "source: {}", source);
+        }
+    }
+
+    #[test]
+    fn nil_function_semantics() {
+        let cases = [
+            (r#"nil f() { } int main() { f(); ret 0; }"#, true),
+            (r#"nil f() { ret 1; }"#, false),
+            (
+                r#"nil f() { } int main() { let x: int = f(); ret x; }"#,
+                false,
+            ),
+            (r#"nil f() { } int main() { ret f(); }"#, false),
+            (
+                r#"nil f() { } int g(a: int) { ret a; } int main() { ret g(f()); }"#,
+                false,
+            ),
+        ];
+
+        for (source, expect_ok) in cases {
+            let tokens = lexer::Lexer::lex(source).expect("lex");
+            let module = parser::Parser::new(tokens).parse().expect("parse");
+            let symbols = Resolver::new().resolve(&module).expect("resolve");
+            let mut checker = TypeChecker::new(&symbols);
+            checker.visit_module(&module);
+            assert_eq!(checker.check().is_ok(), expect_ok, "source: {}", source);
+        }
+    }
+
+    #[test]
     fn call_result_is_not_assignable() {
         let source = r#"
             int f() { ret 1; }
@@ -529,7 +625,9 @@ mod tests {
         let mut checker = TypeChecker::new(&symbols);
         checker.visit_module(&module);
 
-        let errors = checker.check().expect_err("expected an unassignable-LHS error");
+        let errors = checker
+            .check()
+            .expect_err("expected an unassignable-LHS error");
         assert_eq!(errors.len(), 1, "errors: {:?}", errors);
     }
 }

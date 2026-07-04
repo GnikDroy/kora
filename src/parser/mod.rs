@@ -609,6 +609,15 @@ impl Parser {
         Ok(Type::Array(Box::new(typename)))
     }
 
+    fn parse_return_type(&mut self) -> Result<Option<Type>, ParseErr> {
+        if matches!(self.peek()?.token, Token::Keyword(Keyword::Nil)) {
+            self.pop()?;
+            Ok(None)
+        } else {
+            Ok(Some(self.parse_typename()?))
+        }
+    }
+
     fn parse_typename(&mut self) -> Result<Type, ParseErr> {
         let token = self.pop()?;
         let span = Span {
@@ -616,7 +625,6 @@ impl Parser {
             end: token.end.clone(),
         };
         match token.token {
-            Token::Keyword(Keyword::Nil) => Ok(Type::Nil),
             Token::Keyword(Keyword::Int) => Ok(Type::Int),
             Token::Keyword(Keyword::Real) => Ok(Type::Real),
             Token::Keyword(Keyword::Char) => Ok(Type::Char),
@@ -658,7 +666,7 @@ impl Parser {
             "Expected function declaration",
         )?;
 
-        let return_type = self.parse_typename()?;
+        let return_type = self.parse_return_type()?;
         let name = self.parse_identifier()?;
         let arguments = self.parse_function_parameters()?;
 
@@ -681,7 +689,7 @@ impl Parser {
     fn parse_function(&mut self) -> Result<Spanned<Function>, ParseErr> {
         let start = self.current_start();
         let function = Function {
-            return_type: self.parse_typename()?,
+            return_type: self.parse_return_type()?,
             name: self.parse_identifier()?,
             arguments: self.parse_function_parameters()?,
             statement: self.parse_statement()?,
@@ -822,9 +830,18 @@ mod tests {
     #[test]
     fn parse_typename() {
         test_parser(
-            &["nil", "int", "real", "char", "[[int]]", "custom_type"],
-            &["", "2000", "{0}", "[int", "]"],
+            &["int", "real", "char", "[[int]]", "custom_type"],
+            &["", "2000", "{0}", "[int", "]", "nil", "[nil]"],
             Parser::parse_typename,
+        );
+    }
+
+    #[test]
+    fn parse_return_type() {
+        test_parser(
+            &["nil", "int", "[char]", "custom_type"],
+            &["", "2000", "]"],
+            Parser::parse_return_type,
         );
     }
 

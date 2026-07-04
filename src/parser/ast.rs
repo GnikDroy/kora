@@ -74,14 +74,14 @@ pub struct Struct {
 
 #[derive(Debug)]
 pub struct ExternFunction {
-    pub return_type: Type,
+    pub return_type: Option<Type>,
     pub name: String,
     pub arguments: Vec<Spanned<IdentifierTypePair>>,
 }
 
 #[derive(Debug)]
 pub struct Function {
-    pub return_type: Type,
+    pub return_type: Option<Type>,
     pub name: String,
     pub arguments: Vec<Spanned<IdentifierTypePair>>,
     pub statement: Spanned<Statement>,
@@ -99,9 +99,9 @@ impl Function {
     }
 }
 
-fn get_type(return_type: &Type, args: &[Spanned<IdentifierTypePair>]) -> Type {
+fn get_type(return_type: &Option<Type>, args: &[Spanned<IdentifierTypePair>]) -> Type {
     let args = args.iter().map(|pair| pair.node.typename.clone()).collect();
-    Type::Function(Box::new(return_type.clone()), args)
+    Type::Function(return_type.clone().map(Box::new), args)
 }
 
 #[derive(Debug, Clone)]
@@ -112,14 +112,13 @@ pub struct IdentifierTypePair {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Type {
-    Nil,
     Int,
     Real,
     Bool,
     Char,
     Array(Box<Type>),
     Struct(Spanned<String>),
-    Function(Box<Type>, Vec<Type>),
+    Function(Option<Box<Type>>, Vec<Type>),
 }
 
 #[derive(Debug)]

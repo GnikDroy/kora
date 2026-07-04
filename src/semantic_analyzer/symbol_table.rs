@@ -3,6 +3,13 @@ use std::collections::HashMap;
 use super::errors::TypeErr;
 use crate::parser::*;
 
+/// Reserved intrinsic names, handled by the type checker and undeclarable by user code.
+pub const INTRINSICS: &[&str] = &["len"];
+
+pub fn is_intrinsic(name: &str) -> bool {
+    INTRINSICS.contains(&name)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SymbolId(usize);
 
@@ -87,6 +94,13 @@ impl Resolver {
     }
 
     fn declare(&mut self, name: String, ty: Type, span: &Span) -> SymbolId {
+        if is_intrinsic(&name) {
+            self.errors.push(TypeErr {
+                msg: "Cannot declare a name reserved for a compiler intrinsic",
+                span: span.clone(),
+            });
+        }
+
         // Same-scope redeclaration is an error; shadowing an outer scope is fine.
         let duplicate = self
             .scopes
@@ -165,7 +179,9 @@ impl ASTVisitor for Resolver {
         // Top-level functions are visible everywhere (forward refs), so declare
         // them all before walking any body.
         for func in module.extern_functions.iter() {
-            self.visit_typename(&func.node.return_type);
+            if let Some(return_type) = &func.node.return_type {
+                self.visit_typename(return_type);
+            }
             for arg in func.node.arguments.iter() {
                 self.visit_typename(&arg.node.typename);
             }
@@ -184,7 +200,9 @@ impl ASTVisitor for Resolver {
 
     fn visit_function(&mut self, func: &Spanned<Function>) {
         self.push_scope();
-        self.visit_typename(&func.node.return_type);
+        if let Some(return_type) = &func.node.return_type {
+            self.visit_typename(return_type);
+        }
         for pair in func.node.arguments.iter() {
             self.visit_typename(&pair.node.typename);
             self.declare(
@@ -209,7 +227,9 @@ impl ASTVisitor for Resolver {
             }
             Type::Array(inner) => self.visit_typename(inner),
             Type::Function(ret, args) => {
-                self.visit_typename(ret);
+                if let Some(ret) = ret {
+                    self.visit_typename(ret);
+                }
                 for arg in args.iter() {
                     self.visit_typename(arg);
                 }
@@ -240,6 +260,18 @@ impl ASTVisitor for Resolver {
             pair.node.typename.clone(),
             &pair.span,
         );
+    }
+
+    fn visit_call_expression(&mut self, expr: &Spanned<Expression>, args: &[Spanned<Expression>]) {
+        // An intrinsic callee is not a resolvable symbol; skip it, but still
+        // resolve the arguments.
+        if matches!(&expr.node, Expression::Identifier(name) if is_intrinsic(name)) {
+            for arg in args.iter() {
+                self.visit_expression(arg);
+            }
+            return;
+        }
+        walk_call_expression(self, expr, args);
     }
 
     fn visit_expression(&mut self, expr: &Spanned<Expression>) {
@@ -334,6 +366,31 @@ mod tests {
             let errors = resolve(source).expect_err(source);
             assert_eq!(errors.len(), 1, "source: {}, errors: {:?}", source, errors);
         }
+    }
+
+    #[test]
+    fn intrinsic_names_cannot_be_declared() {
+        let cases = [
+            r#"int len(a: int) { ret a; } int main() { ret 0; }"#,
+            r#"extern int len(a: int); int main() { ret 0; }"#,
+            r#"int main() { let len: int = 1; ret len; }"#,
+            r#"int main(len: int) { ret len; }"#,
+        ];
+        for source in cases {
+            let errors = resolve(source).expect_err(source);
+            assert!(
+                errors.iter().any(|e| e.msg.contains("intrinsic")),
+                "source: {}, errors: {:?}",
+                source,
+                errors
+            );
+        }
+    }
+
+    #[test]
+    fn intrinsic_call_does_not_flag_undefined() {
+        let source = r#"int main() { let a: [int] = new int[3]; ret len(a); }"#;
+        assert!(resolve(source).is_ok());
     }
 
     #[test]
