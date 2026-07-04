@@ -1,20 +1,18 @@
 use super::{errors::TypeErr, symbol_table::*};
 use crate::parser::*;
 
-#[derive(Default)]
-pub struct TypeChecker {
-    global_symbols: SymbolTable,
-    current_symbols: SymbolTable,
-    current_function_name: String,
+pub struct TypeChecker<'a> {
+    symbols: &'a SymbolTable,
+    current_return_type: Type,
     errors: Vec<TypeErr>,
 }
 
-impl TypeChecker {
-    pub fn new(mut symbols: SymbolTable) -> TypeChecker {
-        symbols.reverse();
+impl<'a> TypeChecker<'a> {
+    pub fn new(symbols: &'a SymbolTable) -> TypeChecker<'a> {
         TypeChecker {
-            global_symbols: symbols,
-            ..Default::default()
+            symbols,
+            current_return_type: Type::Nil,
+            errors: Vec::new(),
         }
     }
 
@@ -43,8 +41,8 @@ impl TypeChecker {
             }
         } else {
             Err(TypeErr {
-               msg: "Cannot infer type of empty array. An empty static array makes no sense either way.",
-               span: span.clone(),
+                msg: "Cannot infer type of empty array. An empty static array makes no sense either way.",
+                span: span.clone(),
             })
         }
     }
@@ -202,8 +200,8 @@ impl TypeChecker {
     ) -> Result<Type, TypeErr> {
         let left_type = self.get_expression_type(left)?;
         if let Type::Struct(name) = left_type {
-            self.global_symbols
-                .resolve_struct_member(&name.node, &member.to_string())
+            self.symbols
+                .resolve_struct_member(&name.node, member)
                 .ok_or(TypeErr {
                     msg: "Invalid member for struct",
                     span: span.clone(),
@@ -297,7 +295,10 @@ impl TypeChecker {
             StringLiteral(_) => Ok(Type::Array(Box::new(Type::Char))),
             BoolLiteral(_) => Ok(Type::Bool),
             Array(exprs) => self.get_array_type(exprs, span),
-            Identifier(name) => Ok(self.current_symbols.resolve(name).unwrap()),
+            Identifier(_) => self.symbols.type_of_use(expr.id).ok_or(TypeErr {
+                msg: "Undefined identifier",
+                span: span.clone(),
+            }),
             Binary(left, op, right) => self.get_binary_expression_type(left, op, right, span),
             Unary(op, term) => self.get_unary_expression_type(op, term, span),
             Call(f, args) => self.get_call_expression_type(f, args, span),
@@ -321,22 +322,17 @@ impl TypeChecker {
     }
 }
 
-impl ASTVisitor for TypeChecker {
-    fn visit_enter_scope(&mut self) {
-        let scope = self.global_symbols.pop_scope().unwrap();
-        self.current_symbols.add_scope(scope);
-    }
-
-    fn visit_exit_scope(&mut self) {
-        self.current_symbols.pop_scope();
-    }
-
+impl ASTVisitor for TypeChecker<'_> {
     fn visit_function(&mut self, func: &Spanned<Function>) {
-        self.current_function_name = func.node.name.clone();
+        self.current_return_type = func.node.return_type.clone();
         walk_function(self, func);
     }
 
-    fn visit_let_statement(&mut self, pair: &Spanned<IdentifierTypePair>, expr: &Spanned<Expression>) {
+    fn visit_let_statement(
+        &mut self,
+        pair: &Spanned<IdentifierTypePair>,
+        expr: &Spanned<Expression>,
+    ) {
         self.ensure_type(expr, &pair.node.typename);
         walk_let_statement(self, pair, expr);
     }
@@ -364,13 +360,8 @@ impl ASTVisitor for TypeChecker {
     }
 
     fn visit_return_statement(&mut self, expr: &Spanned<Expression>) {
-        let func_type = self
-            .current_symbols
-            .resolve(&self.current_function_name)
-            .unwrap();
-        if let Type::Function(ret_type, _) = func_type {
-            self.ensure_type(expr, &ret_type);
-        }
+        let ret_type = self.current_return_type.clone();
+        self.ensure_type(expr, &ret_type);
         walk_return_statement(self, expr);
     }
 }
@@ -380,7 +371,7 @@ mod tests {
     use crate::{
         lexer,
         parser::{self, ASTVisitor},
-        semantic_analyzer::symbol_table::SymbolTable,
+        semantic_analyzer::symbol_table::Resolver,
     };
 
     use super::TypeChecker;
@@ -426,17 +417,15 @@ mod tests {
         let tokens = lexer::Lexer::lex(source).expect("lex");
         let mut parser = parser::Parser::new(tokens);
         let module = parser.parse().expect("parse");
-        let mut symbol_table = SymbolTable::new();
-        symbol_table.visit_module(&module);
+        let symbols = Resolver::new().resolve(&module).expect("resolve");
 
-        let mut checker = TypeChecker::new(symbol_table.clone());
+        let mut checker = TypeChecker::new(&symbols);
         checker.visit_module(&module);
         assert_eq!(
             checker.check().is_ok(),
             true,
-            "source_text: {}, symbol_table: {:#?} errors: {:?}",
+            "source_text: {}, errors: {:?}",
             source,
-            symbol_table,
             checker.check().unwrap_err()
         );
     }
@@ -473,17 +462,15 @@ mod tests {
         let tokens = lexer::Lexer::lex(source).expect("lex");
         let mut parser = parser::Parser::new(tokens);
         let module = parser.parse().expect("parse");
-        let mut symbol_table = SymbolTable::new();
-        symbol_table.visit_module(&module);
+        let symbols = Resolver::new().resolve(&module).expect("resolve");
 
-        let mut checker = TypeChecker::new(symbol_table.clone());
+        let mut checker = TypeChecker::new(&symbols);
         checker.visit_module(&module);
         assert_eq!(
             checker.check().is_err() && checker.check().unwrap_err().len() == 4,
             true,
-            "source_text: {}, symbol_table: {:#?} errors: {:?}",
+            "source_text: {}, errors: {:?}",
             source,
-            symbol_table,
             checker.check().unwrap()
         );
     }
@@ -497,10 +484,9 @@ mod tests {
         let tokens = lexer::Lexer::lex(source).expect("lex");
         let mut parser = parser::Parser::new(tokens);
         let module = parser.parse().expect("parse");
-        let mut symbol_table = SymbolTable::new();
-        symbol_table.visit_module(&module);
+        let symbols = Resolver::new().resolve(&module).expect("resolve");
 
-        let mut checker = TypeChecker::new(symbol_table);
+        let mut checker = TypeChecker::new(&symbols);
         checker.visit_module(&module);
 
         let errors = checker.check().expect_err("expected a type error");

@@ -108,7 +108,9 @@ impl TryFrom<&str> for Symbol {
     type Error = ();
     fn try_from(s: &str) -> Result<Self, Self::Error> {
         use Symbol::*;
-        if let Some(c) = s.chars().next() && s.len() == 1 {
+        if let Some(c) = s.chars().next()
+            && s.len() == 1
+        {
             Symbol::try_from(c)
         } else {
             match s {

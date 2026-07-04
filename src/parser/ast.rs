@@ -18,18 +18,24 @@ impl Span {
     }
 }
 
-/// An AST node annotated with where it was written. 
-/// Equality and `Debug` ignore the span so comparisons and type hashes
-/// work as if the span weren't there.
+/// Stable identity for an AST node, assigned by the parser.
+/// Used as the key for side tables.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct NodeId(pub u32);
+
+/// An AST node annotated with where it was written and a stable `NodeId`.
+/// Equality, `Hash`, and `Debug` delegate to `node` - the `span` and `id` are
+/// metadata, so two structurally-equal nodes compare/hash equal regardless.
 #[derive(Clone)]
 pub struct Spanned<T> {
     pub node: T,
     pub span: Span,
+    pub id: NodeId,
 }
 
 impl<T> Spanned<T> {
-    pub fn new(node: T, span: Span) -> Self {
-        Spanned { node, span }
+    pub fn new(node: T, span: Span, id: NodeId) -> Self {
+        Spanned { node, span, id }
     }
 }
 
@@ -94,10 +100,7 @@ impl Function {
 }
 
 fn get_type(return_type: &Type, args: &[Spanned<IdentifierTypePair>]) -> Type {
-    let args = args
-        .iter()
-        .map(|pair| pair.node.typename.clone())
-        .collect();
+    let args = args.iter().map(|pair| pair.node.typename.clone()).collect();
     Type::Function(Box::new(return_type.clone()), args)
 }
 

@@ -166,7 +166,7 @@ impl Lexer {
                         context: context.clone(),
                         suggestion: "Valid sequences are [\\n, \\t, \\r, \\0, \\\\, \\', \\\"]"
                             .to_string(),
-                    })
+                    });
                 }
             };
             cursor.next();
@@ -185,20 +185,24 @@ impl Lexer {
         cursor: &mut Cursor<impl Iterator<Item = (LexerContext, char)>>,
         _: char,
     ) -> Result<Token, LexerErr> {
-        if let Some((_, c)) = cursor.next() && c != '\'' {
+        if let Some((_, c)) = cursor.next()
+            && c != '\''
+        {
             let byte = match c {
                 _ if c.len_utf8() != 1 => {
                     return Err(LexerErr {
                         msg: "Char literals must only occupy one byte",
                         context: context.clone(),
                         suggestion: "Perhaps you need a string literal? ' -> \"".to_string(),
-                    })
+                    });
                 }
                 _ if c == '\\' => Lexer::consume_char_escape_code(context, cursor, c)?,
                 _ => *c.to_string().as_bytes().first().unwrap(),
             };
 
-            if let Some((_, quote)) = cursor.next() && quote == '\'' {
+            if let Some((_, quote)) = cursor.next()
+                && quote == '\''
+            {
                 Ok(Token::CharLiteral(byte))
             } else {
                 Err(LexerErr {
@@ -236,7 +240,7 @@ impl Lexer {
                         context: context.clone(),
                         suggestion: "Valid sequences are [\\n, \\t, \\r, \\0, \\\\, \\', \\\"]"
                             .to_string(),
-                    })
+                    });
                 }
             };
             cursor.next();
