@@ -277,7 +277,7 @@ impl<'a> TypeChecker<'a> {
             Identifier(_) => true,
             Binary(_, _, _) => false,
             Unary(_, _) => false,
-            Call(_, _) => true,
+            Call(_, _) => false,
             Cast(_, _) => false,
             ArrayIndex(_, _) => true,
             Access(_, _) => true,
@@ -493,5 +493,28 @@ mod tests {
         assert_eq!(errors.len(), 1, "errors: {:?}", errors);
         assert_eq!(errors[0].span.start.row, 3, "span: {:?}", errors[0].span);
         assert!(errors[0].span.start.col > 0, "span: {:?}", errors[0].span);
+    }
+
+    #[test]
+    fn call_result_is_not_assignable() {
+        let source = r#"
+            int f() { ret 1; }
+
+            int main() {
+                f() = 1;
+                ret 0;
+            }
+        "#;
+
+        let tokens = lexer::Lexer::lex(source).expect("lex");
+        let mut parser = parser::Parser::new(tokens);
+        let module = parser.parse().expect("parse");
+        let symbols = Resolver::new().resolve(&module).expect("resolve");
+
+        let mut checker = TypeChecker::new(&symbols);
+        checker.visit_module(&module);
+
+        let errors = checker.check().expect_err("expected an unassignable-LHS error");
+        assert_eq!(errors.len(), 1, "errors: {:?}", errors);
     }
 }
