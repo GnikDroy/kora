@@ -446,6 +446,14 @@ mod tests {
     }
 
     #[test]
+    fn error_display_includes_position_and_suggestion() {
+        let err = Lexer::lex("?").expect_err("expected lex error");
+        let rendered = err.to_string();
+        assert!(rendered.contains("1:1"), "rendered: {}", rendered);
+        assert!(rendered.contains("quotes"), "rendered: {}", rendered);
+    }
+
+    #[test]
     fn multiline_spans() {
         let toks = Lexer::lex("ab\ncde").unwrap();
         assert_eq!(toks.len(), 2);

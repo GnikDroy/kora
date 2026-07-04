@@ -66,6 +66,7 @@ impl<'a> TypeChecker<'a> {
             (Int, Subtract, Int)       => Ok(Int),
             (Int, Multiply, Int)       => Ok(Int),
             (Int, Divide, Int)         => Ok(Int),
+            (Int, Modulo, Int)         => Ok(Int),
             (Int, Equality, Int)       => Ok(Bool),
             (Int, NotEquality, Int)    => Ok(Bool),
             (Int, Greater, Int)        => Ok(Bool),
@@ -96,7 +97,7 @@ impl<'a> TypeChecker<'a> {
             (Char, GreaterEqual, Char) => Ok(Bool),
             (Char, LessEqual, Char)    => Ok(Bool),
             (left_type, Assign, right_type) => {
-                if !self.is_assignable(left) {
+                if !self.is_assignable(left) || matches!(left_type, Function(_, _)) {
                     Err(TypeErr{
                         msg: "LHS of assign expression is not assignable",
                         span: span.clone(),
@@ -285,7 +286,13 @@ impl<'a> TypeChecker<'a> {
                     })
                 }
             }
-            _ => Ok(typename.clone()),
+            _ => match typename {
+                Type::Struct(_) => Ok(typename.clone()),
+                _ => Err(TypeErr {
+                    msg: "Only structs can be constructed without a size: new <struct>",
+                    span: span.clone(),
+                }),
+            },
         }
     }
 
@@ -629,5 +636,62 @@ mod tests {
             .check()
             .expect_err("expected an unassignable-LHS error");
         assert_eq!(errors.len(), 1, "errors: {:?}", errors);
+    }
+
+    fn check_cases(cases: &[(&str, bool)]) {
+        for (source, expect_ok) in cases {
+            let tokens = lexer::Lexer::lex(source).expect("lex");
+            let module = parser::Parser::new(tokens).parse().expect("parse");
+            let symbols = Resolver::new().resolve(&module).expect("resolve");
+            let mut checker = TypeChecker::new(&symbols);
+            checker.visit_module(&module);
+            assert_eq!(checker.check().is_ok(), *expect_ok, "source: {}", source);
+        }
+    }
+
+    #[test]
+    fn modulo_is_int_only() {
+        check_cases(&[
+            (r#"int main() { return 7 % 2; }"#, true),
+            (
+                r#"int main() { let x: real = 7.0 % 2.0; return 0; }"#,
+                false,
+            ),
+            (
+                r#"int main() { let b: bool = true % false; return 0; }"#,
+                false,
+            ),
+        ]);
+    }
+
+    #[test]
+    fn sizeless_new_is_structs_only() {
+        check_cases(&[
+            (
+                r#"struct P { x: int } int main() { let p: P = new P; return 0; }"#,
+                true,
+            ),
+            (
+                r#"int main() { let a: [int] = new int[3]; return 0; }"#,
+                true,
+            ),
+            (r#"int main() { let x: int = new int; return x; }"#, false),
+            (
+                r#"int main() { let a: [int] = new [int]; return 0; }"#,
+                false,
+            ),
+        ]);
+    }
+
+    #[test]
+    fn function_names_are_not_assignable() {
+        check_cases(&[(
+            r#"
+                int f() { return 1; }
+                int g() { return 2; }
+                int main() { f = g; return 0; }
+            "#,
+            false,
+        )]);
     }
 }

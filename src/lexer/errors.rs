@@ -14,6 +14,10 @@ impl Error for LexerErr {}
 
 impl fmt::Display for LexerErr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(f, "{}", self.msg)
+        write!(
+            f,
+            "error: {} ({}:{})\nsuggestion: {}",
+            self.msg, self.context.row, self.context.col, self.suggestion
+        )
     }
 }

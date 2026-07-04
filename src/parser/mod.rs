@@ -265,13 +265,12 @@ impl Parser {
         ];
 
         let start = self.current_start();
-        let node = parselets
-            .iter()
-            .find_map(|f| f(self))
-            .unwrap_or(Err(ParseErr {
+        let node = parselets.iter().find_map(|f| f(self)).unwrap_or_else(|| {
+            Err(ParseErr {
                 msg: "Expected expression: <expr>",
-                token: None,
-            }))?;
+                token: self.tokens.last().cloned(),
+            })
+        })?;
         let span = self.span_from(start);
         Ok(self.spanned(node, span))
     }
@@ -635,7 +634,7 @@ impl Parser {
                 self.parse_array_typename()
             }
             _ => Err(ParseErr {
-                msg: "Expected type declaration: <type> | [<type>, <size>]",
+                msg: "Expected type declaration: <type> | [<type>]",
                 token: Some(token.clone()),
             }),
         }
@@ -688,11 +687,26 @@ impl Parser {
 
     fn parse_function(&mut self) -> Result<Spanned<Function>, ParseErr> {
         let start = self.current_start();
+        let return_type = self.parse_return_type()?;
+        let name = self.parse_identifier()?;
+        let arguments = self.parse_function_parameters()?;
+
+        // A function body must be a compound statement; there are no forward
+        // declarations (all top-level functions are pre-declared by the resolver).
+        let token = self.peek()?;
+        if token.token != Token::Symbol(Symbol::LeftBrace) {
+            return Err(ParseErr {
+                msg: "Expected function body: <type> <name>(<params>) { <stmt> ... }",
+                token: Some(token.clone()),
+            });
+        }
+        let statement = self.parse_statement()?;
+
         let function = Function {
-            return_type: self.parse_return_type()?,
-            name: self.parse_identifier()?,
-            arguments: self.parse_function_parameters()?,
-            statement: self.parse_statement()?,
+            return_type,
+            name,
+            arguments,
+            statement,
         };
         let span = self.span_from(start);
         Ok(self.spanned(function, span))
@@ -794,8 +808,13 @@ mod tests {
     #[test]
     fn parse_module() {
         test_parser(
-            &["", "int main();", "extern int a(); int b(); int c();"],
-            &["i", "int main()", "int a(); int b(); int ();"],
+            &["", "int main(){}", "extern int a(); int b(){} int c(){}"],
+            &[
+                "i",
+                "int main()",
+                "int main();",
+                "int a(){} int b(){} int (){}",
+            ],
             Parser::parse_module,
         );
     }
@@ -1034,9 +1053,9 @@ mod tests {
     fn parse_function() {
         test_parser(
             &[
-                "int main();",
-                "bool main(){}",
-                "int main(a: int, b : int, c: int);",
+                "int main(){}",
+                "bool main(){ return true; }",
+                "int main(a: int, b : int, c: int){ return a; }",
                 "[bool] main(){}",
             ],
             &[
@@ -1044,9 +1063,22 @@ mod tests {
                 "int ();",
                 "int main(c: int;",
                 "int main(a: int)",
+                // Function bodies must be compound statements.
+                "int main();",
+                "int main() return 1;",
+                "void main() let x: int = 1;",
             ],
             Parser::parse_function,
         );
+    }
+
+    #[test]
+    fn expression_error_carries_offending_token() {
+        let tokens = lexer::Lexer::lex("int main() { let x: int = ); }").expect("lex");
+        let err = Parser::new(tokens)
+            .parse()
+            .expect_err("expected parse error");
+        assert!(err.token.is_some(), "err: {:?}", err);
     }
 
     #[test]
