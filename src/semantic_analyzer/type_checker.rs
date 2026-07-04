@@ -343,6 +343,16 @@ impl<'a> TypeChecker<'a> {
         }
     }
 
+    fn check_statement_expression(&mut self, expr: &Spanned<Expression>) {
+        let result = match &expr.node {
+            Expression::Call(f, args) => self.get_call_type(f, args, &expr.span).map(|_| ()),
+            _ => self.get_expression_type(expr).map(|_| ()),
+        };
+        if let Err(e) = result {
+            self.errors.push(e);
+        }
+    }
+
     fn ensure_type(&mut self, expr: &Spanned<Expression>, expected: &Type) {
         let expr_type = self.get_expression_type(expr);
         match expr_type {
@@ -387,14 +397,20 @@ impl ASTVisitor for TypeChecker<'_> {
     }
 
     fn visit_simple_statement(&mut self, expr: &Spanned<Expression>) {
-        let result = match &expr.node {
-            Expression::Call(f, args) => self.get_call_type(f, args, &expr.span).map(|_| ()),
-            _ => self.get_expression_type(expr).map(|_| ()),
-        };
-        if let Err(e) = result {
-            self.errors.push(e);
-        }
+        self.check_statement_expression(expr);
         walk_simple_statement(self, expr);
+    }
+
+    fn visit_for_statement(
+        &mut self,
+        init: &Spanned<Statement>,
+        cond: &Spanned<Expression>,
+        step: &Spanned<Expression>,
+        body: &Spanned<Statement>,
+    ) {
+        self.ensure_type(cond, &Type::Bool);
+        self.check_statement_expression(step);
+        walk_for_statement(self, init, cond, step, body);
     }
 
     fn visit_return_statement(&mut self, expr: Option<&Spanned<Expression>>, span: &Span) {
@@ -684,6 +700,24 @@ mod tests {
             (
                 r#"int main() { let a: [int] = new [int]; return 0; }"#,
                 false,
+            ),
+        ]);
+    }
+
+    #[test]
+    fn for_statement_types() {
+        check_cases(&[
+            (
+                r#"int main() { for (let i: int = 0; i < 3; i = i + 1) { i; } return 0; }"#,
+                true,
+            ),
+            (
+                r#"int main() { for (let i: int = 0; i; i = i + 1) { } return 0; }"#,
+                false,
+            ),
+            (
+                r#"void f() { } int main() { for (let i: int = 0; i < 3; f()) { } return 0; }"#,
+                true,
             ),
         ]);
     }

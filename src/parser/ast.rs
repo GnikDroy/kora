@@ -128,6 +128,14 @@ pub enum Statement {
     Return(Option<Spanned<Expression>>),
     Let(Spanned<IdentifierTypePair>, Spanned<Expression>),
     While(Spanned<Expression>, Box<Spanned<Statement>>),
+    For(
+        Box<Spanned<Statement>>,
+        Spanned<Expression>,
+        Spanned<Expression>,
+        Box<Spanned<Statement>>,
+    ),
+    Break,
+    Continue,
     If(
         Spanned<Expression>,
         Box<Spanned<Statement>>,

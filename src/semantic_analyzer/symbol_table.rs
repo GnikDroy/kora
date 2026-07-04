@@ -67,6 +67,7 @@ pub struct Resolver {
     table: SymbolTable,
     scopes: Vec<HashMap<String, SymbolId>>,
     errors: Vec<TypeErr>,
+    loop_depth: usize,
 }
 
 impl Resolver {
@@ -262,6 +263,48 @@ impl ASTVisitor for Resolver {
         );
     }
 
+    fn visit_while_statement(&mut self, cond: &Spanned<Expression>, stmt: &Spanned<Statement>) {
+        self.visit_expression(cond);
+        self.loop_depth += 1;
+        self.visit_statement(stmt);
+        self.loop_depth -= 1;
+    }
+
+    fn visit_for_statement(
+        &mut self,
+        init: &Spanned<Statement>,
+        cond: &Spanned<Expression>,
+        step: &Spanned<Expression>,
+        body: &Spanned<Statement>,
+    ) {
+        self.push_scope();
+        self.visit_statement(init);
+        self.visit_expression(cond);
+        self.visit_expression(step);
+        self.loop_depth += 1;
+        self.visit_statement(body);
+        self.loop_depth -= 1;
+        self.pop_scope();
+    }
+
+    fn visit_break_statement(&mut self, span: &Span) {
+        if self.loop_depth == 0 {
+            self.errors.push(TypeErr {
+                msg: "break outside of a loop",
+                span: span.clone(),
+            });
+        }
+    }
+
+    fn visit_continue_statement(&mut self, span: &Span) {
+        if self.loop_depth == 0 {
+            self.errors.push(TypeErr {
+                msg: "continue outside of a loop",
+                span: span.clone(),
+            });
+        }
+    }
+
     fn visit_call_expression(&mut self, expr: &Spanned<Expression>, args: &[Spanned<Expression>]) {
         // An intrinsic callee is not a resolvable symbol; skip it, but still
         // resolve the arguments.
@@ -406,6 +449,34 @@ mod tests {
             }
         "#;
         assert!(resolve(source).is_ok());
+    }
+
+    #[test]
+    fn for_scopes_induction_variable_to_the_loop() {
+        let source = r#"
+            int main() {
+                for (let i: int = 0; i < 3; i = i + 1) { i; }
+                return i;
+            }
+        "#;
+        let errors = resolve(source).expect_err("expected undefined-identifier error");
+        assert_eq!(errors.len(), 1, "errors: {:?}", errors);
+    }
+
+    #[test]
+    fn break_and_continue_require_a_loop() {
+        let ok = r#"
+            int main() {
+                while (true) { break; }
+                for (let i: int = 0; i < 3; i = i + 1) { continue; }
+                return 0;
+            }
+        "#;
+        assert!(resolve(ok).is_ok());
+
+        let bad = r#"int main() { break; continue; return 0; }"#;
+        let errors = resolve(bad).expect_err("expected outside-loop errors");
+        assert_eq!(errors.len(), 2, "errors: {:?}", errors);
     }
 
     #[test]

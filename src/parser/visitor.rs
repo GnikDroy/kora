@@ -98,6 +98,20 @@ pub trait ASTVisitor: Sized {
         walk_while_statement(self, cond, stmt);
     }
 
+    fn visit_for_statement(
+        &mut self,
+        init: &Spanned<Statement>,
+        cond: &Spanned<Expression>,
+        step: &Spanned<Expression>,
+        body: &Spanned<Statement>,
+    ) {
+        walk_for_statement(self, init, cond, step, body);
+    }
+
+    fn visit_break_statement(&mut self, _span: &Span) {}
+
+    fn visit_continue_statement(&mut self, _span: &Span) {}
+
     fn visit_if_statement(
         &mut self,
         cond: &Spanned<Expression>,
@@ -289,6 +303,19 @@ pub fn walk_while_statement<V: ASTVisitor>(
     visitor.visit_statement(stmt);
 }
 
+pub fn walk_for_statement<V: ASTVisitor>(
+    visitor: &mut V,
+    init: &Spanned<Statement>,
+    cond: &Spanned<Expression>,
+    step: &Spanned<Expression>,
+    body: &Spanned<Statement>,
+) {
+    visitor.visit_statement(init);
+    visitor.visit_expression(cond);
+    visitor.visit_expression(step);
+    visitor.visit_statement(body);
+}
+
 pub fn walk_if_statement<V: ASTVisitor>(
     visitor: &mut V,
     cond: &Spanned<Expression>,
@@ -320,6 +347,11 @@ pub fn walk_statement<V: ASTVisitor>(visitor: &mut V, stmt: &Spanned<Statement>)
         Statement::While(cond, stmt) => {
             visitor.visit_while_statement(cond, stmt);
         }
+        Statement::For(init, cond, step, body) => {
+            visitor.visit_for_statement(init, cond, step, body);
+        }
+        Statement::Break => visitor.visit_break_statement(&stmt.span),
+        Statement::Continue => visitor.visit_continue_statement(&stmt.span),
         Statement::If(cond, if_case, else_case) => {
             visitor.visit_if_statement(cond, if_case, else_case.as_deref())
         }

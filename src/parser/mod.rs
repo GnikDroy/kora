@@ -573,6 +573,72 @@ impl Parser {
         Ok(Statement::While(expr, Box::new(stmt)))
     }
 
+    fn parse_for_statement(&mut self) -> Result<Statement, ParseErr> {
+        self.pop_token(
+            Token::Keyword(Keyword::For),
+            "Expected for: for (<init> <cond>; <step>) <statement>",
+        )?;
+
+        self.pop_token(
+            Token::Symbol(Symbol::LeftParen),
+            "Expected (: for (<init> <cond>; <step>) <statement>",
+        )?;
+
+        // The init clause is a full statement (consumes its own `;`), restricted
+        // to declarations, expressions, or nothing.
+        let init_start = self.current_start();
+        let init = match self.peek()?.token {
+            Token::Symbol(Symbol::Semicolon) => self.parse_empty_statement(),
+            Token::Keyword(Keyword::Let) => self.parse_let_statement(),
+            _ => self.parse_simple_statement(),
+        }?;
+        let init_span = self.span_from(init_start);
+        let init = self.spanned(init, init_span);
+
+        let cond = self.parse_expression()?;
+
+        self.pop_token(
+            Token::Symbol(Symbol::Semicolon),
+            "Expected ; after loop condition: for (<init> <cond>; <step>) <statement>",
+        )?;
+
+        let step = self.parse_expression()?;
+
+        self.pop_token(
+            Token::Symbol(Symbol::RightParen),
+            "Expected ): for (<init> <cond>; <step>) <statement>",
+        )?;
+
+        let body = self.parse_statement()?;
+        Ok(Statement::For(
+            Box::new(init),
+            cond,
+            step,
+            Box::new(body),
+        ))
+    }
+
+    fn parse_break_statement(&mut self) -> Result<Statement, ParseErr> {
+        self.pop_token(Token::Keyword(Keyword::Break), "Expected break: break;")?;
+        self.pop_token(
+            Token::Symbol(Symbol::Semicolon),
+            "Expected semicolon: break;",
+        )?;
+        Ok(Statement::Break)
+    }
+
+    fn parse_continue_statement(&mut self) -> Result<Statement, ParseErr> {
+        self.pop_token(
+            Token::Keyword(Keyword::Continue),
+            "Expected continue: continue;",
+        )?;
+        self.pop_token(
+            Token::Symbol(Symbol::Semicolon),
+            "Expected semicolon: continue;",
+        )?;
+        Ok(Statement::Continue)
+    }
+
     fn parse_empty_statement(&mut self) -> Result<Statement, ParseErr> {
         self.pop_token(
             Token::Symbol(Symbol::Semicolon),
@@ -590,6 +656,9 @@ impl Parser {
             Token::Keyword(Keyword::Return) => self.parse_return_statement(),
             Token::Keyword(Keyword::Let) => self.parse_let_statement(),
             Token::Keyword(Keyword::While) => self.parse_while_statement(),
+            Token::Keyword(Keyword::For) => self.parse_for_statement(),
+            Token::Keyword(Keyword::Break) => self.parse_break_statement(),
+            Token::Keyword(Keyword::Continue) => self.parse_continue_statement(),
             Token::Keyword(Keyword::If) => self.parse_if_statement(),
             _ => self.parse_simple_statement(),
         }?;
@@ -965,6 +1034,35 @@ mod tests {
             &["while", "while (true)", "while (true) a", "while (true a"],
             Parser::parse_while_statement,
         )
+    }
+
+    #[test]
+    fn parse_for_statement() {
+        test_parser(
+            &[
+                "for (let i: int = 0; i < 10; i = i + 1) { i; }",
+                "for (; true; x) ;",
+                "for (x; x == y; f(x)) { break; continue; }",
+            ],
+            &[
+                "for",
+                "for (let i: int = 0 i < 10; i = i + 1) ;",
+                "for (;;) ;",
+                "for (; true; x)",
+                "for (; true; x;) ;",
+            ],
+            Parser::parse_for_statement,
+        )
+    }
+
+    #[test]
+    fn parse_break_and_continue() {
+        test_parser(&["break;"], &["break", "break 1;"], Parser::parse_break_statement);
+        test_parser(
+            &["continue;"],
+            &["continue", "continue 1;"],
+            Parser::parse_continue_statement,
+        );
     }
 
     #[test]

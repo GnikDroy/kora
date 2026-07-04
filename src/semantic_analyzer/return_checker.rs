@@ -28,7 +28,8 @@ impl ReturnChecker {
 
     fn always_returns(stmt: &Statement) -> bool {
         match stmt {
-            Statement::While(_, _) => false,
+            Statement::While(_, _) | Statement::For(_, _, _, _) => false,
+            Statement::Break | Statement::Continue => false,
             Statement::Empty | Statement::Simple(_) | Statement::Let(_, _) => false,
             Statement::If(_, _, None) => false,
             Statement::Return(_) => true,
@@ -112,5 +113,15 @@ mod tests {
     #[test]
     fn return_after_while_is_ok() {
         assert!(returns_ok("int f(a: bool) { while (a) { } return 0; }"));
+    }
+
+    #[test]
+    fn for_does_not_guarantee_return() {
+        assert!(!returns_ok(
+            "int f() { for (let i: int = 0; true; i) { return 1; } }"
+        ));
+        assert!(returns_ok(
+            "int f() { for (let i: int = 0; true; i) { } return 0; }"
+        ));
     }
 }

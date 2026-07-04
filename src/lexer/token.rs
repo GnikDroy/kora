@@ -16,6 +16,9 @@ pub enum Keyword {
     As,
     Struct,
     New,
+    For,
+    Break,
+    Continue,
 }
 
 impl TryFrom<&str> for Keyword {
@@ -39,6 +42,9 @@ impl TryFrom<&str> for Keyword {
             "as"     => Ok(Keyword::As),
             "struct" => Ok(Keyword::Struct),
             "new"    => Ok(Keyword::New),
+            "for"    => Ok(Keyword::For),
+            "break"  => Ok(Keyword::Break),
+            "continue" => Ok(Keyword::Continue),
             _ => Err(()),
         }
     }
