@@ -1,11 +1,11 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Keyword {
-    Ret,
+    Return,
     Let,
     If,
     Else,
     While,
-    Nil,
+    Void,
     Int,
     Real,
     Char,
@@ -23,12 +23,12 @@ impl TryFrom<&str> for Keyword {
     fn try_from(s: &str) -> Result<Self, Self::Error> {
         #[rustfmt::skip]
         match s {
-            "ret"    => Ok(Keyword::Ret),
+            "return"    => Ok(Keyword::Return),
             "let"    => Ok(Keyword::Let),
             "if"     => Ok(Keyword::If),
             "else"   => Ok(Keyword::Else),
             "while"  => Ok(Keyword::While),
-            "nil"    => Ok(Keyword::Nil),
+            "void"    => Ok(Keyword::Void),
             "int"    => Ok(Keyword::Int),
             "real"   => Ok(Keyword::Real),
             "char"   => Ok(Keyword::Char),

@@ -226,9 +226,9 @@ impl ASTVisitor for Resolver {
                 }
             }
             Type::Array(inner) => self.visit_typename(inner),
-            Type::Function(ret, args) => {
-                if let Some(ret) = ret {
-                    self.visit_typename(ret);
+            Type::Function(return_type, args) => {
+                if let Some(return_type) = return_type {
+                    self.visit_typename(return_type);
                 }
                 for arg in args.iter() {
                     self.visit_typename(arg);
@@ -305,18 +305,18 @@ mod tests {
     #[test]
     fn resolves_all_identifiers() {
         let source = r#"
-            extern nil print(b: [char], a: int);
+            extern void print(b: [char], a: int);
 
             int main() {
                 let a: int = 5;
                 if (a - a) {
                     print("Hello World", a);
                 }
-                ret a;
+                return a;
             }
 
             int sum(a: int, b: int) {
-                ret a + b;
+                return a + b;
             }
         "#;
         assert!(resolve(source).is_ok());
@@ -329,7 +329,7 @@ mod tests {
                 let a: int = unident_1;
                 unident_2;
                 if (a) { unident_3; }
-                ret a;
+                return a;
             }
         "#;
         let errors = resolve(source).expect_err("expected undefined-identifier errors");
@@ -345,7 +345,7 @@ mod tests {
                 let a: Point = new Point;
                 let b: Bogus3 = new Bogus4;
                 let c: [Bogus5] = new Point;
-                ret a;
+                return a;
             }
         "#;
         let errors = resolve(source).expect_err("expected undefined-type errors");
@@ -355,12 +355,12 @@ mod tests {
     #[test]
     fn reports_same_scope_redeclarations() {
         let cases = [
-            r#"int main() { let x: int = 1; let x: int = 2; ret x; }"#,
-            r#"int f(a: int, a: int) { ret a; } int main() { ret 0; }"#,
-            r#"int f() { ret 0; } int f() { ret 1; } int main() { ret 0; }"#,
-            r#"extern int g(a: int); int g(a: int) { ret a; } int main() { ret 0; }"#,
-            r#"struct P { x: int } struct P { y: int } int main() { ret 0; }"#,
-            r#"struct P { x: int, x: int } int main() { ret 0; }"#,
+            r#"int main() { let x: int = 1; let x: int = 2; return x; }"#,
+            r#"int f(a: int, a: int) { return a; } int main() { return 0; }"#,
+            r#"int f() { return 0; } int f() { return 1; } int main() { return 0; }"#,
+            r#"extern int g(a: int); int g(a: int) { return a; } int main() { return 0; }"#,
+            r#"struct P { x: int } struct P { y: int } int main() { return 0; }"#,
+            r#"struct P { x: int, x: int } int main() { return 0; }"#,
         ];
         for source in cases {
             let errors = resolve(source).expect_err(source);
@@ -371,10 +371,10 @@ mod tests {
     #[test]
     fn intrinsic_names_cannot_be_declared() {
         let cases = [
-            r#"int len(a: int) { ret a; } int main() { ret 0; }"#,
-            r#"extern int len(a: int); int main() { ret 0; }"#,
-            r#"int main() { let len: int = 1; ret len; }"#,
-            r#"int main(len: int) { ret len; }"#,
+            r#"int len(a: int) { return a; } int main() { return 0; }"#,
+            r#"extern int len(a: int); int main() { return 0; }"#,
+            r#"int main() { let len: int = 1; return len; }"#,
+            r#"int main(len: int) { return len; }"#,
         ];
         for source in cases {
             let errors = resolve(source).expect_err(source);
@@ -389,7 +389,7 @@ mod tests {
 
     #[test]
     fn intrinsic_call_does_not_flag_undefined() {
-        let source = r#"int main() { let a: [int] = new int[3]; ret len(a); }"#;
+        let source = r#"int main() { let a: [int] = new int[3]; return len(a); }"#;
         assert!(resolve(source).is_ok());
     }
 
@@ -400,9 +400,9 @@ mod tests {
                 let x: int = 1;
                 if (x == 1) {
                     let x: int = 2;
-                    ret x;
+                    return x;
                 }
-                ret x;
+                return x;
             }
         "#;
         assert!(resolve(source).is_ok());
@@ -415,7 +415,7 @@ mod tests {
             struct A { b: B }
             struct B { n: int }
 
-            int main() { ret 0; }
+            int main() { return 0; }
         "#;
         assert!(resolve(source).is_ok());
     }
@@ -424,12 +424,12 @@ mod tests {
     fn use_is_keyed_by_node_id() {
         use crate::parser::{Expression, Statement, Type};
 
-        let source = "int f(a: int) { ret a; }";
+        let source = "int f(a: int) { return a; }";
         let tokens = lexer::Lexer::lex(source).expect("lex");
         let module = parser::Parser::new(tokens).parse().expect("parse");
         let symbols = Resolver::new().resolve(&module).expect("resolve");
 
-        // Reach the `a` in `ret a;` and confirm its NodeId resolves to `int`.
+        // Reach the `a` in `return a;` and confirm its NodeId resolves to `int`.
         let body = &module.functions[0].node.statement;
         let Statement::Compound(stmts) = &body.node else {
             panic!("expected compound body");

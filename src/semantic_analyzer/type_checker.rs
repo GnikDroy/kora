@@ -190,7 +190,7 @@ impl<'a> TypeChecker<'a> {
                         });
                     }
                 }
-                Ok(ret_type.map(|ret| *ret))
+                Ok(ret_type.map(|return_type| *return_type))
             }
             _ => Err(TypeErr {
                 msg: "Call expression must have function type",
@@ -326,7 +326,7 @@ impl<'a> TypeChecker<'a> {
             Binary(left, op, right) => self.get_binary_expression_type(left, op, right, span),
             Unary(op, term) => self.get_unary_expression_type(op, term, span),
             Call(f, args) => self.get_call_type(f, args, span)?.ok_or_else(|| TypeErr {
-                msg: "A nil function returns no value and cannot be used as a value",
+                msg: "A void function returns no value and cannot be used as a value",
                 span: span.clone(),
             }),
             Cast(expr, typename) => self.get_cast_expression_type(expr, typename, span),
@@ -394,7 +394,7 @@ impl ASTVisitor for TypeChecker<'_> {
         match self.current_return_type.clone() {
             Some(ret_type) => self.ensure_type(expr, &ret_type),
             None => self.errors.push(TypeErr {
-                msg: "A nil function cannot return a value",
+                msg: "A void function cannot return a value",
                 span: expr.span.clone(),
             }),
         }
@@ -436,10 +436,10 @@ mod tests {
                 if (c / 2.0 == 10.0) {
                     let d: real = c / 2.0 + 10.0;
                 }
-                ret a;
+                return a;
             }
             
-            nil print(a: int, b: int) {
+            void print(a: int, b: int) {
                 while (a == 10) {
                     print(b, 1);
                     a = a - 1;
@@ -447,7 +447,7 @@ mod tests {
             }
             
             int sum(a: int, b: int) {
-                ret a + b;
+                return a + b;
             }
         "#;
 
@@ -481,10 +481,10 @@ mod tests {
                     let d: real = c / 2.0 + 10;
                 }
                 2 = 4;
-                ret a;
+                return a;
             }
             
-            nil print(a: int, b: int) {
+            void print(a: int, b: int) {
                 while (a) {
                     print("Hello, World", 1);
                     a = a - 1;
@@ -492,7 +492,7 @@ mod tests {
             }
             
             int sum(a: int, b: int) {
-                ret a + b;
+                return a + b;
             }
         "#;
 
@@ -534,8 +534,8 @@ mod tests {
 
     #[test]
     fn int_division_yields_int() {
-        let ok = r#"int main() { let x: int = 7 / 2; ret 0; }"#;
-        let bad = r#"int main() { let x: real = 7 / 2; ret 0; }"#;
+        let ok = r#"int main() { let x: int = 7 / 2; return 0; }"#;
+        let bad = r#"int main() { let x: real = 7 / 2; return 0; }"#;
 
         for (source, expect_ok) in [(ok, true), (bad, false)] {
             let tokens = lexer::Lexer::lex(source).expect("lex");
@@ -552,20 +552,20 @@ mod tests {
         let cases = [
             // array/string argument yields an int
             (
-                r#"int main() { let a: [int] = new int[3]; ret len(a); }"#,
+                r#"int main() { let a: [int] = new int[3]; return len(a); }"#,
                 true,
             ),
-            (r#"int main() { ret len("hi"); }"#, true),
+            (r#"int main() { return len("hi"); }"#, true),
             // len result is an int, not something else
             (
-                r#"real main() { let a: [int] = new int[3]; ret len(a); }"#,
+                r#"real main() { let a: [int] = new int[3]; return len(a); }"#,
                 false,
             ),
             // non-array argument is rejected
-            (r#"int main() { ret len(5); }"#, false),
+            (r#"int main() { return len(5); }"#, false),
             // wrong arity is rejected
             (
-                r#"int main() { let a: [int] = new int[3]; ret len(a, a); }"#,
+                r#"int main() { let a: [int] = new int[3]; return len(a, a); }"#,
                 false,
             ),
         ];
@@ -581,17 +581,17 @@ mod tests {
     }
 
     #[test]
-    fn nil_function_semantics() {
+    fn void_function_semantics() {
         let cases = [
-            (r#"nil f() { } int main() { f(); ret 0; }"#, true),
-            (r#"nil f() { ret 1; }"#, false),
+            (r#"void f() { } int main() { f(); return 0; }"#, true),
+            (r#"void f() { return 1; }"#, false),
             (
-                r#"nil f() { } int main() { let x: int = f(); ret x; }"#,
+                r#"void f() { } int main() { let x: int = f(); return x; }"#,
                 false,
             ),
-            (r#"nil f() { } int main() { ret f(); }"#, false),
+            (r#"void f() { } int main() { return f(); }"#, false),
             (
-                r#"nil f() { } int g(a: int) { ret a; } int main() { ret g(f()); }"#,
+                r#"void f() { } int g(a: int) { return a; } int main() { return g(f()); }"#,
                 false,
             ),
         ];
@@ -609,11 +609,11 @@ mod tests {
     #[test]
     fn call_result_is_not_assignable() {
         let source = r#"
-            int f() { ret 1; }
+            int f() { return 1; }
 
             int main() {
                 f() = 1;
-                ret 0;
+                return 0;
             }
         "#;
 

@@ -465,15 +465,15 @@ impl Parser {
 
     fn parse_return_statement(&mut self) -> Result<Statement, ParseErr> {
         self.pop_token(
-            Token::Keyword(Keyword::Ret),
-            "Expected return statement: ret <expr>;",
+            Token::Keyword(Keyword::Return),
+            "Expected return statement: return <expr>;",
         )?;
 
         let expr = self.parse_expression()?;
 
         self.pop_token(
             Token::Symbol(Symbol::Semicolon),
-            "Expected semicolon: ret <expr>;",
+            "Expected semicolon: return <expr>;",
         )?;
         Ok(Statement::Return(expr))
     }
@@ -583,7 +583,7 @@ impl Parser {
         let node = match token.token {
             Token::Symbol(Symbol::Semicolon) => self.parse_empty_statement(),
             Token::Symbol(Symbol::LeftBrace) => self.parse_compound_statement(),
-            Token::Keyword(Keyword::Ret) => self.parse_return_statement(),
+            Token::Keyword(Keyword::Return) => self.parse_return_statement(),
             Token::Keyword(Keyword::Let) => self.parse_let_statement(),
             Token::Keyword(Keyword::While) => self.parse_while_statement(),
             Token::Keyword(Keyword::If) => self.parse_if_statement(),
@@ -610,7 +610,7 @@ impl Parser {
     }
 
     fn parse_return_type(&mut self) -> Result<Option<Type>, ParseErr> {
-        if matches!(self.peek()?.token, Token::Keyword(Keyword::Nil)) {
+        if matches!(self.peek()?.token, Token::Keyword(Keyword::Void)) {
             self.pop()?;
             Ok(None)
         } else {
@@ -831,7 +831,7 @@ mod tests {
     fn parse_typename() {
         test_parser(
             &["int", "real", "char", "[[int]]", "custom_type"],
-            &["", "2000", "{0}", "[int", "]", "nil", "[nil]"],
+            &["", "2000", "{0}", "[int", "]", "void", "[void]"],
             Parser::parse_typename,
         );
     }
@@ -839,7 +839,7 @@ mod tests {
     #[test]
     fn parse_return_type() {
         test_parser(
-            &["nil", "int", "[char]", "custom_type"],
+            &["void", "int", "[char]", "custom_type"],
             &["", "2000", "]"],
             Parser::parse_return_type,
         );
@@ -879,14 +879,18 @@ mod tests {
 
     #[test]
     fn parse_empty_statement() {
-        test_parser(&[";"], &["", "1", "ret 2;"], Parser::parse_empty_statement)
+        test_parser(
+            &[";"],
+            &["", "1", "return 2;"],
+            Parser::parse_empty_statement,
+        )
     }
 
     #[test]
     fn parse_simple_statement() {
         test_parser(
             &["1;", "a+b;", "(a+b);"],
-            &["", "1", "ret 2;", ";"],
+            &["", "1", "return 2;", ";"],
             Parser::parse_simple_statement,
         )
     }
@@ -894,8 +898,8 @@ mod tests {
     #[test]
     fn parse_return_statement() {
         test_parser(
-            &["ret 1;", "ret (a+b);", "ret func(call);"],
-            &["ret", "ret ;", "ret 1"],
+            &["return 1;", "return (a+b);", "return func(call);"],
+            &["return", "return ;", "return 1"],
             Parser::parse_return_statement,
         )
     }
@@ -919,7 +923,7 @@ mod tests {
             &[
                 "if (true);",
                 "if (true); else;",
-                "if ((a+b)/2) { a; } else ret 2;",
+                "if ((a+b)/2) { a; } else return 2;",
             ],
             &["if", "if (true)", "if (true) a", "if (true) a; else "],
             Parser::parse_if_statement,
@@ -931,7 +935,7 @@ mod tests {
         test_parser(
             &[
                 "while (true);",
-                "while (true) ret 2;",
+                "while (true) return 2;",
                 "while ((a+b)/2) { a; }",
             ],
             &["while", "while (true)", "while (true) a", "while (true a"],
@@ -945,7 +949,7 @@ mod tests {
             &[
                 "{}",
                 "{;}",
-                "{ ret a; }",
+                "{ return a; }",
                 "{ let a: [int] = 4; }",
                 r#"{ while (count <= 5) { print("Hello World"); } }"#,
             ],
@@ -961,13 +965,13 @@ mod tests {
                 "{}",
                 ";",
                 "1;",
-                "ret 1;",
+                "return 1;",
                 "let a : int = b;",
                 "if (1);",
                 "if (1); else ;",
                 "while (1) ;",
-                "{ ret 1; let a : int = b; }",
-                "if (a + b) { while (1) { a = b; } ret 1; }",
+                "{ return 1; let a : int = b; }",
+                "if (a + b) { while (1) { a = b; } return 1; }",
                 "if (true) { a = b; let a: bool = true; } else { c = d; print(a); }",
             ],
             &[
@@ -976,7 +980,7 @@ mod tests {
                 "x",
                 "let",
                 "*",
-                "ret",
+                "return",
                 "let a == 2;",
                 "while a = b {",
                 "if (a = b) }",
@@ -1057,10 +1061,10 @@ mod tests {
                     print("Hello World", 5);
                 }
                 print("Oh no!", 5);
-                ret a;
+                return a;
             }
             
-            nil print(b: [char], a: int) {
+            void print(b: [char], a: int) {
                 while (a) {
                     print(b);
                     a = a - 1;
@@ -1069,7 +1073,7 @@ mod tests {
             }
             
             int sum(a: int, b: int) {
-                ret a + b;
+                return a + b;
             }
         "#],
             Parser::parse,

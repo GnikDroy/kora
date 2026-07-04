@@ -373,7 +373,7 @@ mod tests {
     #[test]
     fn valid() {
         let source = concat!(
-            "ret let if else while nil int real char bool true false extern as struct new",
+            "return let if else while void int real char bool true false extern as struct new",
             " ( ) { } [ ] ; : , + - / % = > < ! | & .",
             " == >= <= !=",
             " 42 3.1415",

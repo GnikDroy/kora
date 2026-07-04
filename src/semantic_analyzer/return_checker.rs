@@ -1,8 +1,8 @@
 use super::errors::TypeErr;
 use crate::parser::*;
 
-/// Verifies that every non-`nil` function returns a value on all control-flow
-/// paths. A `nil` function needs no explicit return.
+/// Verifies that every non-`void` function returns a value on all control-flow
+/// paths. A `void` function needs no explicit return.
 pub struct ReturnChecker {
     errors: Vec<TypeErr>,
 }
@@ -46,7 +46,7 @@ impl ASTVisitor for ReturnChecker {
     fn visit_function(&mut self, func: &Spanned<Function>) {
         if func.node.return_type.is_some() && !Self::always_returns(&func.node.statement.node) {
             self.errors.push(TypeErr {
-                msg: "Function with non-nil return type does not return on all paths",
+                msg: "Function with non-void return type does not return on all paths",
                 span: func.span.clone(),
             });
         }
@@ -72,7 +72,7 @@ mod tests {
 
     #[test]
     fn straight_line_return_is_ok() {
-        assert!(returns_ok("int f() { ret 1; }"));
+        assert!(returns_ok("int f() { return 1; }"));
     }
 
     #[test]
@@ -82,35 +82,35 @@ mod tests {
 
     #[test]
     fn nil_function_needs_no_return() {
-        assert!(returns_ok("nil f() { let x: int = 1; }"));
+        assert!(returns_ok("void f() { let x: int = 1; }"));
     }
 
     #[test]
     fn both_if_branches_return_is_ok() {
         assert!(returns_ok(
-            "int f(a: bool) { if (a) { ret 1; } else { ret 2; } }"
+            "int f(a: bool) { if (a) { return 1; } else { return 2; } }"
         ));
     }
 
     #[test]
     fn if_without_else_is_error() {
-        assert!(!returns_ok("int f(a: bool) { if (a) { ret 1; } }"));
+        assert!(!returns_ok("int f(a: bool) { if (a) { return 1; } }"));
     }
 
     #[test]
     fn only_one_branch_returns_is_error() {
         assert!(!returns_ok(
-            "int f(a: bool) { if (a) { ret 1; } else { let x: int = 2; } }"
+            "int f(a: bool) { if (a) { return 1; } else { let x: int = 2; } }"
         ));
     }
 
     #[test]
     fn while_does_not_guarantee_return() {
-        assert!(!returns_ok("int f(a: bool) { while (a) { ret 1; } }"));
+        assert!(!returns_ok("int f(a: bool) { while (a) { return 1; } }"));
     }
 
     #[test]
     fn return_after_while_is_ok() {
-        assert!(returns_ok("int f(a: bool) { while (a) { } ret 0; }"));
+        assert!(returns_ok("int f(a: bool) { while (a) { } return 0; }"));
     }
 }
