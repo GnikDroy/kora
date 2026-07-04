@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use super::errors::TypeErr;
 use crate::parser::*;
@@ -13,10 +13,15 @@ pub struct Symbol {
 }
 
 #[derive(Debug, Default)]
+pub struct StructDef {
+    pub members: Vec<(String, Type)>, // Order matters, so members are a `Vec`, not a map.
+}
+
+#[derive(Debug, Default)]
 pub struct SymbolTable {
     symbols: Vec<Symbol>,
     uses: HashMap<NodeId, SymbolId>,
-    struct_members: HashMap<(String, String), Type>,
+    structs: HashMap<String, StructDef>,
 }
 
 impl SymbolTable {
@@ -34,21 +39,26 @@ impl SymbolTable {
         self.symbol_of_use(use_id).map(|s| s.ty.clone())
     }
 
+    pub fn struct_exists(&self, name: &str) -> bool {
+        self.structs.contains_key(name)
+    }
+
     pub fn resolve_struct_member(&self, name: &str, member: &str) -> Option<Type> {
-        self.struct_members
-            .get(&(name.to_owned(), member.to_owned()))
-            .cloned()
+        self.structs
+            .get(name)?
+            .members
+            .iter()
+            .find(|(field, _)| field == member)
+            .map(|(_, ty)| ty.clone())
     }
 }
 
 /// Walks the AST with a live scope stack, builds a `SymbolTable`, and records
-/// each identifier use by its `NodeId`. Reports undefined identifiers as it goes
-/// (this subsumes the old `UnidentifiedIdentifierChecker`).
+/// each identifier use by its `NodeId`. Reports undefined identifiers.
 #[derive(Default)]
 pub struct Resolver {
     table: SymbolTable,
     scopes: Vec<HashMap<String, SymbolId>>,
-    struct_names: HashSet<String>,
     errors: Vec<TypeErr>,
 }
 
@@ -76,7 +86,19 @@ impl Resolver {
         self.scopes.pop();
     }
 
-    fn declare(&mut self, name: String, ty: Type) -> SymbolId {
+    fn declare(&mut self, name: String, ty: Type, span: &Span) -> SymbolId {
+        // Same-scope redeclaration is an error; shadowing an outer scope is fine.
+        let duplicate = self
+            .scopes
+            .last()
+            .is_some_and(|scope| scope.contains_key(&name));
+        if duplicate {
+            self.errors.push(TypeErr {
+                msg: "Redeclaration in the same scope",
+                span: span.clone(),
+            });
+        }
+
         let id = SymbolId(self.table.symbols.len());
         self.table.symbols.push(Symbol {
             name: name.clone(),
@@ -100,32 +122,57 @@ impl ASTVisitor for Resolver {
     fn visit_module(&mut self, module: &Module) {
         self.push_scope(); // global scope
 
-        // Collect every struct name first so member types and forward/self
-        // references resolve regardless of declaration order.
+        // Register every struct name first (empty) so member types and
+        // forward/self references resolve regardless of declaration order.
         for struct_ in module.structs.iter() {
-            self.struct_names.insert(struct_.node.name.clone());
+            if self.table.struct_exists(&struct_.node.name) {
+                self.errors.push(TypeErr {
+                    msg: "Redeclaration of struct",
+                    span: struct_.span.clone(),
+                });
+            } else {
+                self.table
+                    .structs
+                    .insert(struct_.node.name.clone(), StructDef::default());
+            }
         }
 
-        // Structs and top-level functions are visible everywhere (forward refs),
-        // so register them all before walking any body.
+        // Fill in members now that all struct names are known.
         for struct_ in module.structs.iter() {
             for member in struct_.node.members.iter() {
                 self.visit_typename(&member.node.typename);
-                self.table.struct_members.insert(
-                    (struct_.node.name.clone(), member.node.name.clone()),
-                    member.node.typename.clone(),
-                );
+
+                let already = self.table.structs[&struct_.node.name]
+                    .members
+                    .iter()
+                    .any(|(field, _)| field == &member.node.name);
+                if already {
+                    self.errors.push(TypeErr {
+                        msg: "Redeclaration of struct member",
+                        span: member.span.clone(),
+                    });
+                } else {
+                    self.table
+                        .structs
+                        .get_mut(&struct_.node.name)
+                        .unwrap()
+                        .members
+                        .push((member.node.name.clone(), member.node.typename.clone()));
+                }
             }
         }
+
+        // Top-level functions are visible everywhere (forward refs), so declare
+        // them all before walking any body.
         for func in module.extern_functions.iter() {
             self.visit_typename(&func.node.return_type);
             for arg in func.node.arguments.iter() {
                 self.visit_typename(&arg.node.typename);
             }
-            self.declare(func.node.name.clone(), func.node.get_type());
+            self.declare(func.node.name.clone(), func.node.get_type(), &func.span);
         }
         for func in module.functions.iter() {
-            self.declare(func.node.name.clone(), func.node.get_type());
+            self.declare(func.node.name.clone(), func.node.get_type(), &func.span);
         }
 
         for func in module.functions.iter() {
@@ -140,7 +187,11 @@ impl ASTVisitor for Resolver {
         self.visit_typename(&func.node.return_type);
         for pair in func.node.arguments.iter() {
             self.visit_typename(&pair.node.typename);
-            self.declare(pair.node.name.clone(), pair.node.typename.clone());
+            self.declare(
+                pair.node.name.clone(),
+                pair.node.typename.clone(),
+                &pair.span,
+            );
         }
         self.visit_statement(&func.node.statement);
         self.pop_scope();
@@ -149,7 +200,7 @@ impl ASTVisitor for Resolver {
     fn visit_typename(&mut self, ty: &Type) {
         match ty {
             Type::Struct(name) => {
-                if !self.struct_names.contains(&name.node) {
+                if !self.table.struct_exists(&name.node) {
                     self.errors.push(TypeErr {
                         msg: "Undefined type",
                         span: name.span.clone(),
@@ -184,7 +235,11 @@ impl ASTVisitor for Resolver {
         // refers to an outer `x`, not itself.
         self.visit_expression(expr);
         self.visit_typename(&pair.node.typename);
-        self.declare(pair.node.name.clone(), pair.node.typename.clone());
+        self.declare(
+            pair.node.name.clone(),
+            pair.node.typename.clone(),
+            &pair.span,
+        );
     }
 
     fn visit_expression(&mut self, expr: &Spanned<Expression>) {
@@ -263,6 +318,37 @@ mod tests {
         "#;
         let errors = resolve(source).expect_err("expected undefined-type errors");
         assert_eq!(errors.len(), 5, "errors: {:?}", errors);
+    }
+
+    #[test]
+    fn reports_same_scope_redeclarations() {
+        let cases = [
+            r#"int main() { let x: int = 1; let x: int = 2; ret x; }"#,
+            r#"int f(a: int, a: int) { ret a; } int main() { ret 0; }"#,
+            r#"int f() { ret 0; } int f() { ret 1; } int main() { ret 0; }"#,
+            r#"extern int g(a: int); int g(a: int) { ret a; } int main() { ret 0; }"#,
+            r#"struct P { x: int } struct P { y: int } int main() { ret 0; }"#,
+            r#"struct P { x: int, x: int } int main() { ret 0; }"#,
+        ];
+        for source in cases {
+            let errors = resolve(source).expect_err(source);
+            assert_eq!(errors.len(), 1, "source: {}, errors: {:?}", source, errors);
+        }
+    }
+
+    #[test]
+    fn cross_scope_shadowing_is_allowed() {
+        let source = r#"
+            int main() {
+                let x: int = 1;
+                if (x == 1) {
+                    let x: int = 2;
+                    ret x;
+                }
+                ret x;
+            }
+        "#;
+        assert!(resolve(source).is_ok());
     }
 
     #[test]
