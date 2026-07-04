@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::errors::TypeErr;
 use crate::parser::*;
@@ -48,6 +48,7 @@ impl SymbolTable {
 pub struct Resolver {
     table: SymbolTable,
     scopes: Vec<HashMap<String, SymbolId>>,
+    struct_names: HashSet<String>,
     errors: Vec<TypeErr>,
 }
 
@@ -99,10 +100,17 @@ impl ASTVisitor for Resolver {
     fn visit_module(&mut self, module: &Module) {
         self.push_scope(); // global scope
 
+        // Collect every struct name first so member types and forward/self
+        // references resolve regardless of declaration order.
+        for struct_ in module.structs.iter() {
+            self.struct_names.insert(struct_.node.name.clone());
+        }
+
         // Structs and top-level functions are visible everywhere (forward refs),
         // so register them all before walking any body.
         for struct_ in module.structs.iter() {
             for member in struct_.node.members.iter() {
+                self.visit_typename(&member.node.typename);
                 self.table.struct_members.insert(
                     (struct_.node.name.clone(), member.node.name.clone()),
                     member.node.typename.clone(),
@@ -110,6 +118,10 @@ impl ASTVisitor for Resolver {
             }
         }
         for func in module.extern_functions.iter() {
+            self.visit_typename(&func.node.return_type);
+            for arg in func.node.arguments.iter() {
+                self.visit_typename(&arg.node.typename);
+            }
             self.declare(func.node.name.clone(), func.node.get_type());
         }
         for func in module.functions.iter() {
@@ -125,11 +137,34 @@ impl ASTVisitor for Resolver {
 
     fn visit_function(&mut self, func: &Spanned<Function>) {
         self.push_scope();
+        self.visit_typename(&func.node.return_type);
         for pair in func.node.arguments.iter() {
+            self.visit_typename(&pair.node.typename);
             self.declare(pair.node.name.clone(), pair.node.typename.clone());
         }
         self.visit_statement(&func.node.statement);
         self.pop_scope();
+    }
+
+    fn visit_typename(&mut self, ty: &Type) {
+        match ty {
+            Type::Struct(name) => {
+                if !self.struct_names.contains(&name.node) {
+                    self.errors.push(TypeErr {
+                        msg: "Undefined type",
+                        span: name.span.clone(),
+                    });
+                }
+            }
+            Type::Array(inner) => self.visit_typename(inner),
+            Type::Function(ret, args) => {
+                self.visit_typename(ret);
+                for arg in args.iter() {
+                    self.visit_typename(arg);
+                }
+            }
+            _ => {}
+        }
     }
 
     fn visit_compound_statement(&mut self, stmts: &[Spanned<Statement>]) {
@@ -148,6 +183,7 @@ impl ASTVisitor for Resolver {
         // The initializer is resolved before the name is bound, so `let x = x;`
         // refers to an outer `x`, not itself.
         self.visit_expression(expr);
+        self.visit_typename(&pair.node.typename);
         self.declare(pair.node.name.clone(), pair.node.typename.clone());
     }
 
@@ -211,6 +247,34 @@ mod tests {
         "#;
         let errors = resolve(source).expect_err("expected undefined-identifier errors");
         assert_eq!(errors.len(), 3, "errors: {:?}", errors);
+    }
+
+    #[test]
+    fn reports_undefined_types() {
+        let source = r#"
+            struct Point { x: int, y: int }
+
+            Bogus1 make(p: Bogus2) {
+                let a: Point = new Point;
+                let b: Bogus3 = new Bogus4;
+                let c: [Bogus5] = new Point;
+                ret a;
+            }
+        "#;
+        let errors = resolve(source).expect_err("expected undefined-type errors");
+        assert_eq!(errors.len(), 5, "errors: {:?}", errors);
+    }
+
+    #[test]
+    fn self_and_forward_referential_structs_resolve() {
+        let source = r#"
+            struct Node { next: Node, value: int }
+            struct A { b: B }
+            struct B { n: int }
+
+            int main() { ret 0; }
+        "#;
+        assert!(resolve(source).is_ok());
     }
 
     #[test]
