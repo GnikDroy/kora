@@ -371,7 +371,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn valid() {
+    fn test_valid() {
         let source = concat!(
             "return let if else while void int real char bool true false extern as struct new",
             " ( ) { } [ ] ; : , + - / % = > < ! | & .",
@@ -390,7 +390,7 @@ mod tests {
     }
 
     #[test]
-    fn invalid() {
+    fn test_invalid() {
         let sources = [
             "?",
             "'字'",
@@ -411,7 +411,7 @@ mod tests {
     }
 
     #[test]
-    fn escape_sequences() {
+    fn test_escape_sequences() {
         let toks = Lexer::lex(r"'\n' '\t' '\r' '\0'").unwrap();
         let bytes: Vec<u8> = toks
             .iter()
@@ -430,7 +430,7 @@ mod tests {
     }
 
     #[test]
-    fn comments() {
+    fn test_comments() {
         let source = "let # trailing comment\nx = 1";
         let toks = Lexer::lex(source).unwrap();
         let kinds: Vec<&Token> = toks.iter().map(|t| &t.token).collect();
@@ -446,7 +446,7 @@ mod tests {
     }
 
     #[test]
-    fn error_display_includes_position_and_suggestion() {
+    fn test_error_display_includes_position_and_suggestion() {
         let err = Lexer::lex("?").expect_err("expected lex error");
         let rendered = err.to_string();
         assert!(rendered.contains("1:1"), "rendered: {}", rendered);
@@ -454,12 +454,221 @@ mod tests {
     }
 
     #[test]
-    fn multiline_spans() {
+    fn test_multiline_spans() {
         let toks = Lexer::lex("ab\ncde").unwrap();
         assert_eq!(toks.len(), 2);
         assert_eq!((toks[0].start.row, toks[0].start.col), (1, 1));
         assert_eq!((toks[0].end.row, toks[0].end.col), (1, 2));
         assert_eq!((toks[1].start.row, toks[1].start.col), (2, 1));
         assert_eq!((toks[1].end.row, toks[1].end.col), (2, 3));
+    }
+
+    #[test]
+    fn test_keywords() {
+        let cases = [
+            ("return", Keyword::Return),
+            ("let", Keyword::Let),
+            ("if", Keyword::If),
+            ("else", Keyword::Else),
+            ("while", Keyword::While),
+            ("void", Keyword::Void),
+            ("int", Keyword::Int),
+            ("real", Keyword::Real),
+            ("char", Keyword::Char),
+            ("bool", Keyword::Bool),
+            ("true", Keyword::True),
+            ("false", Keyword::False),
+            ("extern", Keyword::Extern),
+            ("as", Keyword::As),
+            ("struct", Keyword::Struct),
+            ("new", Keyword::New),
+            ("for", Keyword::For),
+            ("break", Keyword::Break),
+            ("continue", Keyword::Continue),
+        ];
+        for (source, keyword) in cases {
+            let toks = Lexer::lex(source).unwrap();
+            assert_eq!(toks.len(), 1, "source: {}", source);
+            assert_eq!(toks[0].token, Token::Keyword(keyword), "source: {}", source);
+        }
+    }
+
+    #[test]
+    fn test_identifiers_are_not_keywords() {
+        for source in ["lets", "ifx", "_return", "int2", "While", "forloop", "_"] {
+            let toks = Lexer::lex(source).unwrap();
+            assert_eq!(toks.len(), 1, "source: {}", source);
+            assert_eq!(
+                toks[0].token,
+                Token::Identifier(source.to_string()),
+                "source: {}",
+                source
+            );
+        }
+    }
+
+    #[test]
+    fn test_symbols() {
+        let cases = [
+            ("(", Symbol::LeftParen),
+            (")", Symbol::RightParen),
+            ("{", Symbol::LeftBrace),
+            ("}", Symbol::RightBrace),
+            ("[", Symbol::LeftBracket),
+            ("]", Symbol::RightBracket),
+            (";", Symbol::Semicolon),
+            (":", Symbol::Colon),
+            (",", Symbol::Comma),
+            ("+", Symbol::Plus),
+            ("-", Symbol::Minus),
+            ("*", Symbol::Star),
+            ("/", Symbol::Slash),
+            ("%", Symbol::Percent),
+            ("=", Symbol::Equal),
+            ("==", Symbol::EqualEqual),
+            (">", Symbol::Greater),
+            ("<", Symbol::Less),
+            (">=", Symbol::GreaterEqual),
+            ("<=", Symbol::LessEqual),
+            ("!", Symbol::Exclam),
+            ("!=", Symbol::ExclamEqual),
+            ("|", Symbol::Pipe),
+            ("&", Symbol::Ampersand),
+            (".", Symbol::Dot),
+        ];
+        for (source, symbol) in cases {
+            let toks = Lexer::lex(source).unwrap();
+            assert_eq!(toks.len(), 1, "source: {}", source);
+            assert_eq!(toks[0].token, Token::Symbol(symbol), "source: {}", source);
+        }
+    }
+
+    #[test]
+    fn test_double_symbols_are_greedy() {
+        let toks = Lexer::lex("==").unwrap();
+        assert_eq!(toks.len(), 1);
+        assert_eq!(toks[0].token, Token::Symbol(Symbol::EqualEqual));
+
+        let toks = Lexer::lex("= =").unwrap();
+        assert_eq!(toks.len(), 2);
+        assert_eq!(toks[0].token, Token::Symbol(Symbol::Equal));
+        assert_eq!(toks[1].token, Token::Symbol(Symbol::Equal));
+
+        let toks = Lexer::lex("!x").unwrap();
+        assert_eq!(toks[0].token, Token::Symbol(Symbol::Exclam));
+        assert_eq!(toks[1].token, Token::Identifier("x".to_string()));
+    }
+
+    #[test]
+    fn test_integer_literals() {
+        let cases = [("0", 0), ("42", 42), ("007", 7), ("1000000", 1000000)];
+        for (source, value) in cases {
+            let toks = Lexer::lex(source).unwrap();
+            assert_eq!(toks.len(), 1, "source: {}", source);
+            assert_eq!(
+                toks[0].token,
+                Token::IntegerLiteral(value),
+                "source: {}",
+                source
+            );
+        }
+    }
+
+    #[test]
+    fn test_real_literals() {
+        // A trailing dot with no fractional digits is still a real.
+        let cases = [("3.14", 3.14), ("0.0", 0.0), ("3.", 3.0), ("42.5", 42.5)];
+        for (source, value) in cases {
+            let toks = Lexer::lex(source).unwrap();
+            assert_eq!(toks.len(), 1, "source: {}", source);
+            assert_eq!(
+                toks[0].token,
+                Token::RealLiteral(value),
+                "source: {}",
+                source
+            );
+        }
+
+        // A leading dot is a separate `.` symbol, not part of the number.
+        let toks = Lexer::lex(".5").unwrap();
+        assert_eq!(toks[0].token, Token::Symbol(Symbol::Dot));
+        assert_eq!(toks[1].token, Token::IntegerLiteral(5));
+
+        // A second dot terminates the real and starts a new token.
+        let toks = Lexer::lex("1.2.3").unwrap();
+        assert_eq!(toks[0].token, Token::RealLiteral(1.2));
+        assert_eq!(toks[1].token, Token::Symbol(Symbol::Dot));
+        assert_eq!(toks[2].token, Token::IntegerLiteral(3));
+    }
+
+    #[test]
+    fn test_char_literals() {
+        let cases = [("'a'", b'a'), ("'Z'", b'Z'), ("'0'", b'0'), ("' '", b' ')];
+        for (source, value) in cases {
+            let toks = Lexer::lex(source).unwrap();
+            assert_eq!(toks.len(), 1, "source: {}", source);
+            assert_eq!(
+                toks[0].token,
+                Token::CharLiteral(value),
+                "source: {}",
+                source
+            );
+        }
+    }
+
+    #[test]
+    fn test_string_literals() {
+        let cases = [
+            (r#""hello""#, "hello"),
+            (r#""""#, ""),
+            (r#""with spaces""#, "with spaces"),
+            (r#""字""#, "字"),
+        ];
+        for (source, value) in cases {
+            let toks = Lexer::lex(source).unwrap();
+            assert_eq!(toks.len(), 1, "source: {}", source);
+            assert_eq!(
+                toks[0].token,
+                Token::StringLiteral(value.to_string()),
+                "source: {}",
+                source
+            );
+        }
+    }
+
+    #[test]
+    fn test_whitespace_and_comments_produce_no_tokens() {
+        for source in [
+            "",
+            "   ",
+            "\t\n\r ",
+            "# just a comment",
+            "  \n # comment\n  ",
+        ] {
+            let toks = Lexer::lex(source).unwrap();
+            assert!(toks.is_empty(), "source: {:?}, toks: {:?}", source, toks);
+        }
+    }
+
+    #[test]
+    fn test_comment_stops_at_newline() {
+        let toks = Lexer::lex("1 # comment\n2").unwrap();
+        assert_eq!(toks.len(), 2);
+        assert_eq!(toks[0].token, Token::IntegerLiteral(1));
+        assert_eq!(toks[1].token, Token::IntegerLiteral(2));
+    }
+
+    #[test]
+    fn test_token_spans() {
+        // A real literal spans all of its characters.
+        let toks = Lexer::lex("3.14").unwrap();
+        assert_eq!((toks[0].start.row, toks[0].start.col), (1, 1));
+        assert_eq!((toks[0].end.row, toks[0].end.col), (1, 4));
+
+        // A two-char operator spans both characters.
+        let toks = Lexer::lex("a == b").unwrap();
+        assert_eq!(toks[1].token, Token::Symbol(Symbol::EqualEqual));
+        assert_eq!((toks[1].start.row, toks[1].start.col), (1, 3));
+        assert_eq!((toks[1].end.row, toks[1].end.col), (1, 4));
     }
 }

@@ -441,7 +441,7 @@ mod tests {
     use super::TypeChecker;
 
     #[test]
-    fn valid() {
+    fn test_valid() {
         let source = r#"
             struct Person {
                 name: [char],
@@ -496,7 +496,7 @@ mod tests {
     }
 
     #[test]
-    fn invalid() {
+    fn test_invalid() {
         let source = r#"
             int main() {
                 let a: int = 5;
@@ -541,7 +541,7 @@ mod tests {
     }
 
     #[test]
-    fn error_carries_span() {
+    fn test_error_carries_span() {
         // The `true` mismatched against `int` sits on line 3; the type error
         // must point there rather than at a default (0, 0) location.
         let source = "int main() {\n\n    let x: int = true;\n}\n";
@@ -561,7 +561,7 @@ mod tests {
     }
 
     #[test]
-    fn int_division_yields_int() {
+    fn test_int_division_yields_int() {
         let ok = r#"int main() { let x: int = 7 / 2; return 0; }"#;
         let bad = r#"int main() { let x: real = 7 / 2; return 0; }"#;
 
@@ -576,22 +576,18 @@ mod tests {
     }
 
     #[test]
-    fn len_intrinsic_types() {
+    fn test_len_intrinsic_types() {
         let cases = [
-            // array/string argument yields an int
             (
                 r#"int main() { let a: [int] = new int[3]; return len(a); }"#,
                 true,
             ),
             (r#"int main() { return len("hi"); }"#, true),
-            // len result is an int, not something else
             (
                 r#"real main() { let a: [int] = new int[3]; return len(a); }"#,
                 false,
             ),
-            // non-array argument is rejected
             (r#"int main() { return len(5); }"#, false),
-            // wrong arity is rejected
             (
                 r#"int main() { let a: [int] = new int[3]; return len(a, a); }"#,
                 false,
@@ -609,7 +605,7 @@ mod tests {
     }
 
     #[test]
-    fn void_function_semantics() {
+    fn test_void_function_semantics() {
         let cases = [
             (r#"void f() { } int main() { f(); return 0; }"#, true),
             (r#"void f() { return 1; }"#, false),
@@ -635,7 +631,7 @@ mod tests {
     }
 
     #[test]
-    fn call_result_is_not_assignable() {
+    fn test_call_result_is_not_assignable() {
         let source = r#"
             int f() { return 1; }
 
@@ -671,7 +667,7 @@ mod tests {
     }
 
     #[test]
-    fn modulo_is_int_only() {
+    fn test_modulo_is_int_only() {
         check_cases(&[
             (r#"int main() { return 7 % 2; }"#, true),
             (
@@ -686,7 +682,7 @@ mod tests {
     }
 
     #[test]
-    fn sizeless_new_is_structs_only() {
+    fn test_sizeless_new_is_structs_only() {
         check_cases(&[
             (
                 r#"struct P { x: int } int main() { let p: P = new P; return 0; }"#,
@@ -705,7 +701,7 @@ mod tests {
     }
 
     #[test]
-    fn for_statement_types() {
+    fn test_for_statement_types() {
         check_cases(&[
             (
                 r#"int main() { for (let i: int = 0; i < 3; i = i + 1) { i; } return 0; }"#,
@@ -723,7 +719,7 @@ mod tests {
     }
 
     #[test]
-    fn bare_return_matrix() {
+    fn test_bare_return_matrix() {
         check_cases(&[
             (
                 r#"void f(a: bool) { if (a) { return; } a = !a; } int main() { return 0; }"#,
@@ -736,7 +732,7 @@ mod tests {
     }
 
     #[test]
-    fn function_names_are_not_assignable() {
+    fn test_function_names_are_not_assignable() {
         check_cases(&[(
             r#"
                 int f() { return 1; }
@@ -745,5 +741,183 @@ mod tests {
             "#,
             false,
         )]);
+    }
+
+    #[test]
+    fn test_binary_operator_type_rules() {
+        check_cases(&[
+            (r#"int main() { let x: int = 1 + 2 * 3; return x; }"#, true),
+            (r#"int main() { let x: real = 1.0 + 2.0; return 0; }"#, true),
+            (r#"int main() { let x: int = 1 + 2.0; return x; }"#, false),
+            (r#"int main() { let x: bool = 1 < 2; return 0; }"#, true),
+            (r#"int main() { let x: bool = 'a' < 'b'; return 0; }"#, true),
+            (
+                r#"int main() { let x: bool = true & false | true; return 0; }"#,
+                true,
+            ),
+            (r#"int main() { let x: bool = 1 & 2; return 0; }"#, false),
+            (
+                r#"int main() { let x: char = 'a' + 'b'; return 0; }"#,
+                false,
+            ),
+            (r#"int main() { let x: bool = 1 == 2.0; return 0; }"#, false),
+        ]);
+    }
+
+    #[test]
+    fn test_unary_operator_type_rules() {
+        check_cases(&[
+            (r#"int main() { let x: int = -5; return x; }"#, true),
+            (r#"int main() { let x: real = -5.0; return 0; }"#, true),
+            (r#"int main() { let x: bool = !true; return 0; }"#, true),
+            (r#"int main() { let x: bool = -true; return 0; }"#, false),
+            (r#"int main() { let x: int = !5; return x; }"#, false),
+        ]);
+    }
+
+    #[test]
+    fn test_array_literal_homogeneity() {
+        check_cases(&[
+            (
+                r#"int main() { let a: [int] = [1, 2, 3]; return 0; }"#,
+                true,
+            ),
+            (
+                r#"int main() { let a: [[int]] = [[1], [2]]; return 0; }"#,
+                true,
+            ),
+            (
+                r#"int main() { let a: [int] = [1, 2.0]; return 0; }"#,
+                false,
+            ),
+            (r#"int main() { let a: [int] = []; return 0; }"#, false),
+        ]);
+    }
+
+    #[test]
+    fn test_array_indexing_types() {
+        check_cases(&[
+            (
+                r#"int main() { let a: [int] = new int[3]; let x: int = a[0]; return x; }"#,
+                true,
+            ),
+            (
+                r#"int main() { let a: [int] = new int[3]; let x: int = a[1.0]; return x; }"#,
+                false,
+            ),
+            (
+                r#"int main() { let x: int = 5; let y: int = x[0]; return y; }"#,
+                false,
+            ),
+        ]);
+    }
+
+    #[test]
+    fn test_struct_member_access_types() {
+        check_cases(&[
+            (
+                r#"struct P { x: int } int main() { let p: P = new P; let a: int = p.x; return a; }"#,
+                true,
+            ),
+            (
+                r#"struct P { x: int } int main() { let p: P = new P; let a: int = p.y; return a; }"#,
+                false,
+            ),
+            (
+                r#"int main() { let x: int = 5; let a: int = x.y; return a; }"#,
+                false,
+            ),
+            (
+                r#"struct P { x: int } int main() { let p: P = new P; let a: real = p.x; return 0; }"#,
+                false,
+            ),
+        ]);
+    }
+
+    #[test]
+    fn test_cast_rules() {
+        check_cases(&[
+            (r#"int main() { let x: real = 1 as real; return 0; }"#, true),
+            (r#"int main() { let x: int = 1.5 as int; return x; }"#, true),
+            (r#"int main() { let x: int = 'a' as int; return x; }"#, true),
+            (
+                r#"int main() { let x: int = true as int; return x; }"#,
+                false,
+            ),
+            (r#"int main() { let x: int = 5 as int; return x; }"#, false),
+        ]);
+    }
+
+    #[test]
+    fn test_conditions_must_be_bool() {
+        check_cases(&[
+            (r#"int main() { if (true) { } return 0; }"#, true),
+            (r#"int main() { while (false) { } return 0; }"#, true),
+            (r#"int main() { if (1) { } return 0; }"#, false),
+            (r#"int main() { while (1) { } return 0; }"#, false),
+        ]);
+    }
+
+    #[test]
+    fn test_assignment_type_must_match() {
+        check_cases(&[
+            (r#"int main() { let x: int = 1; x = 2; return x; }"#, true),
+            (
+                r#"int main() { let x: real = 1.0; x = 2.0; return 0; }"#,
+                true,
+            ),
+            (
+                r#"int main() { let x: int = 1; x = 2.0; return x; }"#,
+                false,
+            ),
+            (
+                r#"int main() { let a: [int] = new int[2]; a[0] = 5; return 0; }"#,
+                true,
+            ),
+        ]);
+    }
+
+    #[test]
+    fn test_unassignable_lhs_is_rejected() {
+        check_cases(&[
+            (r#"int main() { 2 = 4; return 0; }"#, false),
+            (r#"int main() { let x: int = 1; -x = 2; return 0; }"#, false),
+            (
+                r#"int main() { let x: int = 1; (x + 1) = 2; return 0; }"#,
+                false,
+            ),
+        ]);
+    }
+
+    #[test]
+    fn test_call_arity_and_argument_types() {
+        check_cases(&[
+            (
+                r#"int add(a: int, b: int) { return a + b; } int main() { return add(1, 2); }"#,
+                true,
+            ),
+            (
+                r#"int add(a: int, b: int) { return a + b; } int main() { return add(1); }"#,
+                false,
+            ),
+            (
+                r#"int add(a: int, b: int) { return a + b; } int main() { return add(1, 2.0); }"#,
+                false,
+            ),
+            (r#"int main() { let x: int = 5; return x(1); }"#, false),
+        ]);
+    }
+
+    #[test]
+    fn test_return_type_must_match() {
+        check_cases(&[
+            (r#"int f() { return 1; } int main() { return 0; }"#, true),
+            (r#"real f() { return 1.0; } int main() { return 0; }"#, true),
+            (
+                r#"int f() { return true; } int main() { return 0; }"#,
+                false,
+            ),
+            (r#"real f() { return 1; } int main() { return 0; }"#, false),
+        ]);
     }
 }

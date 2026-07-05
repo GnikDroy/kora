@@ -72,56 +72,111 @@ mod tests {
     }
 
     #[test]
-    fn straight_line_return_is_ok() {
+    fn test_straight_line_return_is_ok() {
         assert!(returns_ok("int f() { return 1; }"));
     }
 
     #[test]
-    fn missing_return_is_error() {
+    fn test_missing_return_is_error() {
         assert!(!returns_ok("int f() { let x: int = 1; }"));
     }
 
     #[test]
-    fn nil_function_needs_no_return() {
+    fn test_nil_function_needs_no_return() {
         assert!(returns_ok("void f() { let x: int = 1; }"));
     }
 
     #[test]
-    fn both_if_branches_return_is_ok() {
+    fn test_both_if_branches_return_is_ok() {
         assert!(returns_ok(
             "int f(a: bool) { if (a) { return 1; } else { return 2; } }"
         ));
     }
 
     #[test]
-    fn if_without_else_is_error() {
+    fn test_if_without_else_is_error() {
         assert!(!returns_ok("int f(a: bool) { if (a) { return 1; } }"));
     }
 
     #[test]
-    fn only_one_branch_returns_is_error() {
+    fn test_only_one_branch_returns_is_error() {
         assert!(!returns_ok(
             "int f(a: bool) { if (a) { return 1; } else { let x: int = 2; } }"
         ));
     }
 
     #[test]
-    fn while_does_not_guarantee_return() {
+    fn test_while_does_not_guarantee_return() {
         assert!(!returns_ok("int f(a: bool) { while (a) { return 1; } }"));
     }
 
     #[test]
-    fn return_after_while_is_ok() {
+    fn test_return_after_while_is_ok() {
         assert!(returns_ok("int f(a: bool) { while (a) { } return 0; }"));
     }
 
     #[test]
-    fn for_does_not_guarantee_return() {
+    fn test_for_does_not_guarantee_return() {
         assert!(!returns_ok(
             "int f() { for (let i: int = 0; true; i) { return 1; } }"
         ));
         assert!(returns_ok(
             "int f() { for (let i: int = 0; true; i) { } return 0; }"
         ));
+    }
+
+    #[test]
+    fn test_empty_body_non_void_is_error() {
+        assert!(!returns_ok("int f() { }"));
+        assert!(returns_ok("void f() { }"));
+    }
+
+    #[test]
+    fn test_nested_compound_return_is_ok() {
+        assert!(returns_ok("int f() { { return 1; } }"));
+    }
+
+    #[test]
+    fn test_return_followed_by_dead_code_is_ok() {
+        // A `return` anywhere in the block satisfies the check, even with
+        // (currently unwarned) statements after it.
+        assert!(returns_ok("int f() { return 1; let x: int = 2; }"));
+    }
+
+    #[test]
+    fn test_if_then_trailing_return_is_ok() {
+        assert!(returns_ok(
+            "int f(a: bool) { if (a) { return 1; } return 2; }"
+        ));
+    }
+
+    #[test]
+    fn test_nested_if_all_branches_return_is_ok() {
+        assert!(returns_ok(
+            "int f(a: bool) { if (a) { if (a) { return 1; } else { return 2; } } else { return 3; } }"
+        ));
+    }
+
+    #[test]
+    fn test_nested_if_missing_inner_else_is_error() {
+        assert!(!returns_ok(
+            "int f(a: bool) { if (a) { if (a) { return 1; } } else { return 3; } }"
+        ));
+    }
+
+    #[test]
+    fn test_bare_return_satisfies_path_check() {
+        assert!(returns_ok("int f() { return; }"));
+    }
+
+    #[test]
+    fn test_void_function_with_early_return_is_ok() {
+        assert!(returns_ok("void f(a: bool) { if (a) { return; } }"));
+    }
+
+    #[test]
+    fn test_functions_are_checked_independently() {
+        assert!(returns_ok("int f() { return 1; } int g() { return 2; }"));
+        assert!(!returns_ok("int f() { return 1; } int g() { }"));
     }
 }

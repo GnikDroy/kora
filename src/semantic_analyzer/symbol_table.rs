@@ -346,7 +346,7 @@ mod tests {
     }
 
     #[test]
-    fn resolves_all_identifiers() {
+    fn test_resolves_all_identifiers() {
         let source = r#"
             extern void print(b: [char], a: int);
 
@@ -366,7 +366,7 @@ mod tests {
     }
 
     #[test]
-    fn reports_undefined_identifiers() {
+    fn test_reports_undefined_identifiers() {
         let source = r#"
             int main() {
                 let a: int = unident_1;
@@ -380,7 +380,7 @@ mod tests {
     }
 
     #[test]
-    fn reports_undefined_types() {
+    fn test_reports_undefined_types() {
         let source = r#"
             struct Point { x: int, y: int }
 
@@ -396,7 +396,7 @@ mod tests {
     }
 
     #[test]
-    fn reports_same_scope_redeclarations() {
+    fn test_reports_same_scope_redeclarations() {
         let cases = [
             r#"int main() { let x: int = 1; let x: int = 2; return x; }"#,
             r#"int f(a: int, a: int) { return a; } int main() { return 0; }"#,
@@ -412,7 +412,7 @@ mod tests {
     }
 
     #[test]
-    fn intrinsic_names_cannot_be_declared() {
+    fn test_intrinsic_names_cannot_be_declared() {
         let cases = [
             r#"int len(a: int) { return a; } int main() { return 0; }"#,
             r#"extern int len(a: int); int main() { return 0; }"#,
@@ -431,13 +431,13 @@ mod tests {
     }
 
     #[test]
-    fn intrinsic_call_does_not_flag_undefined() {
+    fn test_intrinsic_call_does_not_flag_undefined() {
         let source = r#"int main() { let a: [int] = new int[3]; return len(a); }"#;
         assert!(resolve(source).is_ok());
     }
 
     #[test]
-    fn cross_scope_shadowing_is_allowed() {
+    fn test_cross_scope_shadowing_is_allowed() {
         let source = r#"
             int main() {
                 let x: int = 1;
@@ -452,7 +452,7 @@ mod tests {
     }
 
     #[test]
-    fn for_scopes_induction_variable_to_the_loop() {
+    fn test_for_scopes_induction_variable_to_the_loop() {
         let source = r#"
             int main() {
                 for (let i: int = 0; i < 3; i = i + 1) { i; }
@@ -464,7 +464,7 @@ mod tests {
     }
 
     #[test]
-    fn break_and_continue_require_a_loop() {
+    fn test_break_and_continue_require_a_loop() {
         let ok = r#"
             int main() {
                 while (true) { break; }
@@ -480,7 +480,7 @@ mod tests {
     }
 
     #[test]
-    fn self_and_forward_referential_structs_resolve() {
+    fn test_self_and_forward_referential_structs_resolve() {
         let source = r#"
             struct Node { next: Node, value: int }
             struct A { b: B }
@@ -492,7 +492,7 @@ mod tests {
     }
 
     #[test]
-    fn use_is_keyed_by_node_id() {
+    fn test_use_is_keyed_by_node_id() {
         use crate::parser::{Expression, Statement, Type};
 
         let source = "int f(a: int) { return a; }";
@@ -510,5 +510,141 @@ mod tests {
         };
         assert!(matches!(expr.node, Expression::Identifier(_)));
         assert_eq!(symbols.type_of_use(expr.id), Some(Type::Int));
+    }
+
+    #[test]
+    fn test_functions_can_be_forward_referenced() {
+        let source = r#"
+            int main() { return helper(); }
+            int helper() { return 1; }
+        "#;
+        assert!(resolve(source).is_ok());
+    }
+
+    #[test]
+    fn test_recursive_function_resolves() {
+        let source = r#"
+            int fact(n: int) { return fact(n); }
+            int main() { return 0; }
+        "#;
+        assert!(resolve(source).is_ok());
+    }
+
+    #[test]
+    fn test_let_initializer_uses_outer_scope() {
+        // The inner let x = x; binds its initializer to the outer x.
+        let ok = r#"
+            int main() {
+                let x: int = 1;
+                if (x) { let x: int = x; return x; }
+                return x;
+            }
+        "#;
+        assert!(resolve(ok).is_ok());
+
+        // With no outer binding, the self-referential initializer is undefined.
+        let bad = r#"int main() { let x: int = x; return 0; }"#;
+        let errors = resolve(bad).expect_err("expected undefined-identifier error");
+        assert_eq!(errors.len(), 1, "errors: {:?}", errors);
+    }
+
+    #[test]
+    fn test_block_scope_ends_at_brace() {
+        let source = r#"
+            int main() {
+                if (true) { let a: int = 1; }
+                return a;
+            }
+        "#;
+        let errors = resolve(source).expect_err("expected undefined-identifier error");
+        assert_eq!(errors.len(), 1, "errors: {:?}", errors);
+    }
+
+    #[test]
+    fn test_undefined_identifiers_in_expression_positions() {
+        // Undefined names are flagged in binary, index, and unary positions.
+        let source = r#"
+            int main() {
+                let a: int = 1;
+                a + missing1;
+                missing2[a];
+                -missing3;
+                return a;
+            }
+        "#;
+        let errors = resolve(source).expect_err("expected undefined-identifier errors");
+        assert_eq!(errors.len(), 3, "errors: {:?}", errors);
+    }
+
+    #[test]
+    fn test_call_resolves_callee_and_arguments() {
+        // A non-intrinsic call flags an undefined callee and each undefined argument.
+        let source = r#"
+            int main() {
+                let a: int = 1;
+                missing_fn(a, missing_arg);
+                return a;
+            }
+        "#;
+        let errors = resolve(source).expect_err("expected undefined-identifier errors");
+        assert_eq!(errors.len(), 2, "errors: {:?}", errors);
+    }
+
+    #[test]
+    fn test_undefined_type_inside_array_member() {
+        let source = r#"
+            struct S { a: [Undefined], b: int }
+            int main() { return 0; }
+        "#;
+        let errors = resolve(source).expect_err("expected undefined-type error");
+        assert_eq!(errors.len(), 1, "errors: {:?}", errors);
+    }
+
+    #[test]
+    fn test_nested_loops_allow_break_and_continue() {
+        let source = r#"
+            int main() {
+                while (true) {
+                    for (let i: int = 0; i < 2; i = i + 1) {
+                        break;
+                        continue;
+                    }
+                }
+                return 0;
+            }
+        "#;
+        assert!(resolve(source).is_ok());
+    }
+
+    #[test]
+    fn test_loop_depth_resets_after_loop() {
+        let source = r#"
+            int main() {
+                while (true) {}
+                break;
+                return 0;
+            }
+        "#;
+        let errors = resolve(source).expect_err("expected outside-loop error");
+        assert_eq!(errors.len(), 1, "errors: {:?}", errors);
+    }
+
+    #[test]
+    fn test_struct_members_are_keyed_by_name() {
+        use crate::parser::Type;
+
+        let source = r#"
+            struct Point { x: int, y: [char] }
+            int main() { return 0; }
+        "#;
+        let symbols = resolve(source).expect("resolve");
+        assert!(symbols.struct_exists("Point"));
+        assert_eq!(symbols.resolve_struct_member("Point", "x"), Some(Type::Int));
+        assert_eq!(
+            symbols.resolve_struct_member("Point", "y"),
+            Some(Type::Array(Box::new(Type::Char)))
+        );
+        assert_eq!(symbols.resolve_struct_member("Point", "z"), None);
+        assert_eq!(symbols.resolve_struct_member("Missing", "x"), None);
     }
 }

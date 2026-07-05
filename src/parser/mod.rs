@@ -610,12 +610,7 @@ impl Parser {
         )?;
 
         let body = self.parse_statement()?;
-        Ok(Statement::For(
-            Box::new(init),
-            cond,
-            step,
-            Box::new(body),
-        ))
+        Ok(Statement::For(Box::new(init), cond, step, Box::new(body)))
     }
 
     fn parse_break_statement(&mut self) -> Result<Statement, ParseErr> {
@@ -880,7 +875,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_module() {
+    fn test_parse_module() {
         test_parser(
             &["", "int main(){}", "extern int a(); int b(){} int c(){}"],
             &[
@@ -894,7 +889,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_struct() {
+    fn test_parse_struct() {
         test_parser(
             &["struct Person { age: int, name: [char]}", "struct Foo {}"],
             &["struct Foo", "struct {}", "struct Foo { foo, bar }"],
@@ -903,7 +898,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_identifier() {
+    fn test_parse_identifier() {
         test_parser(
             &["foo", "_before_2000", "TestCase"],
             &["", "2000", "{ 0 }"],
@@ -912,7 +907,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_array_typename() {
+    fn test_parse_array_typename() {
         test_parser(
             &["[[int]]", "[real]", "[foo]"],
             &["", "[", "[int", "int]", "[[[["],
@@ -921,7 +916,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_typename() {
+    fn test_parse_typename() {
         test_parser(
             &["int", "real", "char", "[[int]]", "custom_type"],
             &["", "2000", "{0}", "[int", "]", "void", "[void]"],
@@ -930,7 +925,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_return_type() {
+    fn test_parse_return_type() {
         test_parser(
             &["void", "int", "[char]", "custom_type"],
             &["", "2000", "]"],
@@ -939,7 +934,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_identifier_type_pair() {
+    fn test_parse_identifier_type_pair() {
         test_parser(
             &["a: int", "a: [[int]]", "ident: real", "ident: custom_type"],
             &["", "a: ", "a int", "1: int", "int: int"],
@@ -948,7 +943,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_expression() {
+    fn test_parse_expression() {
         test_parser(
             &[
                 "1-2-3%3",
@@ -971,7 +966,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_empty_statement() {
+    fn test_parse_empty_statement() {
         test_parser(
             &[";"],
             &["", "1", "return 2;"],
@@ -980,7 +975,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_simple_statement() {
+    fn test_parse_simple_statement() {
         test_parser(
             &["1;", "a+b;", "(a+b);"],
             &["", "1", "return 2;", ";"],
@@ -989,16 +984,22 @@ mod tests {
     }
 
     #[test]
-    fn parse_return_statement() {
+    fn test_parse_return_statement() {
         test_parser(
-            &["return 1;", "return (a+b);", "return func(call);", "return;", "return ;"],
+            &[
+                "return 1;",
+                "return (a+b);",
+                "return func(call);",
+                "return;",
+                "return ;",
+            ],
             &["return", "return 1"],
             Parser::parse_return_statement,
         )
     }
 
     #[test]
-    fn parse_let_statement() {
+    fn test_parse_let_statement() {
         test_parser(
             &[
                 r#"let msg : [char] = "Hello World";"#,
@@ -1011,7 +1012,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_if_statement() {
+    fn test_parse_if_statement() {
         test_parser(
             &[
                 "if (true);",
@@ -1024,7 +1025,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_while_statement() {
+    fn test_parse_while_statement() {
         test_parser(
             &[
                 "while (true);",
@@ -1037,7 +1038,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_for_statement() {
+    fn test_parse_for_statement() {
         test_parser(
             &[
                 "for (let i: int = 0; i < 10; i = i + 1) { i; }",
@@ -1056,8 +1057,12 @@ mod tests {
     }
 
     #[test]
-    fn parse_break_and_continue() {
-        test_parser(&["break;"], &["break", "break 1;"], Parser::parse_break_statement);
+    fn test_parse_break_and_continue() {
+        test_parser(
+            &["break;"],
+            &["break", "break 1;"],
+            Parser::parse_break_statement,
+        );
         test_parser(
             &["continue;"],
             &["continue", "continue 1;"],
@@ -1066,7 +1071,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_compound_statement() {
+    fn test_parse_compound_statement() {
         test_parser(
             &[
                 "{}",
@@ -1081,7 +1086,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_statement() {
+    fn test_parse_statement() {
         test_parser(
             &[
                 "{}",
@@ -1112,7 +1117,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_expression_list() {
+    fn test_parse_expression_list() {
         test_parser(
             &["(a, b, (c+d)/2 + b/4)", "((a + b/2 + c*(a+b)/d))"],
             &["", "(", "a: int", "(a, b,()"],
@@ -1121,7 +1126,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_function_parameters() {
+    fn test_parse_function_parameters() {
         test_parser(
             &[
                 "(a: int, b: [bool])",
@@ -1134,7 +1139,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_extern_function() {
+    fn test_parse_extern_function() {
         test_parser(
             &[
                 "extern int main();",
@@ -1153,7 +1158,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_function() {
+    fn test_parse_function() {
         test_parser(
             &[
                 "int main(){}",
@@ -1176,7 +1181,7 @@ mod tests {
     }
 
     #[test]
-    fn expression_error_carries_offending_token() {
+    fn test_expression_error_carries_offending_token() {
         let tokens = lexer::Lexer::lex("int main() { let x: int = ); }").expect("lex");
         let err = Parser::new(tokens)
             .parse()
@@ -1185,7 +1190,7 @@ mod tests {
     }
 
     #[test]
-    fn complex() {
+    fn test_complex() {
         test_parser_valid(
             &[r#"
             int main() {
@@ -1206,12 +1211,164 @@ mod tests {
                 }
 
             }
-            
+
             int sum(a: int, b: int) {
                 return a + b;
             }
         "#],
             Parser::parse,
         );
+    }
+
+    #[test]
+    fn test_parse_literal_expressions() {
+        test_parser(
+            &[
+                "0",
+                "42",
+                "3.14",
+                "0.0",
+                "'a'",
+                "'\\n'",
+                r#""hello""#,
+                r#""""#,
+                "true",
+                "false",
+            ],
+            &["", ".5", ")", "="],
+            Parser::parse_expression,
+        )
+    }
+
+    #[test]
+    fn test_parse_array_literal_expressions() {
+        test_parser(
+            &[
+                "[]",
+                "[1]",
+                "[1, 2, 3]",
+                "[1, 2, 3,]",
+                "[[1], [2, 3]]",
+                r#"["a", "b"]"#,
+                "[a + b, c * d]",
+            ],
+            &["[", "[1", "[,]", "[1 2]", "[1,, 2]", "[1, 2"],
+            Parser::parse_expression,
+        )
+    }
+
+    #[test]
+    fn test_parse_new_expression() {
+        test_parser(
+            &[
+                "new Foo",
+                "new int",
+                "new [int]",
+                "new int[10]",
+                "new [int][n]",
+                "new custom_type[a + b]",
+            ],
+            &["new", "new 2", "new int[", "new int[10", "new int[]"],
+            Parser::parse_expression,
+        )
+    }
+
+    #[test]
+    fn test_parse_unary_expressions() {
+        test_parser(
+            &[
+                "-a",
+                "!b",
+                "- -a",
+                "!!a",
+                "-(a + b)",
+                "!(a == b)",
+                "-arr[0]",
+            ],
+            &["-", "!", "-!", "! ="],
+            Parser::parse_expression,
+        )
+    }
+
+    #[test]
+    fn test_parse_member_access_and_index() {
+        test_parser(
+            &[
+                "a.b",
+                "a.b.c",
+                "a[0]",
+                "a[0][1]",
+                "a.b[0].c",
+                "f().x",
+                "arr[i].length",
+                "person.name[0]",
+            ],
+            &["a.", "a[", "a.1", "a[]", "a.b.", ".a"],
+            Parser::parse_expression,
+        )
+    }
+
+    #[test]
+    fn test_parse_cast_expressions() {
+        test_parser(
+            &[
+                "a as int",
+                "a as real as int",
+                "(a + b) as [int]",
+                "arr[0] as char",
+                "-x as real",
+            ],
+            &["a as", "a as 2", "a as as", "as int"],
+            Parser::parse_expression,
+        )
+    }
+
+    #[test]
+    fn test_parse_call_expressions() {
+        test_parser(
+            &[
+                "f()",
+                "f(a)",
+                "f(a, b, c)",
+                "f(g(x), h(y))",
+                "obj.method(a)",
+                "f(a + b, c * d)",
+            ],
+            &["f(", "f(a b)", "f(,)"],
+            Parser::parse_expression,
+        )
+    }
+
+    #[test]
+    fn test_parse_nested_struct() {
+        test_parser(
+            &[
+                "struct Point { x: int, y: int }",
+                "struct Line { start: Point, end: Point }",
+                "struct Matrix { rows: [[real]] }",
+                "struct Trailing { a: int, }",
+            ],
+            &[
+                "struct { x: int }",
+                "struct S { x: int",
+                "struct S { x }",
+                "struct S { x: int y: int }",
+            ],
+            Parser::parse_struct,
+        )
+    }
+
+    #[test]
+    fn test_parse_nested_control_flow() {
+        test_parser(
+            &[
+                "if (a) if (b); else;",
+                "while (a) while (b) ;",
+                "for (let i: int = 0; i < n; i = i + 1) { if (i) continue; else break; }",
+                "if (a) { while (b) { for (;c;d) ; } }",
+            ],
+            &["if (a) else ;", "while () ;", "for () ;"],
+            Parser::parse_statement,
+        )
     }
 }
