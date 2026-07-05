@@ -1,0 +1,157 @@
+# Snake, at ~10 fps. Arrow keys steer, q quits.
+# Eat the red dot to grow; walls and your own tail end the game. Canvas-rendered.
+
+struct Point { x: int, y: int }
+
+# body[0] is the head.
+struct Snake { body: [Point] }
+
+struct Game { snake: Snake, food: Point, dx: int, dy: int, score: int, alive: bool }
+
+int grid_cols() { return 32; }
+int grid_rows() { return 18; }
+int cell_size() { return 18; }
+int origin_x() { return 20; }
+int origin_y() { return 20; }
+
+Point point(x: int, y: int) {
+    return new Point { x: x, y: y };
+}
+
+string int_to_string(n: int) {
+    if (n == 0) { return "0"; }
+    let digits: [char] = [];
+    while (n > 0) {
+        digits.insert(0, ((n % 10) + 48) as char);
+        n = n / 10;
+    }
+    return digits;
+}
+
+void fill_tile(col: int, row: int) {
+    let x = origin_x() + col * cell_size();
+    let y = origin_y() + row * cell_size();
+    fill_rect(x + 1, y + 1, cell_size() - 2, cell_size() - 2);
+}
+
+impl Snake {
+    bool hits(self, x: int, y: int) {
+        for (let i = 0; i < self.body.len(); i = i + 1) {
+            if (self.body[i].x == x && self.body[i].y == y) { return true; }
+        }
+        return false;
+    }
+
+    Point head(self) { return self.body[0]; }
+
+    void advance(self, head: Point, grew: bool) {
+        self.body.insert(0, head);
+        if (!grew) { self.body.pop(); }
+    }
+}
+
+impl Game {
+    void place_food(self) {
+        let placed = false;
+        while (!placed) {
+            self.food = point(
+                (random() * ((grid_cols() - 2) as real)) as int + 1,
+                (random() * ((grid_rows() - 2) as real)) as int + 1,
+            );
+            placed = !self.snake.hits(self.food.x, self.food.y);
+        }
+    }
+
+    void steer(self) {
+        if (is_key_down("ArrowLeft") && self.dx != 1)   { self.dx = -1; self.dy = 0; }
+        if (is_key_down("ArrowRight") && self.dx != -1) { self.dx = 1;  self.dy = 0; }
+        if (is_key_down("ArrowUp") && self.dy != 1)     { self.dx = 0;  self.dy = -1; }
+        if (is_key_down("ArrowDown") && self.dy != -1)  { self.dx = 0;  self.dy = 1; }
+    }
+
+    void step(self) {
+        let head = point(self.snake.head().x + self.dx, self.snake.head().y + self.dy);
+
+        let hit_wall = head.x == 0 || head.x == grid_cols() - 1
+                    || head.y == 0 || head.y == grid_rows() - 1;
+        if (hit_wall || self.snake.hits(head.x, head.y)) {
+            self.alive = false;
+            return;
+        }
+
+        let grew = head.x == self.food.x && head.y == self.food.y;
+        if (grew) { self.score = self.score + 1; }
+        self.snake.advance(head, grew);
+        if (grew) { self.place_food(); }
+    }
+
+    void render(self) {
+        draw_clear();
+
+        set_color("#0b1020");
+        fill_rect(0, 0, canvas_width(), canvas_height());
+
+        set_color("#0f172a");
+        fill_rect(origin_x(), origin_y(), grid_cols() * cell_size(), grid_rows() * cell_size());
+
+        set_color("#ef4444");
+        let half = cell_size() / 2;
+        fill_circle(
+            origin_x() + self.food.x * cell_size() + half,
+            origin_y() + self.food.y * cell_size() + half,
+            half - 2,
+        );
+
+        set_color("#22c55e");
+        for (let i = 1; i < self.snake.body.len(); i = i + 1) {
+            fill_tile(self.snake.body[i].x, self.snake.body[i].y);
+        }
+        set_color("#4ade80");
+        fill_tile(self.snake.head().x, self.snake.head().y);
+
+        set_color("#334155");
+        set_line_width(2);
+        stroke_rect(origin_x(), origin_y(), grid_cols() * cell_size(), grid_rows() * cell_size());
+
+        set_color("#e2e8f0");
+        set_font_size(16);
+        draw_text("Score: " + int_to_string(self.score),
+            origin_x(), origin_y() + grid_rows() * cell_size() + 26);
+    }
+}
+
+void game_over(score: int) {
+    set_color("#0b1020");
+    fill_rect(0, 0, canvas_width(), canvas_height());
+    set_color("#ef4444");
+    set_font_size(32);
+    draw_text("GAME OVER", origin_x() + 180, origin_y() + 150);
+    set_color("#e2e8f0");
+    set_font_size(18);
+    draw_text("Score: " + int_to_string(score), origin_x() + 180, origin_y() + 182);
+}
+
+int main() {
+    let game = new Game {
+        snake: new Snake { body: [point(16, 9), point(15, 9), point(14, 9)] },
+        food: point(0, 0),
+        dx: 1,
+        dy: 0,
+        score: 0,
+        alive: true,
+    };
+
+    game.place_food();
+    game.render();
+    sleep(1000);
+
+    while (game.alive && !is_key_down("q")) {
+        game.steer();
+        game.step();
+        if (game.alive) { game.render(); }
+        sleep(100);
+    }
+
+    game_over(game.score);
+    return 0;
+}

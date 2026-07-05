@@ -2,8 +2,14 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>Online Compiler</title>
+    <title>Kora Playground</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = { darkMode: "class" };
+      if (localStorage.getItem("kora-theme") === "dark") {
+        document.documentElement.classList.add("dark");
+      }
+    </script>
     <link
       rel="stylesheet"
       href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
@@ -11,10 +17,6 @@
       crossorigin="anonymous"
       referrerpolicy="no-referrer"
     />
-    <script
-      defer
-      src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"
-    ></script>
 
     <link
       rel="stylesheet"
@@ -22,68 +24,151 @@
       href="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.20.0/min/vs/editor/editor.main.min.css"
     />
     <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.26.1/min/vs/loader.min.js"></script>
-    <script defer>
+
+    <link rel="stylesheet" href="playground/style.css" />
+    <script>
       require.config({
         paths: {
           vs: "https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.26.1/min/vs",
         },
       });
-      require(["vs/editor/editor.main"], () => {
-        window.editor = monaco.editor.create(
-          document.getElementById("editor"),
-          {
-            value: `function x() {
-  console.log("Hello world!");                                                                                                                                              <space>
-}`,
-            language: "javascript",
-            theme: "vs-dark",
-            automaticLayout: true,
-            padding: { top: 15, left: 15, right: 15 },
-          }
-        );
-      });
     </script>
-    <script type="module">
-      import init, { compile } from "./pkg/compiler.js";
-      init().then(() => {
-        window.compile = compile;
-      });
-    </script>
+    <script type="module" src="playground/main.js"></script>
   </head>
-  <body class="bg-neutral-900 text-white overflow-hidden">
-    <div
-      class="bg-neutral-900 w-full h-12 py-2 px-3 absolute z-50 flex flex-row items-center justify-between"
+  <body class="bg-white text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100 overflow-hidden">
+    <!-- Header -->
+    <header
+      class="h-14 border-b border-zinc-200 dark:border-zinc-800 px-4 flex items-center justify-between"
     >
-      <h1 class="text-3xl">Online Compiler</h1>
-      <div>
-        <button
-          class="bg-green-700 hover:bg-green-900 text-white font-bold px-4 py-2 rounded"
-        >
-          <i class="fa-solid fa-play"></i>
-        </button>
-        <button
-          class="bg-green-700 hover:bg-green-900 text-white font-bold px-4 py-2 rounded"
-        >
-          <i class="fa-solid fa-robot"></i>
-        </button>
-      </div>
-    </div>
-
-    <main class="flex flex-col w-screen h-screen pt-12">
-      <div class="flex flex-row flex-grow w-full h-full">
-        <div id="editor" class="h-full w-1/2"></div>
-        <div class="h-full w-1/2 m-4 p-3 flex flex-col align-start">
-          <div id="stdout" class="flex-grow mb-8 overflow-auto"></div>
-          <div class="flex">
-            <input
-              id="stdin"
-              type="text"
-              class="peer block w-full rounded border-0 py-1 px-3 my-3 leading-2 outline-none text-black"
-              placeholder="Standard input"
-            />
-          </div>
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-lg bg-emerald-500 flex items-center justify-center font-black text-white">
+          K
+        </div>
+        <div>
+          <h1 class="text-base font-semibold leading-tight">Kora</h1>
+          <p class="text-xs text-zinc-500 dark:text-zinc-400 leading-tight">Online playground</p>
         </div>
       </div>
+
+      <div class="flex items-center gap-2">
+      <button
+        id="theme-btn"
+        aria-label="Toggle dark mode"
+        class="w-8 h-8 rounded-md text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors"
+      >
+        <i class="fa-solid fa-moon"></i>
+      </button>
+      <button
+        id="run-btn"
+        disabled
+        class="inline-flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold text-sm px-4 py-1.5 rounded-md transition-colors disabled:hover:bg-emerald-500 opacity-50 cursor-not-allowed"
+      >
+        <i class="fa-solid fa-play text-xs"></i>
+        <span class="run-label">Loading…</span>
+      </button>
+      </div>
+    </header>
+
+    <!-- Body -->
+    <main class="flex flex-row" style="height: calc(100vh - 3.5rem)">
+      <!-- Editor -->
+      <section class="w-1/2 h-full border-r border-zinc-200 dark:border-zinc-800 flex flex-col">
+        <div class="h-9 flex items-stretch border-b border-zinc-200 dark:border-zinc-800">
+          <div class="relative flex-1 min-w-0 flex items-stretch">
+            <button id="tabs-left" class="tab-scroll left hidden" aria-label="Scroll tabs left">
+              <i class="fa-solid fa-chevron-left text-[10px]"></i>
+            </button>
+            <div
+              id="file-tabs"
+              role="tablist"
+              aria-label="Example programs"
+              class="w-full flex items-stretch overflow-x-auto no-scrollbar"
+            ></div>
+            <button id="tabs-right" class="tab-scroll right hidden" aria-label="Scroll tabs right">
+              <i class="fa-solid fa-chevron-right text-[10px]"></i>
+            </button>
+          </div>
+          <button
+            id="reset-btn"
+            title="Restore this file's original example"
+            class="flex-none px-3 text-xs text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 border-l border-zinc-200 dark:border-zinc-800 transition-colors"
+          >
+            <i class="fa-solid fa-rotate-left text-[10px] mr-1"></i>
+            Reset
+          </button>
+        </div>
+        <div id="editor" class="w-full flex-1 min-h-0"></div>
+      </section>
+
+      <!-- Right pane: tabs + input -->
+      <section class="w-1/2 h-full flex flex-col">
+        <!-- Tabs -->
+        <div class="h-9 flex items-center border-b border-zinc-200 dark:border-zinc-800">
+          <button
+            class="tab-btn active px-4 h-full text-xs uppercase tracking-wider text-zinc-500 border-b-2 border-transparent hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
+            data-tab="output"
+          >
+            Output
+          </button>
+          <button
+            class="tab-btn px-4 h-full text-xs uppercase tracking-wider text-zinc-500 border-b-2 border-transparent hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
+            data-tab="js"
+          >
+            Transpiled JS
+          </button>
+          <button
+            class="tab-btn px-4 h-full text-xs uppercase tracking-wider text-zinc-500 border-b-2 border-transparent hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
+            data-tab="canvas"
+          >
+            Canvas
+          </button>
+        </div>
+
+        <!-- Tab panels -->
+        <div class="flex-1 min-h-0 relative">
+          <div
+            class="tab-panel absolute inset-0 overflow-auto p-4"
+            data-tab="output"
+          >
+            <pre id="stdout" class="whitespace-pre text-zinc-800 dark:text-zinc-200"></pre>
+          </div>
+          <div
+            class="tab-panel absolute inset-0 hidden"
+            data-tab="js"
+          >
+            <div id="js-view" class="w-full h-full"></div>
+          </div>
+          <div
+            class="tab-panel absolute inset-0 hidden"
+            data-tab="canvas"
+          >
+            <div class="w-full h-full overflow-auto p-4 flex items-center justify-center">
+              <canvas
+                id="canvas"
+                width="640"
+                height="480"
+                class="max-w-full max-h-full border border-zinc-200 dark:border-zinc-800 bg-zinc-900"
+              ></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- stdin -->
+        <div class="border-t border-zinc-200 dark:border-zinc-800 px-4 py-3">
+          <label
+            for="stdin"
+            class="block text-xs uppercase tracking-wider text-zinc-500 mb-1"
+          >
+            Standard input
+          </label>
+          <input
+            id="stdin"
+            type="text"
+            class="block w-full rounded-md bg-white border border-zinc-300 dark:bg-zinc-800 dark:border-zinc-700 focus:border-emerald-500 focus:ring-0 py-1.5 px-3 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 outline-none transition-colors"
+            placeholder="Whatever your program reads via input()"
+          />
+        </div>
+      </section>
     </main>
   </body>
 </html>

@@ -1,0 +1,377 @@
+# Pac-Man. Arrow keys steer, q quits. Eat every pellet to win; the four ghosts
+# each hunt you differently. Grab a power pellet (the big dots in the corners)
+# to turn them blue and eat them for bonus points. Three lives.
+#
+# The maze is generated as a pillar grid so it is always fully connected; it is
+# not the original arcade layout.
+
+int view_width() { return canvas_width(); }
+int view_height() { return canvas_height(); }
+
+struct Pac { x: real, y: real, dx: int, dy: int, want_dx: int, want_dy: int, mouth: int, face: real, sx: real, sy: real }
+struct Ghost { x: real, y: real, dx: int, dy: int, kind: int, frightened: int, home_x: int, home_y: int, sx: real, sy: real }
+struct Game { map: [string], pac: Pac, ghosts: [Ghost], score: int, lives: int, pellets: int, mode_timer: int }
+
+string int_to_string(n: int) {
+    if (n == 0) { return "0"; }
+    let digits: [char] = [];
+    while (n > 0) {
+        digits.insert(0, ((n % 10) + 48) as char);
+        n = n / 10;
+    }
+    return digits;
+}
+
+real absf(v: real) {
+    if (v < 0.0) { return -v; }
+    return v;
+}
+
+# Cell index of a continuous coordinate (coords are always non-negative here).
+int nearest(v: real) {
+    return (v + 0.5) as int;
+}
+
+bool open(map: [string], col: int, row: int) {
+    if (row < 0 || col < 0) { return false; }
+    if (row >= map.len() || col >= map[row].len()) { return false; }
+    return map[row][col] != '#';
+}
+
+string ghost_color(kind: int) {
+    if (kind == 0) { return "#ef4444"; }
+    if (kind == 1) { return "#f9a8d4"; }
+    if (kind == 2) { return "#22d3ee"; }
+    return "#fb923c";
+}
+
+impl Pac {
+    void update(self, map: [string]) {
+        let cx = nearest(self.x);
+        let cy = nearest(self.y);
+        if (absf(self.x - (cx as real)) < 0.05 && absf(self.y - (cy as real)) < 0.05) {
+            self.x = cx as real;
+            self.y = cy as real;
+            if ((self.want_dx != 0 || self.want_dy != 0)
+                && open(map, cx + self.want_dx, cy + self.want_dy)) {
+                self.dx = self.want_dx;
+                self.dy = self.want_dy;
+            }
+            if (!open(map, cx + self.dx, cy + self.dy)) {
+                self.dx = 0;
+                self.dy = 0;
+            }
+        }
+        if (self.dx != 0 || self.dy != 0) {
+            self.face = atan2(self.dy as real, self.dx as real);
+        }
+        self.x = self.x + (self.dx as real) * 0.2;
+        self.y = self.y + (self.dy as real) * 0.2;
+        self.mouth = (self.mouth + 1) % 20;
+    }
+}
+
+impl Ghost {
+    void reset(self) {
+        self.x = self.sx;
+        self.y = self.sy;
+        self.dx = 0;
+        self.dy = -1;
+        self.frightened = 0;
+    }
+
+    # At each cell, pick the non-reversing open direction that best approaches a
+    # target. The target depends on the ghost's kind, which is what makes each
+    # one behave differently. Frightened ghosts flee instead.
+    void update(self, map: [string], pac: Pac, redx: int, redy: int, scatter: bool) {
+        let speed = 0.2;
+        if (self.frightened > 0) {
+            self.frightened = self.frightened - 1;
+            speed = 0.1;
+        }
+
+        let cx = nearest(self.x);
+        let cy = nearest(self.y);
+        if (absf(self.x - (cx as real)) < 0.05 && absf(self.y - (cy as real)) < 0.05) {
+            self.x = cx as real;
+            self.y = cy as real;
+
+            let tx = nearest(pac.x);
+            let ty = nearest(pac.y);
+            if (self.frightened <= 0) {
+                if (scatter) {
+                    tx = self.home_x;
+                    ty = self.home_y;
+                } else if (self.kind == 1) {
+                    # ambush: aim a few cells ahead of Pac
+                    tx = nearest(pac.x) + pac.dx * 4;
+                    ty = nearest(pac.y) + pac.dy * 4;
+                } else if (self.kind == 2) {
+                    # flank: reflect a point ahead of Pac across the red ghost
+                    let ax = nearest(pac.x) + pac.dx * 2;
+                    let ay = nearest(pac.y) + pac.dy * 2;
+                    tx = 2 * ax - redx;
+                    ty = 2 * ay - redy;
+                } else if (self.kind == 3) {
+                    # shy: chase up close, retreat to its corner when far
+                    let ddx = nearest(pac.x) - cx;
+                    let ddy = nearest(pac.y) - cy;
+                    if (ddx * ddx + ddy * ddy <= 64) {
+                        tx = self.home_x;
+                        ty = self.home_y;
+                    }
+                }
+            }
+
+            let dirs_x = [0, 0, -1, 1];
+            let dirs_y = [-1, 1, 0, 0];
+            let chosen = false;
+            let best = 0;
+            for (let i = 0; i < 4; i = i + 1) {
+                let ndx = dirs_x[i];
+                let ndy = dirs_y[i];
+                let reverse = ndx == -self.dx && ndy == -self.dy;
+                if (!reverse && open(map, cx + ndx, cy + ndy)) {
+                    let ex = cx + ndx - tx;
+                    let ey = cy + ndy - ty;
+                    let d = ex * ex + ey * ey;
+                    if (self.frightened > 0) { d = -d; }
+                    if (!chosen || d < best) {
+                        chosen = true;
+                        best = d;
+                        self.dx = ndx;
+                        self.dy = ndy;
+                    }
+                }
+            }
+            if (!chosen) {
+                self.dx = -self.dx;
+                self.dy = -self.dy;
+            }
+        }
+
+        self.x = self.x + (self.dx as real) * speed;
+        self.y = self.y + (self.dy as real) * speed;
+    }
+}
+
+impl Game {
+    void handle_input(self) {
+        if (is_key_down("ArrowLeft"))  { self.pac.want_dx = -1; self.pac.want_dy = 0; }
+        if (is_key_down("ArrowRight")) { self.pac.want_dx = 1;  self.pac.want_dy = 0; }
+        if (is_key_down("ArrowUp"))    { self.pac.want_dx = 0;  self.pac.want_dy = -1; }
+        if (is_key_down("ArrowDown"))  { self.pac.want_dx = 0;  self.pac.want_dy = 1; }
+    }
+
+    void frighten_all(self) {
+        for (let i = 0; i < self.ghosts.len(); i = i + 1) {
+            self.ghosts[i].frightened = 140;
+        }
+    }
+
+    void reset_positions(self) {
+        self.pac.x = self.pac.sx;
+        self.pac.y = self.pac.sy;
+        self.pac.dx = 0;
+        self.pac.dy = 0;
+        self.pac.want_dx = 0;
+        self.pac.want_dy = 0;
+        for (let i = 0; i < self.ghosts.len(); i = i + 1) {
+            self.ghosts[i].reset();
+        }
+    }
+
+    void check_collisions(self) {
+        for (let i = 0; i < self.ghosts.len(); i = i + 1) {
+            let dx = self.ghosts[i].x - self.pac.x;
+            let dy = self.ghosts[i].y - self.pac.y;
+            if (sqrt(dx * dx + dy * dy) < 0.5) {
+                if (self.ghosts[i].frightened > 0) {
+                    self.score = self.score + 200;
+                    self.ghosts[i].reset();
+                } else {
+                    self.lives = self.lives - 1;
+                    self.reset_positions();
+                    return;
+                }
+            }
+        }
+    }
+
+    void update(self) {
+        self.pac.update(self.map);
+
+        let cx = nearest(self.pac.x);
+        let cy = nearest(self.pac.y);
+        if (absf(self.pac.x - (cx as real)) < 0.05 && absf(self.pac.y - (cy as real)) < 0.05) {
+            let ch = self.map[cy][cx];
+            if (ch == '.') {
+                self.map[cy][cx] = ' ';
+                self.score = self.score + 10;
+                self.pellets = self.pellets - 1;
+            } else if (ch == 'o') {
+                self.map[cy][cx] = ' ';
+                self.score = self.score + 50;
+                self.pellets = self.pellets - 1;
+                self.frighten_all();
+            }
+        }
+
+        self.mode_timer = self.mode_timer + 1;
+        let scatter = (self.mode_timer % 400) < 100;
+        let redx = nearest(self.ghosts[0].x);
+        let redy = nearest(self.ghosts[0].y);
+        for (let i = 0; i < self.ghosts.len(); i = i + 1) {
+            self.ghosts[i].update(self.map, self.pac, redx, redy, scatter);
+        }
+
+        self.check_collisions();
+    }
+
+    void draw_pac(self, ox: int, oy: int, cs: int) {
+        let px = ox + (self.pac.x * (cs as real)) as int + cs / 2;
+        let py = oy + (self.pac.y * (cs as real)) as int + cs / 2;
+        let r = cs / 2 - 1;
+
+        set_color("#facc15");
+        fill_circle(px, py, r);
+
+        let phase = self.pac.mouth;
+        if (phase > 10) { phase = 20 - phase; }
+        let ha = (phase as real) / 10.0 * 0.55;
+        let fa = self.pac.face;
+        let reach = (r + 2) as real;
+        set_color("#000000");
+        fill_triangle(px, py,
+            px + (cos(fa - ha) * reach) as int, py + (sin(fa - ha) * reach) as int,
+            px + (cos(fa + ha) * reach) as int, py + (sin(fa + ha) * reach) as int);
+    }
+
+    void draw_ghost(self, i: int, ox: int, oy: int, cs: int) {
+        let g = self.ghosts[i];
+        let gx = ox + (g.x * (cs as real)) as int + cs / 2;
+        let gy = oy + (g.y * (cs as real)) as int + cs / 2;
+        let r = cs / 2 - 1;
+
+        if (g.frightened > 0) { set_color("#3b3bd6"); }
+        else { set_color(ghost_color(g.kind)); }
+        fill_circle(gx, gy - 1, r);
+        fill_rect(gx - r, gy - 1, 2 * r, r + 1);
+
+        set_color("#ffffff");
+        fill_circle(gx - r / 2, gy - r / 3, r / 3);
+        fill_circle(gx + r / 2, gy - r / 3, r / 3);
+        set_color("#1e3a8a");
+        fill_circle(gx - r / 2, gy - r / 3, r / 6);
+        fill_circle(gx + r / 2, gy - r / 3, r / 6);
+    }
+
+    void render(self) {
+        draw_clear();
+        set_color("#000000");
+        fill_rect(0, 0, view_width(), view_height());
+
+        let cs = 20;
+        let ox = (view_width() - self.map[0].len() * cs) / 2;
+        let oy = (view_height() - self.map.len() * cs) / 2 + 6;
+
+        for (let r = 0; r < self.map.len(); r = r + 1) {
+            for (let c = 0; c < self.map[r].len(); c = c + 1) {
+                let ch = self.map[r][c];
+                let px = ox + c * cs + cs / 2;
+                let py = oy + r * cs + cs / 2;
+                if (ch == '#') {
+                    set_color("#1e3a8a");
+                    fill_rect(ox + c * cs + 1, oy + r * cs + 1, cs - 2, cs - 2);
+                } else if (ch == '.') {
+                    set_color("#fcd34d");
+                    fill_circle(px, py, 2);
+                } else if (ch == 'o') {
+                    set_color("#fcd34d");
+                    fill_circle(px, py, 5);
+                }
+            }
+        }
+
+        self.draw_pac(ox, oy, cs);
+        for (let i = 0; i < self.ghosts.len(); i = i + 1) {
+            self.draw_ghost(i, ox, oy, cs);
+        }
+
+        set_font_size(18);
+        set_color("#facc15");
+        draw_text("SCORE " + int_to_string(self.score), 16, 22);
+        draw_text("LIVES " + int_to_string(self.lives), view_width() - 120, 22);
+    }
+
+    void render_message(self, text: string, color: string) {
+        set_color(color);
+        set_font_size(48);
+        draw_text(text, view_width() / 2 - 150, view_height() / 2);
+        set_color("#e2e8f0");
+        set_font_size(20);
+        draw_text("Score: " + int_to_string(self.score), view_width() / 2 - 50, view_height() / 2 + 44);
+    }
+}
+
+int main() {
+    let cols = 19;
+    let rows = 21;
+
+    # Pillar maze: border walls plus a wall at every (even, even) interior cell.
+    # Odd rows and odd columns stay open, so the whole maze is connected.
+    let map: [string] = [];
+    for (let r = 0; r < rows; r = r + 1) {
+        let line: [char] = [];
+        for (let c = 0; c < cols; c = c + 1) {
+            if (r == 0 || c == 0 || r == rows - 1 || c == cols - 1) { line.push('#'); }
+            else if (r % 2 == 0 && c % 2 == 0) { line.push('#'); }
+            else { line.push('.'); }
+        }
+        map.push(line);
+    }
+    map[1][1] = 'o';
+    map[1][cols - 2] = 'o';
+    map[rows - 2][1] = 'o';
+    map[rows - 2][cols - 2] = 'o';
+
+    let pellets = 0;
+    for (let r = 0; r < rows; r = r + 1) {
+        for (let c = 0; c < cols; c = c + 1) {
+            if (map[r][c] == '.' || map[r][c] == 'o') { pellets = pellets + 1; }
+        }
+    }
+
+    let game = new Game {
+        map: map,
+        pac: new Pac {
+            x: 9.0, y: 15.0, dx: 0, dy: 0, want_dx: 0, want_dy: 0,
+            mouth: 0, face: 0.0, sx: 9.0, sy: 15.0,
+        },
+        ghosts: [
+            new Ghost { x: 9.0,  y: 9.0,  dx: 0, dy: -1, kind: 0, frightened: 0, home_x: 17, home_y: 1,  sx: 9.0,  sy: 9.0 },
+            new Ghost { x: 7.0,  y: 9.0,  dx: 0, dy: -1, kind: 1, frightened: 0, home_x: 1,  home_y: 1,  sx: 7.0,  sy: 9.0 },
+            new Ghost { x: 11.0, y: 9.0,  dx: 0, dy: -1, kind: 2, frightened: 0, home_x: 17, home_y: 19, sx: 11.0, sy: 9.0 },
+            new Ghost { x: 9.0,  y: 11.0, dx: 0, dy: -1, kind: 3, frightened: 0, home_x: 1,  home_y: 19, sx: 9.0,  sy: 11.0 },
+        ],
+        score: 0,
+        lives: 3,
+        pellets: pellets,
+        mode_timer: 0,
+    };
+
+    while (!is_key_down("q") && game.lives > 0 && game.pellets > 0) {
+        game.handle_input();
+        game.update();
+        game.render();
+        sleep(50);
+    }
+
+    game.render();
+    if (game.pellets == 0) {
+        game.render_message("YOU WIN", "#22c55e");
+    } else {
+        game.render_message("GAME OVER", "#ef4444");
+    }
+    return 0;
+}

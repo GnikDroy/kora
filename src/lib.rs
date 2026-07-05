@@ -1,15 +1,12 @@
-#![feature(exclusive_range_pattern)]
-#![feature(let_chains)]
 #![feature(stmt_expr_attributes)]
-#![feature(result_option_inspect)]
 #![feature(iter_intersperse)]
 #![allow(dead_code)]
 
+mod js_transpiler;
 mod lexer;
 mod loader;
 mod parser;
 mod semantic_analyzer;
-mod js_transpiler;
 
 use std::collections::HashMap;
 use std::error::Error;
@@ -68,7 +65,7 @@ impl fmt::Display for CompileErr {
 }
 
 /// Compiler for the frontend
-pub fn compile_frontend<P>(entry: &str, provider: P) -> Result<CompiledProgram, Vec<CompileErr>>
+pub fn compile<P>(entry: &str, provider: P) -> Result<CompiledProgram, Vec<CompileErr>>
 where
     P: Fn(&Path) -> Option<String>,
 {
@@ -138,7 +135,7 @@ mod tests {
 
     #[test]
     fn test_compiles_a_multi_module_program() {
-        let result = compile_frontend(
+        let result = compile(
             "main.kora",
             provider(vec![
                 (
@@ -155,7 +152,7 @@ mod tests {
 
     #[test]
     fn test_reports_analyze_errors_across_modules() {
-        let Err(errors) = compile_frontend(
+        let Err(errors) = compile(
             "main.kora",
             provider(vec![
                 (
@@ -172,7 +169,7 @@ mod tests {
 
     #[test]
     fn test_reports_missing_return() {
-        let Err(errors) = compile_frontend("main.kora", provider(vec![("main.kora", "int main() { }")]))
+        let Err(errors) = compile("main.kora", provider(vec![("main.kora", "int main() { }")]))
         else {
             panic!("expected a return error");
         };
@@ -181,7 +178,7 @@ mod tests {
 
     #[test]
     fn test_reports_load_error_for_a_missing_import() {
-        let Err(errors) = compile_frontend(
+        let Err(errors) = compile(
             "main.kora",
             provider(vec![(
                 "main.kora",
@@ -195,7 +192,7 @@ mod tests {
 
     #[test]
     fn test_reports_parse_error() {
-        let Err(errors) = compile_frontend("main.kora", provider(vec![("main.kora", "int main() {")]))
+        let Err(errors) = compile("main.kora", provider(vec![("main.kora", "int main() {")]))
         else {
             panic!("expected a parse error");
         };
@@ -203,8 +200,18 @@ mod tests {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
+#[global_allocator]
+static ALLOCATOR: lol_alloc::AssumeSingleThreaded<lol_alloc::FreeListAllocator> =
+    unsafe { lol_alloc::AssumeSingleThreaded::new(lol_alloc::FreeListAllocator::new()) };
+
+#[wasm_bindgen(start)]
+pub fn on_start() {
+    console_error_panic_hook::set_once();
+}
+
 #[wasm_bindgen]
-pub fn compile(source: &str) -> Result<String, String> {
+pub fn transpile(source: &str, async_externs: Vec<String>) -> Result<String, String> {
     let mut out = String::from(
         r#"
         async function clear() {
@@ -218,19 +225,42 @@ pub fn compile(source: &str) -> Result<String, String> {
         }
         "#,
     );
-    let mut in_ = String::from(
+
+    let mut program = String::from(source);
+    program.push_str(
         r#"
-        extern nil clear();
-        extern nil print(a: [char]);
+        extern void clear();
+        extern void print(a: [char]);
         extern [char] input();
         "#,
     );
-    in_.push_str(source);
-    let source = &in_;
-    let compiled = compile_frontend(source, || None);
 
-    let mut transpiler = JsTranspiler::new();
-    transpiler.visit_module(&module);
+    let entry = "main.kora";
+    let compiled = compile(entry, |path: &Path| {
+        (path == Path::new(entry)).then(|| program.clone())
+    })
+    .map_err(|e| {
+        e.iter()
+            .map(|x| x.to_string())
+            .intersperse("\n".to_string())
+            .collect::<String>()
+    })?;
+
+    let method_calls = compiled
+        .method_calls
+        .iter()
+        .map(|(id, sym)| (*id, compiled.symbols.symbol(*sym).name.clone()))
+        .collect();
+
+    let mut transpiler = JsTranspiler::new(
+        compiled.types,
+        method_calls,
+        compiled.array_method_calls,
+        async_externs.into_iter().collect(),
+    );
+
+    transpiler.visit_module(&compiled.program.modules.first().unwrap().module);
+
     let output = transpiler
         .get_source()
         .map(|s| s.to_string())
@@ -241,6 +271,6 @@ pub fn compile(source: &str) -> Result<String, String> {
                 .collect::<String>()
         })?;
 
-    out.push_str(output.as_str());
+    out.push_str(&output);
     Ok(out)
 }

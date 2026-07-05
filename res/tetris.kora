@@ -1,0 +1,348 @@
+# Tetris. Arrows move and rotate, ArrowDown soft-drops, space hard-drops,
+# q quits. Rendered to the canvas.
+#
+# Each tetromino rotation is a 4x4 grid drawn as an ASCII string, 'X' for a
+# filled cell and '.' for empty. Index (row, col) is at row * 4 + col.
+
+int board_cols() { return 10; }
+int board_rows() { return 20; }
+int cell_size() { return 22; }
+int origin_x() { return 20; }
+int origin_y() { return 20; }
+
+struct Piece { kind: int, rot: int, x: int, y: int }
+
+struct Board { cells: [int] }
+
+# 7-bag randomizer: each of the 7 kinds is dealt once before any repeats.
+struct Bag { queue: [int] }
+
+struct Game {
+    board: Board,
+    bag: Bag,
+    piece: Piece,
+    score: int,
+    alive: bool,
+    gravity: int,
+    move_cooldown: int,
+    rotate_held: bool,
+    drop_held: bool,
+}
+
+string shape(kind: int, rot: int) {
+    let tetrominoes = [
+        # I
+        "...." + "XXXX" + "...." + "....",
+        "..X." + "..X." + "..X." + "..X.",
+        "...." + "...." + "XXXX" + "....",
+        ".X.." + ".X.." + ".X.." + ".X..",
+        # O
+        "...." + ".XX." + ".XX." + "....",
+        "...." + ".XX." + ".XX." + "....",
+        "...." + ".XX." + ".XX." + "....",
+        "...." + ".XX." + ".XX." + "....",
+        # T
+        "...." + "XXX." + ".X.." + "....",
+        "..X." + ".XX." + "..X." + "....",
+        "...." + "..X." + ".XXX" + "....",
+        "...." + ".X.." + ".XX." + ".X..",
+        # S
+        "...." + ".XX." + "XX.." + "....",
+        ".X.." + ".XX." + "..X." + "....",
+        "...." + "..XX" + ".XX." + "....",
+        "...." + ".X.." + ".XX." + "..X.",
+        # Z
+        "...." + "XX.." + ".XX." + "....",
+        "..X." + ".XX." + ".X.." + "....",
+        "...." + ".XX." + "..XX" + "....",
+        "...." + "..X." + ".XX." + ".X..",
+        # J
+        "...." + "XXX." + "..X." + "....",
+        "..X." + "..X." + ".XX." + "....",
+        "...." + ".X.." + ".XXX" + "....",
+        "...." + ".XX." + ".X.." + ".X..",
+        # L
+        "...." + "XXX." + "X..." + "....",
+        ".XX." + "..X." + "..X." + "....",
+        "...." + "...X" + ".XXX" + "....",
+        "...." + ".X.." + ".X.." + ".XX.",
+    ];
+    return tetrominoes[kind * 4 + rot];
+}
+
+string piece_color(kind: int) {
+    if (kind == 0) { return "#22d3ee"; }
+    if (kind == 1) { return "#a855f7"; }
+    if (kind == 2) { return "#f97316"; }
+    if (kind == 3) { return "#3b82f6"; }
+    if (kind == 4) { return "#facc15"; }
+    if (kind == 5) { return "#22c55e"; }
+    return "#ef4444";
+}
+
+string int_to_string(n: int) {
+    if (n == 0) { return "0"; }
+    let digits: [char] = [];
+    while (n > 0) {
+        digits.insert(0, ((n % 10) + 48) as char);
+        n = n / 10;
+    }
+    return digits;
+}
+
+void fill_cell(col: int, row: int) {
+    let x = origin_x() + col * cell_size();
+    let y = origin_y() + row * cell_size();
+    fill_rect(x + 1, y + 1, cell_size() - 2, cell_size() - 2);
+}
+
+impl Piece {
+    string grid(self) { return shape(self.kind, self.rot); }
+
+    Piece moved(self, dx: int, dy: int) {
+        return new Piece { kind: self.kind, rot: self.rot, x: self.x + dx, y: self.y + dy };
+    }
+
+    Piece rotated(self) {
+        return new Piece { kind: self.kind, rot: (self.rot + 1) % 4, x: self.x, y: self.y };
+    }
+}
+
+impl Board {
+    bool fits(self, piece: Piece) {
+        let cells = piece.grid();
+        for (let r = 0; r < 4; r = r + 1) {
+            for (let c = 0; c < 4; c = c + 1) {
+                if (cells[r * 4 + c] == 'X') {
+                    let x = piece.x + c;
+                    let y = piece.y + r;
+                    if (x < 0 || x >= board_cols() || y >= board_rows()) { return false; }
+                    if (y >= 0 && self.cells[y * board_cols() + x] != 0) { return false; }
+                }
+            }
+        }
+        return true;
+    }
+
+    # Writes the piece into the board. False when any cell sits above the top:
+    # that is the game-over condition.
+    bool lock(self, piece: Piece) {
+        let cells = piece.grid();
+        for (let r = 0; r < 4; r = r + 1) {
+            for (let c = 0; c < 4; c = c + 1) {
+                if (cells[r * 4 + c] == 'X' && piece.y + r < 0) { return false; }
+            }
+        }
+        for (let r = 0; r < 4; r = r + 1) {
+            for (let c = 0; c < 4; c = c + 1) {
+                if (cells[r * 4 + c] == 'X') {
+                    self.cells[(piece.y + r) * board_cols() + piece.x + c] = piece.kind + 1;
+                }
+            }
+        }
+        return true;
+    }
+
+    int clear_lines(self) {
+        let cleared = 0;
+        let row = board_rows() - 1;
+        while (row >= 0) {
+            let full = true;
+            for (let col = 0; col < board_cols(); col = col + 1) {
+                if (self.cells[row * board_cols() + col] == 0) { full = false; }
+            }
+            if (full) {
+                cleared = cleared + 1;
+                for (let r = row; r > 0; r = r - 1) {
+                    for (let col = 0; col < board_cols(); col = col + 1) {
+                        self.cells[r * board_cols() + col] = self.cells[(r - 1) * board_cols() + col];
+                    }
+                }
+                for (let col = 0; col < board_cols(); col = col + 1) {
+                    self.cells[col] = 0;
+                }
+            } else {
+                row = row - 1;
+            }
+        }
+        return cleared;
+    }
+
+    # Where the piece would come to rest if hard-dropped.
+    Piece landing(self, piece: Piece) {
+        let resting = piece;
+        while (self.fits(resting.moved(0, 1))) {
+            resting = resting.moved(0, 1);
+        }
+        return resting;
+    }
+}
+
+impl Bag {
+    int next(self) {
+        if (self.queue.len() == 0) {
+            for (let i = 0; i < 7; i = i + 1) {
+                self.queue.insert((random() * ((i + 1) as real)) as int, i);
+            }
+        }
+        return self.queue.remove(0);
+    }
+}
+
+impl Game {
+    void spawn(self) {
+        self.piece = new Piece { kind: self.bag.next(), rot: 0, x: 3, y: -1 };
+        if (!self.board.fits(self.piece)) { self.alive = false; }
+    }
+
+    void move_sideways(self) {
+        self.move_cooldown = self.move_cooldown - 1;
+        if (is_key_down("ArrowLeft") && self.move_cooldown <= 0
+            && self.board.fits(self.piece.moved(-1, 0))) {
+            self.piece = self.piece.moved(-1, 0);
+            self.move_cooldown = 3;
+        }
+        if (is_key_down("ArrowRight") && self.move_cooldown <= 0
+            && self.board.fits(self.piece.moved(1, 0))) {
+            self.piece = self.piece.moved(1, 0);
+            self.move_cooldown = 3;
+        }
+    }
+
+    void try_rotate(self) {
+        let held = is_key_down("ArrowUp");
+        if (held && !self.rotate_held) {
+            let turned = self.piece.rotated();
+            if (self.board.fits(turned)) { self.piece = turned; }
+        }
+        self.rotate_held = held;
+    }
+
+    bool try_hard_drop(self) {
+        let held = is_key_down(" ");
+        let dropped = false;
+        if (held && !self.drop_held) {
+            self.piece = self.board.landing(self.piece);
+            dropped = true;
+        }
+        self.drop_held = held;
+        return dropped;
+    }
+
+    void settle(self) {
+        self.alive = self.board.lock(self.piece);
+        if (self.alive) {
+            let cleared = self.board.clear_lines();
+            self.score = self.score + cleared * cleared * 100;
+            self.spawn();
+        }
+    }
+
+    void tick(self) {
+        self.move_sideways();
+        self.try_rotate();
+        let hard = self.try_hard_drop();
+
+        self.gravity = self.gravity + 1;
+        let fall = hard || self.gravity >= 8 || is_key_down("ArrowDown");
+        if (fall) {
+            self.gravity = 0;
+            if (!hard && self.board.fits(self.piece.moved(0, 1))) {
+                self.piece = self.piece.moved(0, 1);
+            } else {
+                self.settle();
+            }
+        }
+    }
+
+    void draw_piece(self, piece: Piece) {
+        let cells = piece.grid();
+        for (let r = 0; r < 4; r = r + 1) {
+            for (let c = 0; c < 4; c = c + 1) {
+                if (cells[r * 4 + c] == 'X' && piece.y + r >= 0) {
+                    fill_cell(piece.x + c, piece.y + r);
+                }
+            }
+        }
+    }
+
+    void render(self) {
+        draw_clear();
+
+        set_color("#0b1020");
+        fill_rect(0, 0, canvas_width(), canvas_height());
+
+        set_color("#0f172a");
+        fill_rect(origin_x(), origin_y(), board_cols() * cell_size(), board_rows() * cell_size());
+
+        for (let row = 0; row < board_rows(); row = row + 1) {
+            for (let col = 0; col < board_cols(); col = col + 1) {
+                let v = self.board.cells[row * board_cols() + col];
+                if (v != 0) {
+                    set_color(piece_color(v - 1));
+                    fill_cell(col, row);
+                }
+            }
+        }
+
+        set_color(piece_color(self.piece.kind));
+        set_alpha(0.25);
+        self.draw_piece(self.board.landing(self.piece));
+        set_alpha(1.0);
+        self.draw_piece(self.piece);
+
+        set_color("#334155");
+        set_line_width(2);
+        stroke_rect(origin_x(), origin_y(), board_cols() * cell_size(), board_rows() * cell_size());
+
+        let panel = origin_x() + board_cols() * cell_size() + 24;
+        set_color("#e2e8f0");
+        set_font_size(14);
+        draw_text("SCORE", panel, origin_y() + 20);
+        set_font_size(28);
+        draw_text(int_to_string(self.score), panel, origin_y() + 50);
+        set_font_size(13);
+        draw_text("Arrows: move / rotate", panel, origin_y() + 110);
+        draw_text("Down: soft drop", panel, origin_y() + 132);
+        draw_text("Space: hard drop", panel, origin_y() + 154);
+        draw_text("q: quit", panel, origin_y() + 176);
+    }
+}
+
+void game_over(score: int) {
+    set_color("#0b1020");
+    fill_rect(0, 0, canvas_width(), canvas_height());
+    set_color("#ef4444");
+    set_font_size(32);
+    draw_text("GAME OVER", origin_x() + 30, origin_y() + 200);
+    set_color("#e2e8f0");
+    set_font_size(18);
+    draw_text("Score: " + int_to_string(score), origin_x() + 30, origin_y() + 232);
+}
+
+int main() {
+    let game = new Game {
+        board: new Board { cells: new int[board_cols() * board_rows()] },
+        bag: new Bag { queue: [] },
+        piece: new Piece { kind: 0, rot: 0, x: 3, y: -1 },
+        score: 0,
+        alive: true,
+        gravity: 0,
+        move_cooldown: 0,
+        rotate_held: false,
+        drop_held: false,
+    };
+
+    game.spawn();
+    game.render();
+    sleep(800);
+
+    while (game.alive && !is_key_down("q")) {
+        game.tick();
+        if (game.alive) { game.render(); }
+        sleep(40);
+    }
+
+    game_over(game.score);
+    return 0;
+}

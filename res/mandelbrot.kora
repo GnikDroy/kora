@@ -1,0 +1,69 @@
+# Mandelbrot set: the classic escape-time fractal, rendered pixel-by-pixel to
+# the canvas and colored by how fast each point escapes.
+
+int max_iter() { return 100; }
+
+string int_to_string(n: int) {
+    if (n == 0) { return "0"; }
+    let digits: [char] = [];
+    while (n > 0) {
+        digits.insert(0, ((n % 10) + 48) as char);
+        n = n / 10;
+    }
+    return digits;
+}
+
+int escape_time(cr: real, ci: real) {
+    let zr = 0.0;
+    let zi = 0.0;
+    for (let i = 0; i < max_iter(); i = i + 1) {
+        if (zr * zr + zi * zi > 4.0) { return i; }
+        let re = zr * zr - zi * zi + cr;
+        zi = 2.0 * zr * zi + ci;
+        zr = re;
+    }
+    return max_iter();
+}
+
+string color_for(iter: int) {
+    if (iter >= max_iter()) { return "#05050f"; }
+    let hue = (210 + iter * 6) % 360;
+    return "hsl(" + int_to_string(hue) + ", 75%, 55%)";
+}
+
+int main() {
+    let width = canvas_width();
+    let height = canvas_height();
+
+    # A window on the complex plane, sized to the canvas aspect ratio.
+    let x_min = -2.1;
+    let x_max = 0.9;
+    let y_min = -1.125;
+    let y_max = 1.125;
+    let dx = (x_max - x_min) / (width as real);
+    let dy = (y_max - y_min) / (height as real);
+
+    # Precompute one color per escape count so the inner loop never rebuilds a
+    # color string.
+    let palette: [string] = [];
+    for (let i = 0; i <= max_iter(); i = i + 1) {
+        palette.push(color_for(i));
+    }
+
+    for (let py = 0; py < height; py = py + 1) {
+        let ci = y_min + dy * (py as real);
+        let last = -1;
+        for (let px = 0; px < width; px = px + 1) {
+            let cr = x_min + dx * (px as real);
+            let iter = escape_time(cr, ci);
+            if (iter != last) {
+                set_color(palette[iter]);
+                last = iter;
+            }
+            fill_rect(px, py, 1, 1);
+        }
+        # Yield every few rows so the image reveals progressively.
+        if (py % 24 == 0) { sleep(0); }
+    }
+    return 0;
+}

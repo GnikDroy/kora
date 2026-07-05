@@ -1,0 +1,389 @@
+# A DOOM-flavored first-person shooter, raycast to the canvas.
+#
+# Arrows: Up/Down walk, Left/Right turn. a/d strafe. Space or mouse: shoot.
+# q quits. Clear the level by killing every demon before they drain your HP.
+#
+# The world is a grid of walls. Each screen column casts a ray until it hits a
+# wall, then draws a vertical slice whose height falls off with distance.
+# Enemies are billboard sprites, depth-tested against the walls.
+
+int view_width() { return canvas_width(); }
+int view_height() { return canvas_height(); }
+int column_width() { return 2; }
+int column_count() { return view_width() / column_width(); }
+real field_of_view() { return 1.05; }
+real max_depth() { return 16.0; }
+real pi() { return 3.14159265; }
+
+struct Hit { distance: real, side: int, tex: real }
+struct Player { x: real, y: real, angle: real, health: int, ammo: int, score: int }
+struct Enemy { x: real, y: real, health: int, alive: bool }
+struct World {
+    map: [string],
+    player: Player,
+    enemies: [Enemy],
+    depth: [real],
+    flash: int,
+    fire_held: bool,
+}
+
+string int_to_string(n: int) {
+    if (n == 0) { return "0"; }
+    let digits: [char] = [];
+    while (n > 0) {
+        digits.insert(0, ((n % 10) + 48) as char);
+        n = n / 10;
+    }
+    return digits;
+}
+
+real absf(v: real) {
+    if (v < 0.0) { return -v; }
+    return v;
+}
+
+real normalize(a: real) {
+    while (a > pi()) { a = a - 2.0 * pi(); }
+    while (a < -pi()) { a = a + 2.0 * pi(); }
+    return a;
+}
+
+# '#' is a wall; out-of-bounds counts as wall so rays always terminate.
+bool is_wall(map: [string], x: real, y: real) {
+    if (x < 0.0 || y < 0.0) { return true; }
+    let col = x as int;
+    let row = y as int;
+    if (row >= map.len() || col >= map[row].len()) { return true; }
+    return map[row][col] == '#';
+}
+
+# March a ray until it meets a wall; report distance, which face was crossed,
+# and the position along that face (for seam shading).
+Hit cast_ray(map: [string], ox: real, oy: real, angle: real) {
+    let step = 0.03;
+    let dx = cos(angle) * step;
+    let dy = sin(angle) * step;
+    let x = ox;
+    let y = oy;
+    let distance = 0.0;
+    let prev_row = y as int;
+    while (distance < max_depth()) {
+        x = x + dx;
+        y = y + dy;
+        distance = distance + step;
+        if (is_wall(map, x, y)) {
+            let side = 0;
+            let tex = y - (y as int) as real;
+            if ((y as int) != prev_row) {
+                side = 1;
+                tex = x - (x as int) as real;
+            }
+            return new Hit { distance: distance, side: side, tex: tex };
+        }
+        prev_row = y as int;
+    }
+    return new Hit { distance: max_depth(), side: 0, tex: 0.0 };
+}
+
+# Bluish walls: darker with distance, darker on horizontal faces, with a dark
+# seam at cell edges so the blocks read as separate.
+string wall_shade(distance: real, side: int, tex: real) {
+    let light = 60 - (distance * 4.0) as int;
+    if (side == 1) { light = light - 12; }
+    if (tex < 0.06 || tex > 0.94) { light = light - 16; }
+    if (light < 8) { light = 8; }
+    if (light > 70) { light = 70; }
+    return "hsl(210, 35%, " + int_to_string(light) + "%)";
+}
+
+# A floating demon head, centered at screen column cx, scaled by size.
+void draw_enemy(cx: int, size: int, distance: real) {
+    let cy = view_height() / 2;
+    let r = size / 2;
+    if (r < 2) { r = 2; }
+
+    let light = 55 - (distance * 4.0) as int;
+    if (light < 15) { light = 15; }
+    set_color("hsl(0, 60%, " + int_to_string(light) + "%)");
+    fill_circle(cx, cy, r);
+
+    let eye = r / 4;
+    if (eye < 1) { eye = 1; }
+    set_color("#fde047");
+    fill_circle(cx - r / 2, cy - r / 4, eye);
+    fill_circle(cx + r / 2, cy - r / 4, eye);
+    set_color("#000000");
+    fill_circle(cx - r / 2, cy - r / 4, eye / 2);
+    fill_circle(cx + r / 2, cy - r / 4, eye / 2);
+
+    set_color("#7f1d1d");
+    fill_rect(cx - r / 2, cy + r / 3, r, r / 4);
+}
+
+impl Player {
+    void turn(self, delta: real) {
+        self.angle = self.angle + delta;
+    }
+
+    void walk(self, amount: real, map: [string]) {
+        let nx = self.x + cos(self.angle) * amount;
+        let ny = self.y + sin(self.angle) * amount;
+        if (!is_wall(map, nx, self.y)) { self.x = nx; }
+        if (!is_wall(map, self.x, ny)) { self.y = ny; }
+    }
+
+    void strafe(self, amount: real, map: [string]) {
+        let side = self.angle + pi() / 2.0;
+        let nx = self.x + cos(side) * amount;
+        let ny = self.y + sin(side) * amount;
+        if (!is_wall(map, nx, self.y)) { self.x = nx; }
+        if (!is_wall(map, self.x, ny)) { self.y = ny; }
+    }
+
+    void take_damage(self, amount: int) {
+        self.health = self.health - amount;
+        if (self.health < 0) { self.health = 0; }
+    }
+}
+
+impl Enemy {
+    # Home in on the player when nearby, sliding along walls.
+    void chase(self, player: Player, map: [string]) {
+        if (self.alive) {
+            let dx = player.x - self.x;
+            let dy = player.y - self.y;
+            let dist = sqrt(dx * dx + dy * dy);
+            if (dist < 8.0 && dist > 0.6) {
+                let speed = 0.03;
+                let nx = self.x + (dx / dist) * speed;
+                let ny = self.y + (dy / dist) * speed;
+                if (!is_wall(map, nx, self.y)) { self.x = nx; }
+                if (!is_wall(map, self.x, ny)) { self.y = ny; }
+            }
+        }
+    }
+}
+
+impl World {
+    int alive_count(self) {
+        let n = 0;
+        for (let i = 0; i < self.enemies.len(); i = i + 1) {
+            if (self.enemies[i].alive) { n = n + 1; }
+        }
+        return n;
+    }
+
+    void handle_input(self) {
+        if (is_key_down("ArrowLeft"))  { self.player.turn(-0.05); }
+        if (is_key_down("ArrowRight")) { self.player.turn(0.05); }
+        if (is_key_down("ArrowUp"))    { self.player.walk(0.07, self.map); }
+        if (is_key_down("ArrowDown"))  { self.player.walk(-0.07, self.map); }
+        if (is_key_down("a"))          { self.player.strafe(-0.06, self.map); }
+        if (is_key_down("d"))          { self.player.strafe(0.06, self.map); }
+
+        let firing = is_key_down(" ") || is_mouse_down();
+        if (firing && !self.fire_held) { self.fire(); }
+        self.fire_held = firing;
+    }
+
+    # Hitscan: shoot the alive demon closest to the crosshair, if nothing solid
+    # stands between it and the player.
+    void fire(self) {
+        if (self.player.ammo > 0) {
+            self.player.ammo = self.player.ammo - 1;
+            self.flash = 3;
+
+            let best = -1;
+            let best_dist = 999.0;
+            for (let i = 0; i < self.enemies.len(); i = i + 1) {
+                if (self.enemies[i].alive) {
+                    let dx = self.enemies[i].x - self.player.x;
+                    let dy = self.enemies[i].y - self.player.y;
+                    let dist = sqrt(dx * dx + dy * dy);
+                    let aim = normalize(atan2(dy, dx) - self.player.angle);
+                    let shot = cast_ray(self.map, self.player.x, self.player.y, atan2(dy, dx));
+                    if (absf(aim) < 0.12 && dist < best_dist && shot.distance > dist) {
+                        best = i;
+                        best_dist = dist;
+                    }
+                }
+            }
+
+            if (best >= 0) {
+                self.enemies[best].health = self.enemies[best].health - 34;
+                if (self.enemies[best].health <= 0) {
+                    self.enemies[best].alive = false;
+                    self.player.score = self.player.score + 100;
+                }
+            }
+        }
+    }
+
+    void update(self) {
+        for (let i = 0; i < self.enemies.len(); i = i + 1) {
+            self.enemies[i].chase(self.player, self.map);
+            if (self.enemies[i].alive) {
+                let dx = self.enemies[i].x - self.player.x;
+                let dy = self.enemies[i].y - self.player.y;
+                if (sqrt(dx * dx + dy * dy) < 0.8) { self.player.take_damage(1); }
+            }
+        }
+        if (self.flash > 0) { self.flash = self.flash - 1; }
+    }
+
+    void render_walls(self) {
+        set_color("#0b1020");
+        fill_rect(0, 0, view_width(), view_height() / 2);
+        set_color("#161616");
+        fill_rect(0, view_height() / 2, view_width(), view_height() / 2);
+
+        let half_fov = field_of_view() / 2.0;
+        for (let col = 0; col < view_width(); col = col + column_width()) {
+            let offset = field_of_view() * (col as real / view_width() as real);
+            let ray = self.player.angle - half_fov + offset;
+
+            let hit = cast_ray(self.map, self.player.x, self.player.y, ray);
+            let corrected = hit.distance * cos(ray - self.player.angle);
+            if (corrected < 0.05) { corrected = 0.05; }
+            self.depth[col / column_width()] = corrected;
+
+            let wall = (view_height() as real / corrected) as int;
+            let top = view_height() / 2 - wall / 2;
+            set_color(wall_shade(corrected, hit.side, hit.tex));
+            fill_rect(col, top, column_width(), wall);
+        }
+    }
+
+    void render_sprites(self) {
+        for (let i = 0; i < self.enemies.len(); i = i + 1) {
+            if (self.enemies[i].alive) {
+                let dx = self.enemies[i].x - self.player.x;
+                let dy = self.enemies[i].y - self.player.y;
+                let dist = sqrt(dx * dx + dy * dy);
+                let angle = normalize(atan2(dy, dx) - self.player.angle);
+                let perp = dist * cos(angle);
+                if (absf(angle) < field_of_view() / 2.0 + 0.4 && perp > 0.3) {
+                    let screen_x = ((0.5 + angle / field_of_view()) * (view_width() as real)) as int;
+                    let idx = screen_x / column_width();
+                    if (idx >= 0 && idx < column_count() && perp < self.depth[idx]) {
+                        draw_enemy(screen_x, (view_height() as real / perp) as int, perp);
+                    }
+                }
+            }
+        }
+    }
+
+    void render_hud(self) {
+        let mid = view_width() / 2;
+        let base = view_height();
+
+        if (self.flash > 0) {
+            set_color("#fde047");
+            fill_circle(mid, base - 96, 22);
+            set_color("#fca5a5");
+            fill_circle(mid, base - 96, 11);
+        }
+        set_color("#334155");
+        fill_rect(mid - 14, base - 96, 28, 96);
+        set_color("#475569");
+        fill_rect(mid - 24, base - 44, 48, 44);
+
+        set_color("#e2e8f0");
+        fill_rect(mid - 1, view_height() / 2 - 8, 2, 16);
+        fill_rect(mid - 8, view_height() / 2 - 1, 16, 2);
+
+        set_font_size(18);
+        set_color("#f87171");
+        draw_text("HP " + int_to_string(self.player.health), 16, base - 16);
+        set_color("#fbbf24");
+        draw_text("AMMO " + int_to_string(self.player.ammo), 130, base - 16);
+        set_color("#a3e635");
+        draw_text("SCORE " + int_to_string(self.player.score), 280, base - 16);
+        set_color("#e2e8f0");
+        draw_text("LEFT " + int_to_string(self.alive_count()), 470, base - 16);
+    }
+
+    void render_minimap(self) {
+        let scale = 8;
+        for (let row = 0; row < self.map.len(); row = row + 1) {
+            for (let col = 0; col < self.map[row].len(); col = col + 1) {
+                if (self.map[row][col] == '#') { set_color("#475569"); }
+                else { set_color("#0f172a"); }
+                fill_rect(col * scale, row * scale, scale - 1, scale - 1);
+            }
+        }
+        set_color("#ef4444");
+        for (let i = 0; i < self.enemies.len(); i = i + 1) {
+            if (self.enemies[i].alive) {
+                fill_circle((self.enemies[i].x * (scale as real)) as int,
+                            (self.enemies[i].y * (scale as real)) as int, 2);
+            }
+        }
+        set_color("#facc15");
+        fill_circle((self.player.x * (scale as real)) as int,
+                    (self.player.y * (scale as real)) as int, 3);
+    }
+
+    void render(self) {
+        draw_clear();
+        self.render_walls();
+        self.render_sprites();
+        self.render_hud();
+        self.render_minimap();
+    }
+
+    void render_message(self, text: string, color: string) {
+        set_color(color);
+        set_font_size(48);
+        draw_text(text, view_width() / 2 - 150, view_height() / 2);
+        set_color("#e2e8f0");
+        set_font_size(20);
+        draw_text("Score: " + int_to_string(self.player.score), view_width() / 2 - 50, view_height() / 2 + 44);
+    }
+}
+
+int main() {
+    let map = [
+        "################",
+        "#..............#",
+        "#..#.#....#.#..#",
+        "#..............#",
+        "#....######....#",
+        "#....#....#....#",
+        "#....#....#....#",
+        "#....######....#",
+        "#..............#",
+        "#..#.#....#.#..#",
+        "################",
+    ];
+
+    let world = new World {
+        map: map,
+        player: new Player { x: 1.5, y: 1.5, angle: 0.4, health: 100, ammo: 50, score: 0 },
+        enemies: [
+            new Enemy { x: 7.5,  y: 1.5, health: 100, alive: true },
+            new Enemy { x: 14.5, y: 1.5, health: 100, alive: true },
+            new Enemy { x: 1.5,  y: 9.5, health: 100, alive: true },
+            new Enemy { x: 14.5, y: 9.5, health: 100, alive: true },
+            new Enemy { x: 7.5,  y: 9.5, health: 100, alive: true },
+        ],
+        depth: new real[column_count()],
+        flash: 0,
+        fire_held: false,
+    };
+
+    while (!is_key_down("q") && world.player.health > 0 && world.alive_count() > 0) {
+        world.handle_input();
+        world.update();
+        world.render();
+        sleep(30);
+    }
+
+    world.render();
+    if (world.player.health <= 0) {
+        world.render_message("YOU DIED", "#ef4444");
+    } else {
+        world.render_message("LEVEL CLEAR", "#22c55e");
+    }
+    return 0;
+}
