@@ -88,10 +88,11 @@ pub trait ASTVisitor: Sized {
 
     fn visit_let_statement(
         &mut self,
-        pair: &Spanned<IdentifierTypePair>,
+        name: &Spanned<String>,
+        typename: Option<&Type>,
         expr: &Spanned<Expression>,
     ) {
-        walk_let_statement(self, pair, expr);
+        walk_let_statement(self, name, typename, expr);
     }
 
     fn visit_while_statement(&mut self, cond: &Spanned<Expression>, stmt: &Spanned<Statement>) {
@@ -287,10 +288,14 @@ pub fn walk_return_statement<V: ASTVisitor>(visitor: &mut V, expr: Option<&Spann
 
 pub fn walk_let_statement<V: ASTVisitor>(
     visitor: &mut V,
-    pair: &Spanned<IdentifierTypePair>,
+    name: &Spanned<String>,
+    typename: Option<&Type>,
     expr: &Spanned<Expression>,
 ) {
-    visitor.visit_identifier_type_pair(pair);
+    visitor.visit_identifier(&name.node);
+    if let Some(typename) = typename {
+        visitor.visit_typename(typename);
+    }
     visitor.visit_expression(expr);
 }
 
@@ -341,8 +346,8 @@ pub fn walk_statement<V: ASTVisitor>(visitor: &mut V, stmt: &Spanned<Statement>)
         Statement::Return(expr) => {
             visitor.visit_return_statement(expr.as_ref(), &stmt.span);
         }
-        Statement::Let(pair, expr) => {
-            visitor.visit_let_statement(pair, expr);
+        Statement::Let(name, typename, expr) => {
+            visitor.visit_let_statement(name, typename.as_ref(), expr);
         }
         Statement::While(cond, stmt) => {
             visitor.visit_while_statement(cond, stmt);

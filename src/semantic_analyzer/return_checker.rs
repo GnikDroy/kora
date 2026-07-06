@@ -30,7 +30,7 @@ impl ReturnChecker {
         match stmt {
             Statement::While(_, _) | Statement::For(_, _, _, _) => false,
             Statement::Break | Statement::Continue => false,
-            Statement::Empty | Statement::Simple(_) | Statement::Let(_, _) => false,
+            Statement::Empty | Statement::Simple(_) | Statement::Let(_, _, _) => false,
             Statement::If(_, _, None) => false,
             Statement::Return(_) => true,
             Statement::If(_, if_case, Some(else_case)) => {

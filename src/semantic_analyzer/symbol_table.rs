@@ -16,7 +16,7 @@ pub struct SymbolId(usize);
 #[derive(Debug, Clone)]
 pub struct Symbol {
     pub name: String,
-    pub ty: Type,
+    pub ty: Option<Type>,
 }
 
 #[derive(Debug, Default)]
@@ -49,9 +49,9 @@ impl SymbolTable {
         self.declarations.get(&declaration_id).copied()
     }
 
-    /// The type of a resolved identifier use.
+    /// `None` also covers types that are later inferred.
     pub fn type_of_use(&self, use_id: NodeId) -> Option<Type> {
-        self.symbol_of_use(use_id).map(|s| s.ty.clone())
+        self.symbol_of_use(use_id).and_then(|s| s.ty.clone())
     }
 
     pub fn struct_exists(&self, name: &str) -> bool {
@@ -102,7 +102,13 @@ impl Resolver {
         self.scopes.pop();
     }
 
-    fn declare(&mut self, declaration_id: NodeId, name: String, ty: Type, span: &Span) -> SymbolId {
+    fn declare(
+        &mut self,
+        declaration_id: NodeId,
+        name: String,
+        ty: Option<Type>,
+        span: &Span,
+    ) -> SymbolId {
         if is_intrinsic(&name) {
             self.errors.push(TypeErr {
                 msg: "Cannot declare a name reserved for a compiler intrinsic",
@@ -198,7 +204,7 @@ impl ASTVisitor for Resolver {
             self.declare(
                 func.id,
                 func.node.name.clone(),
-                func.node.get_type(),
+                Some(func.node.get_type()),
                 &func.span,
             );
         }
@@ -206,7 +212,7 @@ impl ASTVisitor for Resolver {
             self.declare(
                 func.id,
                 func.node.name.clone(),
-                func.node.get_type(),
+                Some(func.node.get_type()),
                 &func.span,
             );
         }
@@ -228,7 +234,7 @@ impl ASTVisitor for Resolver {
             self.declare(
                 pair.id,
                 pair.node.name.clone(),
-                pair.node.typename.clone(),
+                Some(pair.node.typename.clone()),
                 &pair.span,
             );
         }
@@ -269,19 +275,17 @@ impl ASTVisitor for Resolver {
 
     fn visit_let_statement(
         &mut self,
-        pair: &Spanned<IdentifierTypePair>,
+        name: &Spanned<String>,
+        typename: Option<&Type>,
         expr: &Spanned<Expression>,
     ) {
         // The initializer is resolved before the name is bound, so `let x = x;`
         // refers to an outer `x`, not itself.
         self.visit_expression(expr);
-        self.visit_typename(&pair.node.typename);
-        self.declare(
-            pair.id,
-            pair.node.name.clone(),
-            pair.node.typename.clone(),
-            &pair.span,
-        );
+        if let Some(typename) = typename {
+            self.visit_typename(typename);
+        }
+        self.declare(name.id, name.node.clone(), typename.cloned(), &name.span);
     }
 
     fn visit_while_statement(&mut self, cond: &Spanned<Expression>, stmt: &Spanned<Statement>) {
@@ -556,7 +560,7 @@ mod tests {
         let Statement::Compound(stmts) = &func.node.statement.node else {
             panic!("expected compound body");
         };
-        let Statement::Let(outer_pair, _) = &stmts[0].node else {
+        let Statement::Let(outer_pair, _, _) = &stmts[0].node else {
             panic!("expected let statement");
         };
         let Statement::If(_, if_body, _) = &stmts[1].node else {
@@ -565,7 +569,7 @@ mod tests {
         let Statement::Compound(if_stmts) = &if_body.node else {
             panic!("expected compound if body");
         };
-        let Statement::Let(inner_pair, _) = &if_stmts[0].node else {
+        let Statement::Let(inner_pair, _, _) = &if_stmts[0].node else {
             panic!("expected inner let statement");
         };
         let Statement::Simple(inner_use) = &if_stmts[1].node else {
@@ -580,12 +584,12 @@ mod tests {
         assert_ne!(outer, inner);
         assert_eq!(symbols.symbol_id_of_use(outer_use.id), Some(outer));
         assert_eq!(symbols.symbol_id_of_use(inner_use.id), Some(inner));
-        assert_eq!(symbols.symbol(inner).ty, Type::Real);
+        assert_eq!(symbols.symbol(inner).ty, Some(Type::Real));
 
         let param = symbols
             .symbol_id_of_declaration(func.node.arguments[0].id)
             .unwrap();
-        assert_eq!(symbols.symbol(param).ty, Type::Int);
+        assert_eq!(symbols.symbol(param).ty, Some(Type::Int));
         assert!(symbols.symbol_id_of_declaration(func.id).is_some());
     }
 

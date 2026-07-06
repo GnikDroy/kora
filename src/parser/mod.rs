@@ -496,24 +496,35 @@ impl Parser {
     fn parse_let_statement(&mut self) -> Result<Statement, ParseErr> {
         self.pop_token(
             Token::Keyword(Keyword::Let),
-            "Expected let: let <identifier>:<type> = <expression>;",
+            "Expected let: let <identifier>[: <type>] = <expression>;",
         )?;
 
-        let declaration = self.parse_identifier_type_pair()?;
+        let start = self.current_start();
+        let name = self.parse_identifier()?;
+        let span = self.span_from(start);
+        let name = self.spanned(name, span);
+
+        let typename = match self.peek() {
+            Ok(token) if token.token == Token::Symbol(Symbol::Colon) => {
+                self.pop().unwrap();
+                Some(self.parse_typename()?)
+            }
+            _ => None,
+        };
 
         self.pop_token(
             Token::Symbol(Symbol::Equal),
-            "Expected =: let <identifier>:<type> = <expression>;",
+            "Expected =: let <identifier>[: <type>] = <expression>;",
         )?;
 
         let expr = self.parse_expression()?;
 
         self.pop_token(
             Token::Symbol(Symbol::Semicolon),
-            "Expected semicolon: let <identifier>:<type> = <expression>;",
+            "Expected semicolon: let <identifier>[: <type>] = <expression>;",
         )?;
 
-        Ok(Statement::Let(declaration, expr))
+        Ok(Statement::Let(name, typename, expr))
     }
 
     fn parse_if_statement(&mut self) -> Result<Statement, ParseErr> {
@@ -1005,8 +1016,15 @@ mod tests {
                 r#"let msg : [char] = "Hello World";"#,
                 "let numbers: [int] = [1,2,3,4];",
                 "let primes_numbers: [real] = [2.0, 3.0, 5.0];",
+                "let count = 0;",
+                "let half = 1.0 / 2.0;",
             ],
-            &["", "let count = 0;", "let count: int = 0", "count: int = 0"],
+            &[
+                "",
+                "let count: int = 0",
+                "count: int = 0",
+                "let count: = 0;",
+            ],
             Parser::parse_let_statement,
         )
     }

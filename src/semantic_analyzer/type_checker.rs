@@ -8,6 +8,7 @@ pub struct TypeChecker<'a> {
     current_return_type: Option<Type>,
     errors: Vec<TypeErr>,
     pub types: HashMap<NodeId, Type>,
+    inferred: HashMap<SymbolId, Type>,
 }
 
 impl<'a> TypeChecker<'a> {
@@ -17,6 +18,7 @@ impl<'a> TypeChecker<'a> {
             current_return_type: None,
             errors: Vec::new(),
             types: HashMap::new(),
+            inferred: HashMap::new(),
         }
     }
 
@@ -334,10 +336,21 @@ impl<'a> TypeChecker<'a> {
             StringLiteral(_) => Ok(Type::Array(Box::new(Type::Char))),
             BoolLiteral(_) => Ok(Type::Bool),
             Array(exprs) => self.get_array_type(exprs, span),
-            Identifier(_) => self.symbols.type_of_use(expr.id).ok_or(TypeErr {
-                msg: "Undefined identifier",
-                span: span.clone(),
-            }),
+            Identifier(_) => {
+                let id = self.symbols.symbol_id_of_use(expr.id).ok_or(TypeErr {
+                    msg: "Undefined identifier",
+                    span: span.clone(),
+                })?;
+                self.symbols
+                    .symbol(id)
+                    .ty
+                    .clone()
+                    .or_else(|| self.inferred.get(&id).cloned())
+                    .ok_or(TypeErr {
+                        msg: "Cannot determine the type of this identifier",
+                        span: span.clone(),
+                    })
+            }
             Binary(left, op, right) => self.get_binary_expression_type(left, op, right, span),
             Unary(op, term) => self.get_unary_expression_type(op, term, span),
             Call(f, args) => self
@@ -394,11 +407,21 @@ impl ASTVisitor for TypeChecker<'_> {
 
     fn visit_let_statement(
         &mut self,
-        pair: &Spanned<IdentifierTypePair>,
+        name: &Spanned<String>,
+        typename: Option<&Type>,
         expr: &Spanned<Expression>,
     ) {
-        self.ensure_type(expr, &pair.node.typename);
-        walk_let_statement(self, pair, expr);
+        match typename {
+            Some(typename) => self.ensure_type(expr, typename),
+            None => match self.get_expression_type(expr) {
+                Ok(typename) => {
+                    let id = self.symbols.symbol_id_of_declaration(name.id).unwrap();
+                    self.inferred.insert(id, typename);
+                }
+                Err(e) => self.errors.push(e),
+            },
+        }
+        walk_let_statement(self, name, typename, expr);
     }
 
     fn visit_if_statement(
@@ -428,9 +451,12 @@ impl ASTVisitor for TypeChecker<'_> {
         step: &Spanned<Expression>,
         body: &Spanned<Statement>,
     ) {
+        // The init must be visited first so an unannotated `let` is inferred
+        // before the condition and step refer to it.
+        self.visit_statement(init);
         self.ensure_type(cond, &Type::Bool);
         self.check_statement_expression(step);
-        walk_for_statement(self, init, cond, step, body);
+        self.visit_statement(body);
     }
 
     fn visit_return_statement(&mut self, expr: Option<&Spanned<Expression>>, span: &Span) {
@@ -933,6 +959,45 @@ mod tests {
     }
 
     #[test]
+    fn test_let_type_inference() {
+        check_cases(&[
+            (r#"int main() { let x = 5; return x; }"#, true),
+            (
+                r#"int main() { let x = 5; let y = x + 1; return y; }"#,
+                true,
+            ),
+            (
+                r#"int main() { let r = 1.5 * 2.0; let ok = r > 2.0; if (ok) { return 1; } return 0; }"#,
+                true,
+            ),
+            (r#"int main() { let a = [1, 2, 3]; return a[0]; }"#, true),
+            (
+                r#"struct P { x: int } int main() { let p = new P; return p.x; }"#,
+                true,
+            ),
+            (
+                r#"int f(a: int) { return a; } int main() { let x = f(41) + 1; return x; }"#,
+                true,
+            ),
+            (r#"int main() { let x = 5; return x + 1.0; }"#, false),
+            (r#"int main() { let x = 5.0; return x; }"#, false),
+            (
+                r#"void f() { } int main() { let x = f(); return 0; }"#,
+                false,
+            ),
+            (r#"int main() { let x = []; return 0; }"#, false),
+            (
+                r#"int main() { for (let i = 0; i < 3; i = i + 1) { i; } return 0; }"#,
+                true,
+            ),
+            (
+                r#"int main() { for (let b = true; b; b = !b) { } return 0; }"#,
+                true,
+            ),
+        ]);
+    }
+
+    #[test]
     fn test_expression_types_are_recorded() {
         use crate::parser::{Expression, Statement, Type};
 
@@ -951,7 +1016,7 @@ mod tests {
         let Statement::Compound(stmts) = &body.node else {
             panic!("expected compound body");
         };
-        let Statement::Let(_, init) = &stmts[0].node else {
+        let Statement::Let(_, _, init) = &stmts[0].node else {
             panic!("expected let statement");
         };
         let Expression::Binary(left, _, right) = &init.node else {
