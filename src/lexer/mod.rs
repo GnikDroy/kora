@@ -343,7 +343,7 @@ impl Lexer {
                 '"' => Lexer::consume_string_literal,
                 '\'' => Lexer::consume_char_literal,
                 '#' => Lexer::consume_comment,
-                '=' | '!' | '>' | '<' => Lexer::consume_double_symbol,
+                '=' | '!' | '>' | '<' | '&' | '|' => Lexer::consume_double_symbol,
                 'A'..='Z' | 'a'..='z' | '_' => Lexer::consume_identifier_and_keyword,
                 c if Symbol::try_from(c).is_ok() => Lexer::consume_single_symbol,
                 _ => Lexer::consume_nothing_with_error,
@@ -374,8 +374,8 @@ mod tests {
     fn test_valid() {
         let source = concat!(
             "return let if else while void int real char bool true false extern as struct new",
-            " ( ) { } [ ] ; : , + - / % = > < ! | & .",
-            " == >= <= !=",
+            " ( ) { } [ ] ; : , + - / % = > < ! .",
+            " == >= <= != || &&",
             " 42 3.1415",
             " \"字\"",
             " 'a' '\\'' '\\\\'",
@@ -393,6 +393,10 @@ mod tests {
     fn test_invalid() {
         let sources = [
             "?",
+            "&",
+            "|",
+            "& &",
+            "a & b",
             "'字'",
             "'a",
             "'\\'",
@@ -532,8 +536,8 @@ mod tests {
             ("<=", Symbol::LessEqual),
             ("!", Symbol::Exclam),
             ("!=", Symbol::ExclamEqual),
-            ("|", Symbol::Pipe),
-            ("&", Symbol::Ampersand),
+            ("||", Symbol::PipePipe),
+            ("&&", Symbol::AmpersandAmpersand),
             (".", Symbol::Dot),
         ];
         for (source, symbol) in cases {

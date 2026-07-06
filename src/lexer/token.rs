@@ -74,8 +74,8 @@ pub enum Symbol {
     LessEqual,
     Exclam,
     ExclamEqual,
-    Pipe,
-    Ampersand,
+    PipePipe,
+    AmpersandAmpersand,
     Dot,
 }
 
@@ -102,8 +102,6 @@ impl TryFrom<char> for Symbol {
             '>' => Ok(Greater),
             '<' => Ok(Less),
             '!' => Ok(Exclam),
-            '|' => Ok(Pipe),
-            '&' => Ok(Ampersand),
             '.' => Ok(Dot),
             _ => Err(()),
         }
@@ -124,6 +122,8 @@ impl TryFrom<&str> for Symbol {
                 ">=" => Ok(GreaterEqual),
                 "<=" => Ok(LessEqual),
                 "!=" => Ok(ExclamEqual),
+                "||" => Ok(PipePipe),
+                "&&" => Ok(AmpersandAmpersand),
                 _ => Err(()),
             }
         }

@@ -772,10 +772,10 @@ mod tests {
             (r#"int main() { let x: bool = 1 < 2; return 0; }"#, true),
             (r#"int main() { let x: bool = 'a' < 'b'; return 0; }"#, true),
             (
-                r#"int main() { let x: bool = true & false | true; return 0; }"#,
+                r#"int main() { let x: bool = true && false || true; return 0; }"#,
                 true,
             ),
-            (r#"int main() { let x: bool = 1 & 2; return 0; }"#, false),
+            (r#"int main() { let x: bool = 1 && 2; return 0; }"#, false),
             (
                 r#"int main() { let x: char = 'a' + 'b'; return 0; }"#,
                 false,
