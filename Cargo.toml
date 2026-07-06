@@ -6,11 +6,18 @@ edition = "2024"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 wasm-bindgen = "0.2.84"
 console_error_panic_hook = "0.1"
+inkwell = { version = "0.9.0", features = ["llvm22-1"], optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 lol_alloc = "0.4"
+
+# Native LLVM codegen backend (paused / in progress). Opt in with
+# `cargo build --features codegen`; requires LLVM 22. Off by default so the
+# front-end + JS transpiler + wasm playground build without LLVM installed.
+[features]
+codegen = ["dep:inkwell"]

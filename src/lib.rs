@@ -6,6 +6,8 @@ mod parser;
 mod semantic_analyzer;
 mod stdlib;
 
+#[cfg(feature = "codegen")]
+pub mod codegen;
 mod frontend;
 mod javascript_transpiler;
 

@@ -1,0 +1,15 @@
+extern void print_int(x: int);
+
+int fib(n: int) {
+    if (n < 2) {
+        return n;
+    }
+    return fib(n - 1) + fib(n - 2);
+}
+
+int main() {
+    for (let i = 0; i < 10; i = i + 1) {
+        print_int(fib(i));
+    }
+    return 0;
+}
