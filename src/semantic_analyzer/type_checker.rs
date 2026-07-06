@@ -106,6 +106,8 @@ impl<'a> TypeChecker<'a> {
             (Char, Less, Char)         => Ok(Bool),
             (Char, GreaterEqual, Char) => Ok(Bool),
             (Char, LessEqual, Char)    => Ok(Bool),
+
+            (l @ Array(_), Equality | NotEquality, r) if l == r && Self::is_comparable(&l) => Ok(Bool),
             (left_type, Assign, right_type) => {
                 if !self.is_assignable(left) || matches!(left_type, Function(_, _)) {
                     Err(TypeErr{
@@ -246,6 +248,14 @@ impl<'a> TypeChecker<'a> {
                 msg: "Access operator must have struct type on the left",
                 span: span.clone(),
             })
+        }
+    }
+
+    fn is_comparable(ty: &Type) -> bool {
+        match ty {
+            Type::Int | Type::Real | Type::Bool | Type::Char => true,
+            Type::Array(inner) => Self::is_comparable(inner),
+            Type::Struct(_) | Type::Function(_, _) => false,
         }
     }
 
@@ -993,6 +1003,36 @@ mod tests {
             (
                 r#"int main() { for (let b = true; b; b = !b) { } return 0; }"#,
                 true,
+            ),
+        ]);
+    }
+
+    #[test]
+    fn test_array_equality_is_structural_and_recursive() {
+        check_cases(&[
+            (
+                r#"int main() { let b: bool = [1, 2] == [1, 2]; return 0; }"#,
+                true,
+            ),
+            (
+                r#"int main() { let s: string = "abc"; if (s == "quit") { return 1; } return 0; }"#,
+                true,
+            ),
+            (
+                r#"int main() { let s = "abc"; let b = s != "abc"; return 0; }"#,
+                true,
+            ),
+            (
+                r#"int main() { let b = [[1], [2]] == [[1], [2]]; return 0; }"#,
+                true,
+            ),
+            (r#"int main() { let b = [1] == [1.0]; return 0; }"#, false),
+            (r#"int main() { let b = [1] == 1; return 0; }"#, false),
+            (r#"int main() { let b = "a" == 'a'; return 0; }"#, false),
+            (r#"int main() { let b = [1] < [2]; return 0; }"#, false),
+            (
+                r#"struct P { x: int } int main() { let b = new P[1] == new P[1]; return 0; }"#,
+                false,
             ),
         ]);
     }
