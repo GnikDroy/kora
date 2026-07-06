@@ -352,7 +352,7 @@ impl Parser {
             if self.peek().is_ok() {
                 let token = self.peek().unwrap();
                 if let Ok(operator) = InfixOperator::try_from(token.token.clone()) {
-                    let binding_power = operator.get_binding_power();
+                    let binding_power = operator.get_binding_power_real();
                     if binding_power > current_binding_power {
                         let start = term.span.start.clone();
                         let node = self.parselet_infix_operators(operator, term)?;

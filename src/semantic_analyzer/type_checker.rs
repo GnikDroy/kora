@@ -894,6 +894,10 @@ mod tests {
                 r#"int main() { let a: [int] = new int[2]; a[0] = 5; return 0; }"#,
                 true,
             ),
+            (
+                r#"int main() { let a: int = 1; let b: int = 2; a = b = 3; return a; }"#,
+                true,
+            ),
         ]);
     }
 
