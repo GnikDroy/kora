@@ -374,8 +374,8 @@ mod tests {
     fn test_valid() {
         let source = concat!(
             "return let if else while void int real char bool true false extern as struct new",
-            " ( ) { } [ ] ; : , + - / % = > < ! .",
-            " == >= <= != || &&",
+            " ( ) { } [ ] ; : , + - / % = > < ! . & | ^",
+            " == >= <= != || && << >>",
             " 42 3.1415",
             " \"字\"",
             " 'a' '\\'' '\\\\'",
@@ -393,10 +393,6 @@ mod tests {
     fn test_invalid() {
         let sources = [
             "?",
-            "&",
-            "|",
-            "& &",
-            "a & b",
             "'字'",
             "'a",
             "'\\'",
@@ -538,6 +534,11 @@ mod tests {
             ("!=", Symbol::ExclamEqual),
             ("||", Symbol::PipePipe),
             ("&&", Symbol::AmpersandAmpersand),
+            ("&", Symbol::Ampersand),
+            ("|", Symbol::Pipe),
+            ("^", Symbol::Caret),
+            ("<<", Symbol::LessLess),
+            (">>", Symbol::GreaterGreater),
             (".", Symbol::Dot),
         ];
         for (source, symbol) in cases {

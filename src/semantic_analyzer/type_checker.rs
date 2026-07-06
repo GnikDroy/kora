@@ -77,6 +77,11 @@ impl<'a> TypeChecker<'a> {
             (Int, Multiply, Int)       => Ok(Int),
             (Int, Divide, Int)         => Ok(Int),
             (Int, Modulo, Int)         => Ok(Int),
+            (Int, BitAnd, Int)         => Ok(Int),
+            (Int, BitOr, Int)          => Ok(Int),
+            (Int, BitXor, Int)         => Ok(Int),
+            (Int, ShiftLeft, Int)      => Ok(Int),
+            (Int, ShiftRight, Int)     => Ok(Int),
             (Int, Equality, Int)       => Ok(Bool),
             (Int, NotEquality, Int)    => Ok(Bool),
             (Int, Greater, Int)        => Ok(Bool),
@@ -1004,6 +1009,21 @@ mod tests {
                 r#"int main() { for (let b = true; b; b = !b) { } return 0; }"#,
                 true,
             ),
+        ]);
+    }
+
+    #[test]
+    fn test_bitwise_operators_are_int_only() {
+        check_cases(&[
+            (r#"int main() { return 12 & 10 | 5 ^ 3; }"#, true),
+            (r#"int main() { return 1 << 4 >> 2; }"#, true),
+            (
+                r#"int main() { let b = 5 & 2 == 0; if (b) { return 1; } return 0; }"#,
+                true,
+            ),
+            (r#"int main() { let b = true & false; return 0; }"#, false),
+            (r#"int main() { let r = 1.5 | 1.0; return 0; }"#, false),
+            (r#"int main() { let r = 1.0 << 2; return 0; }"#, false),
         ]);
     }
 

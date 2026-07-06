@@ -178,6 +178,11 @@ pub enum BinaryOp {
     Less,
     GreaterEqual,
     LessEqual,
+    BitAnd,
+    BitOr,
+    BitXor,
+    ShiftLeft,
+    ShiftRight,
     Cast,
 }
 
@@ -227,6 +232,11 @@ impl TryFrom<Token> for InfixOperator {
             Token::Symbol(Symbol::ExclamEqual)        => Ok(Binary(NotEquality)),
             Token::Symbol(Symbol::AmpersandAmpersand) => Ok(Binary(And)),
             Token::Symbol(Symbol::PipePipe)           => Ok(Binary(Or)),
+            Token::Symbol(Symbol::Ampersand)          => Ok(Binary(BitAnd)),
+            Token::Symbol(Symbol::Pipe)               => Ok(Binary(BitOr)),
+            Token::Symbol(Symbol::Caret)              => Ok(Binary(BitXor)),
+            Token::Symbol(Symbol::LessLess)           => Ok(Binary(ShiftLeft)),
+            Token::Symbol(Symbol::GreaterGreater)     => Ok(Binary(ShiftRight)),
             Token::Symbol(Symbol::Greater)            => Ok(Binary(Greater)),
             Token::Symbol(Symbol::GreaterEqual)       => Ok(Binary(GreaterEqual)),
             Token::Symbol(Symbol::Less)               => Ok(Binary(Less)),
@@ -252,8 +262,13 @@ impl InfixOperator {
                 | BinaryOp::Less
                 | BinaryOp::GreaterEqual
                 | BinaryOp::LessEqual => 10,
-                BinaryOp::Add | BinaryOp::Subtract => 12,
-                BinaryOp::Multiply | BinaryOp::Divide | BinaryOp::Modulo => 14,
+                BinaryOp::Add | BinaryOp::Subtract | BinaryOp::BitOr | BinaryOp::BitXor => 12,
+                BinaryOp::Multiply
+                | BinaryOp::Divide
+                | BinaryOp::Modulo
+                | BinaryOp::BitAnd
+                | BinaryOp::ShiftLeft
+                | BinaryOp::ShiftRight => 14,
                 BinaryOp::Cast => 16,
             },
             InfixOperator::FunctionCall | InfixOperator::ArrayIndex | InfixOperator::Access => 202,
@@ -276,7 +291,12 @@ impl InfixOperator {
                 | BinaryOp::GreaterEqual
                 | BinaryOp::LessEqual
                 | BinaryOp::And
-                | BinaryOp::Or => true,
+                | BinaryOp::Or
+                | BinaryOp::BitAnd
+                | BinaryOp::BitOr
+                | BinaryOp::BitXor
+                | BinaryOp::ShiftLeft
+                | BinaryOp::ShiftRight => true,
                 BinaryOp::Assign => false,
             },
             InfixOperator::FunctionCall | InfixOperator::ArrayIndex | InfixOperator::Access => true,
