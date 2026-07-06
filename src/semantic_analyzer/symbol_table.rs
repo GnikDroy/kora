@@ -10,7 +10,7 @@ pub fn is_intrinsic(name: &str) -> bool {
     INTRINSICS.contains(&name)
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SymbolId(usize);
 
 #[derive(Debug, Clone)]
@@ -28,6 +28,7 @@ pub struct StructDef {
 pub struct SymbolTable {
     symbols: Vec<Symbol>,
     uses: HashMap<NodeId, SymbolId>,
+    declarations: HashMap<NodeId, SymbolId>,
     structs: HashMap<String, StructDef>,
 }
 
@@ -36,9 +37,16 @@ impl SymbolTable {
         &self.symbols[id.0]
     }
 
-    /// The declaration a given identifier use resolves to, if it was resolved.
     pub fn symbol_of_use(&self, use_id: NodeId) -> Option<&Symbol> {
-        self.uses.get(&use_id).map(|id| self.symbol(*id))
+        self.symbol_id_of_use(use_id).map(|id| self.symbol(id))
+    }
+
+    pub fn symbol_id_of_use(&self, use_id: NodeId) -> Option<SymbolId> {
+        self.uses.get(&use_id).copied()
+    }
+
+    pub fn symbol_id_of_declaration(&self, declaration_id: NodeId) -> Option<SymbolId> {
+        self.declarations.get(&declaration_id).copied()
     }
 
     /// The type of a resolved identifier use.
@@ -94,7 +102,7 @@ impl Resolver {
         self.scopes.pop();
     }
 
-    fn declare(&mut self, name: String, ty: Type, span: &Span) -> SymbolId {
+    fn declare(&mut self, declaration_id: NodeId, name: String, ty: Type, span: &Span) -> SymbolId {
         if is_intrinsic(&name) {
             self.errors.push(TypeErr {
                 msg: "Cannot declare a name reserved for a compiler intrinsic",
@@ -119,6 +127,7 @@ impl Resolver {
             name: name.clone(),
             ty,
         });
+        self.table.declarations.insert(declaration_id, id);
         if let Some(scope) = self.scopes.last_mut() {
             scope.insert(name, id);
         }
@@ -186,10 +195,20 @@ impl ASTVisitor for Resolver {
             for arg in func.node.arguments.iter() {
                 self.visit_typename(&arg.node.typename);
             }
-            self.declare(func.node.name.clone(), func.node.get_type(), &func.span);
+            self.declare(
+                func.id,
+                func.node.name.clone(),
+                func.node.get_type(),
+                &func.span,
+            );
         }
         for func in module.functions.iter() {
-            self.declare(func.node.name.clone(), func.node.get_type(), &func.span);
+            self.declare(
+                func.id,
+                func.node.name.clone(),
+                func.node.get_type(),
+                &func.span,
+            );
         }
 
         for func in module.functions.iter() {
@@ -207,6 +226,7 @@ impl ASTVisitor for Resolver {
         for pair in func.node.arguments.iter() {
             self.visit_typename(&pair.node.typename);
             self.declare(
+                pair.id,
                 pair.node.name.clone(),
                 pair.node.typename.clone(),
                 &pair.span,
@@ -257,6 +277,7 @@ impl ASTVisitor for Resolver {
         self.visit_expression(expr);
         self.visit_typename(&pair.node.typename);
         self.declare(
+            pair.id,
             pair.node.name.clone(),
             pair.node.typename.clone(),
             &pair.span,
@@ -510,6 +531,62 @@ mod tests {
         };
         assert!(matches!(expr.node, Expression::Identifier(_)));
         assert_eq!(symbols.type_of_use(expr.id), Some(Type::Int));
+    }
+
+    #[test]
+    fn test_declaration_is_keyed_by_node_id() {
+        use crate::parser::{Statement, Type};
+
+        let source = r#"
+            int main(a: int) {
+                let x: int = 1;
+                if (true) {
+                    let x: real = 2.0;
+                    x;
+                }
+                x;
+                return a;
+            }
+        "#;
+        let tokens = lexer::Lexer::lex(source).expect("lex");
+        let module = parser::Parser::new(tokens).parse().expect("parse");
+        let symbols = Resolver::new().resolve(&module).expect("resolve");
+
+        let func = &module.functions[0];
+        let Statement::Compound(stmts) = &func.node.statement.node else {
+            panic!("expected compound body");
+        };
+        let Statement::Let(outer_pair, _) = &stmts[0].node else {
+            panic!("expected let statement");
+        };
+        let Statement::If(_, if_body, _) = &stmts[1].node else {
+            panic!("expected if statement");
+        };
+        let Statement::Compound(if_stmts) = &if_body.node else {
+            panic!("expected compound if body");
+        };
+        let Statement::Let(inner_pair, _) = &if_stmts[0].node else {
+            panic!("expected inner let statement");
+        };
+        let Statement::Simple(inner_use) = &if_stmts[1].node else {
+            panic!("expected inner use");
+        };
+        let Statement::Simple(outer_use) = &stmts[2].node else {
+            panic!("expected outer use");
+        };
+
+        let outer = symbols.symbol_id_of_declaration(outer_pair.id).unwrap();
+        let inner = symbols.symbol_id_of_declaration(inner_pair.id).unwrap();
+        assert_ne!(outer, inner);
+        assert_eq!(symbols.symbol_id_of_use(outer_use.id), Some(outer));
+        assert_eq!(symbols.symbol_id_of_use(inner_use.id), Some(inner));
+        assert_eq!(symbols.symbol(inner).ty, Type::Real);
+
+        let param = symbols
+            .symbol_id_of_declaration(func.node.arguments[0].id)
+            .unwrap();
+        assert_eq!(symbols.symbol(param).ty, Type::Int);
+        assert!(symbols.symbol_id_of_declaration(func.id).is_some());
     }
 
     #[test]
