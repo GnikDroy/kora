@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use super::{errors::TypeErr, symbol_table::*};
 use crate::parser::*;
 
@@ -5,6 +7,7 @@ pub struct TypeChecker<'a> {
     symbols: &'a SymbolTable,
     current_return_type: Option<Type>,
     errors: Vec<TypeErr>,
+    pub types: HashMap<NodeId, Type>,
 }
 
 impl<'a> TypeChecker<'a> {
@@ -13,6 +16,7 @@ impl<'a> TypeChecker<'a> {
             symbols,
             current_return_type: None,
             errors: Vec::new(),
+            types: HashMap::new(),
         }
     }
 
@@ -24,7 +28,11 @@ impl<'a> TypeChecker<'a> {
         }
     }
 
-    fn get_array_type(&self, exprs: &[Spanned<Expression>], span: &Span) -> Result<Type, TypeErr> {
+    fn get_array_type(
+        &mut self,
+        exprs: &[Spanned<Expression>],
+        span: &Span,
+    ) -> Result<Type, TypeErr> {
         let types = exprs
             .iter()
             .map(|e| self.get_expression_type(e))
@@ -48,7 +56,7 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn get_binary_expression_type(
-        &self,
+        &mut self,
         left: &Spanned<Expression>,
         op: &BinaryOp,
         right: &Spanned<Expression>,
@@ -121,7 +129,7 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn get_unary_expression_type(
-        &self,
+        &mut self,
         op: &UnaryOp,
         expr: &Spanned<Expression>,
         span: &Span,
@@ -145,7 +153,7 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn get_len_intrinsic_type(
-        &self,
+        &mut self,
         args: &[Spanned<Expression>],
         span: &Span,
     ) -> Result<Type, TypeErr> {
@@ -164,8 +172,8 @@ impl<'a> TypeChecker<'a> {
         }
     }
 
-    fn get_call_type(
-        &self,
+    fn get_call_expression_return_type(
+        &mut self,
         f: &Spanned<Expression>,
         args: &[Spanned<Expression>],
         span: &Span,
@@ -201,7 +209,7 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn get_array_index_expression_type(
-        &self,
+        &mut self,
         left: &Spanned<Expression>,
         right: &Spanned<Expression>,
         span: &Span,
@@ -218,7 +226,7 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn get_access_expression_type(
-        &self,
+        &mut self,
         left: &Spanned<Expression>,
         member: &str,
         span: &Span,
@@ -252,7 +260,7 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn get_cast_expression_type(
-        &self,
+        &mut self,
         expr: &Spanned<Expression>,
         typename: &Type,
         span: &Span,
@@ -269,7 +277,7 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn get_construct_expression_type(
-        &self,
+        &mut self,
         typename: &Type,
         size: &Option<Box<Spanned<Expression>>>,
         span: &Span,
@@ -316,10 +324,10 @@ impl<'a> TypeChecker<'a> {
         }
     }
 
-    fn get_expression_type(&self, expr: &Spanned<Expression>) -> Result<Type, TypeErr> {
+    fn get_expression_type(&mut self, expr: &Spanned<Expression>) -> Result<Type, TypeErr> {
         use Expression::*;
         let span = &expr.span;
-        match &expr.node {
+        let typename = match &expr.node {
             IntegerLiteral(_) => Ok(Type::Int),
             RealLiteral(_) => Ok(Type::Real),
             CharLiteral(_) => Ok(Type::Char),
@@ -332,20 +340,32 @@ impl<'a> TypeChecker<'a> {
             }),
             Binary(left, op, right) => self.get_binary_expression_type(left, op, right, span),
             Unary(op, term) => self.get_unary_expression_type(op, term, span),
-            Call(f, args) => self.get_call_type(f, args, span)?.ok_or_else(|| TypeErr {
-                msg: "A void function returns no value and cannot be used as a value",
-                span: span.clone(),
-            }),
+            Call(f, args) => self
+                .get_call_expression_return_type(f, args, span)?
+                .ok_or_else(|| TypeErr {
+                    msg: "A void function returns no value and cannot be used as a value",
+                    span: span.clone(),
+                }),
             Cast(expr, typename) => self.get_cast_expression_type(expr, typename, span),
             ArrayIndex(left, right) => self.get_array_index_expression_type(left, right, span),
             Access(left, member) => self.get_access_expression_type(left, member, span),
             Construct(typename, size) => self.get_construct_expression_type(typename, size, span),
-        }
+        }?;
+        self.types.insert(expr.id, typename.clone());
+        Ok(typename)
     }
 
+    // If an expression is JUST a call to a void function. It is a valid statement.
+    // In all other cases, a function that returns void cannot be used in other expressions.
     fn check_statement_expression(&mut self, expr: &Spanned<Expression>) {
         let result = match &expr.node {
-            Expression::Call(f, args) => self.get_call_type(f, args, &expr.span).map(|_| ()),
+            Expression::Call(f, args) => self
+                .get_call_expression_return_type(f, args, &expr.span)
+                .map(|typename| {
+                    if let Some(typename) = typename {
+                        self.types.insert(expr.id, typename);
+                    }
+                }),
             _ => self.get_expression_type(expr).map(|_| ()),
         };
         if let Err(e) = result {
@@ -906,6 +926,41 @@ mod tests {
             ),
             (r#"int main() { let x: int = 5; return x(1); }"#, false),
         ]);
+    }
+
+    #[test]
+    fn test_expression_types_are_recorded() {
+        use crate::parser::{Expression, Statement, Type};
+
+        let source = r#"
+            void f() { }
+            int main() { let x: real = 1.5 + 2.5; f(); return 0; }
+        "#;
+        let tokens = lexer::Lexer::lex(source).expect("lex");
+        let module = parser::Parser::new(tokens).parse().expect("parse");
+        let symbols = Resolver::new().resolve(&module).expect("resolve");
+        let mut checker = TypeChecker::new(&symbols);
+        checker.visit_module(&module);
+        checker.check().expect("check");
+
+        let body = &module.functions[1].node.statement;
+        let Statement::Compound(stmts) = &body.node else {
+            panic!("expected compound body");
+        };
+        let Statement::Let(_, init) = &stmts[0].node else {
+            panic!("expected let statement");
+        };
+        let Expression::Binary(left, _, right) = &init.node else {
+            panic!("expected binary initializer");
+        };
+        assert_eq!(checker.types.get(&init.id), Some(&Type::Real));
+        assert_eq!(checker.types.get(&left.id), Some(&Type::Real));
+        assert_eq!(checker.types.get(&right.id), Some(&Type::Real));
+
+        let Statement::Simple(call) = &stmts[1].node else {
+            panic!("expected call statement");
+        };
+        assert_eq!(checker.types.get(&call.id), None);
     }
 
     #[test]
