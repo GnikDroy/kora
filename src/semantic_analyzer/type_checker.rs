@@ -998,6 +998,36 @@ mod tests {
     }
 
     #[test]
+    fn test_string_alias_is_interchangeable_with_char_array() {
+        check_cases(&[
+            (
+                r#"int main() { let s: string = "abc"; return len(s); }"#,
+                true,
+            ),
+            (
+                r#"int main() { let s: string = "abc"; let t: [char] = s; t = s; s = t; return 0; }"#,
+                true,
+            ),
+            (
+                r#"string first_word() { return "hi"; }
+                   void take(s: [char]) { }
+                   int main() { take(first_word()); return 0; }"#,
+                true,
+            ),
+            (
+                r#"int main() { let words: [string] = ["a", "b"]; return len(words); }"#,
+                true,
+            ),
+            (
+                r#"int main() { let s: string = "abc"; s[0] = 'x'; return s[0] as int; }"#,
+                true,
+            ),
+            (r#"int main() { let s: string = 5; return 0; }"#, false),
+            (r#"int main() { let s: string = 'a'; return 0; }"#, false),
+        ]);
+    }
+
+    #[test]
     fn test_expression_types_are_recorded() {
         use crate::parser::{Expression, Statement, Type};
 

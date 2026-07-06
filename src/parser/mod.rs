@@ -708,6 +708,7 @@ impl Parser {
             Token::Keyword(Keyword::Real) => Ok(Type::Real),
             Token::Keyword(Keyword::Char) => Ok(Type::Char),
             Token::Keyword(Keyword::Bool) => Ok(Type::Bool),
+            Token::Keyword(Keyword::String) => Ok(Type::Array(Box::new(Type::Char))),
             Token::Identifier(name) => Ok(Type::Struct(self.spanned(name, span))),
             Token::Symbol(Symbol::LeftBracket) => {
                 self.tokens.push(token);
@@ -929,10 +930,25 @@ mod tests {
     #[test]
     fn test_parse_typename() {
         test_parser(
-            &["int", "real", "char", "[[int]]", "custom_type"],
+            &[
+                "int",
+                "real",
+                "char",
+                "[[int]]",
+                "custom_type",
+                "string",
+                "[string]",
+            ],
             &["", "2000", "{0}", "[int", "]", "void", "[void]"],
             Parser::parse_typename,
         );
+    }
+
+    #[test]
+    fn test_string_is_an_alias_for_char_array() {
+        let tokens = lexer::Lexer::lex("string").expect("lex");
+        let typename = parser::Parser::new(tokens).parse_typename().expect("parse");
+        assert_eq!(typename, parser::Type::Array(Box::new(parser::Type::Char)));
     }
 
     #[test]
