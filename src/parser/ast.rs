@@ -64,6 +64,16 @@ pub struct Module {
     pub structs: Vec<Spanned<Struct>>,
     pub extern_functions: Vec<Spanned<ExternFunction>>,
     pub functions: Vec<Spanned<Function>>,
+    pub impls: Vec<Spanned<Impl>>,
+}
+
+/// Methods for a struct. Each function's first argument is the synthesized
+/// `self` parameter, typed as the impl'd struct, so downstream passes treat
+/// methods as ordinary functions.
+#[derive(Debug)]
+pub struct Impl {
+    pub struct_name: Spanned<String>,
+    pub functions: Vec<Spanned<Function>>,
 }
 
 #[derive(Debug, Clone)]

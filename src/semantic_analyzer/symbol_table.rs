@@ -30,6 +30,7 @@ pub struct SymbolTable {
     uses: HashMap<NodeId, SymbolId>,
     declarations: HashMap<NodeId, SymbolId>,
     structs: HashMap<String, StructDef>,
+    methods: HashMap<(String, String), SymbolId>, // (struct, method)
 }
 
 impl SymbolTable {
@@ -65,6 +66,12 @@ impl SymbolTable {
             .iter()
             .find(|(field, _)| field == member)
             .map(|(_, ty)| ty.clone())
+    }
+
+    pub fn resolve_method(&self, struct_name: &str, method: &str) -> Option<SymbolId> {
+        self.methods
+            .get(&(struct_name.to_string(), method.to_string()))
+            .copied()
     }
 }
 
@@ -217,8 +224,46 @@ impl ASTVisitor for Resolver {
             );
         }
 
+        // Methods are global functions under mangled names.
+        for impl_ in module.impls.iter() {
+            let struct_name = &impl_.node.struct_name;
+            if !self.table.struct_exists(&struct_name.node) {
+                self.errors.push(TypeErr {
+                    msg: "impl block for an undefined struct",
+                    span: struct_name.span.clone(),
+                });
+                continue;
+            }
+            for func in impl_.node.functions.iter() {
+                let is_field = self.table.structs[&struct_name.node]
+                    .members
+                    .iter()
+                    .any(|(field, _)| field == &func.node.name);
+                if is_field {
+                    self.errors.push(TypeErr {
+                        msg: "A method cannot have the same name as a struct member",
+                        span: func.span.clone(),
+                    });
+                }
+                let id = self.declare(
+                    func.id,
+                    format!("{}${}", struct_name.node, func.node.name),
+                    Some(func.node.get_type()),
+                    &func.span,
+                );
+                self.table
+                    .methods
+                    .insert((struct_name.node.clone(), func.node.name.clone()), id);
+            }
+        }
+
         for func in module.functions.iter() {
             self.visit_function(func);
+        }
+        for impl_ in module.impls.iter() {
+            for func in impl_.node.functions.iter() {
+                self.visit_function(func);
+            }
         }
 
         self.pop_scope();
@@ -727,5 +772,34 @@ mod tests {
         );
         assert_eq!(symbols.resolve_struct_member("Point", "z"), None);
         assert_eq!(symbols.resolve_struct_member("Missing", "x"), None);
+    }
+
+    #[test]
+    fn test_impl_blocks_declare_mangled_methods() {
+        let symbols = resolve(
+            r#"
+            struct P { x: int }
+            impl P { int get(self) { return self.x; } }
+            impl P { void set(self, v: int) { self.x = v; } }
+            "#,
+        )
+        .expect("resolve");
+        let get = symbols.resolve_method("P", "get").expect("get");
+        assert_eq!(symbols.symbol(get).name, "P$get");
+        assert!(symbols.resolve_method("P", "set").is_some());
+        assert!(symbols.resolve_method("P", "missing").is_none());
+        assert!(symbols.resolve_method("Q", "get").is_none());
+    }
+
+    #[test]
+    fn test_impl_errors() {
+        let cases = [
+            "impl Missing { int f(self) { return 1; } }",
+            "struct P { age: int } impl P { int age(self) { return self.age; } }",
+            "struct P { x: int } impl P { int f(self) { return 1; } int f(self) { return 2; } }",
+        ];
+        for source in cases {
+            assert!(resolve(source).is_err(), "source: {}", source);
+        }
     }
 }

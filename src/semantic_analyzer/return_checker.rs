@@ -137,6 +137,16 @@ mod tests {
     }
 
     #[test]
+    fn test_method_bodies_are_checked() {
+        assert!(returns_ok(
+            "struct P { x: int } impl P { int f(self) { return 1; } }"
+        ));
+        assert!(!returns_ok(
+            "struct P { x: int } impl P { int f(self) { let y: int = 1; } }"
+        ));
+    }
+
+    #[test]
     fn test_return_followed_by_dead_code_is_ok() {
         // A `return` anywhere in the block satisfies the check, even with
         // (currently unwarned) statements after it.

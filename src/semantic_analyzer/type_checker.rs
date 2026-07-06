@@ -8,6 +8,7 @@ pub struct TypeChecker<'a> {
     current_return_type: Option<Type>,
     errors: Vec<TypeErr>,
     pub types: HashMap<NodeId, Type>,
+    pub method_calls: HashMap<NodeId, SymbolId>,
     inferred: HashMap<SymbolId, Type>,
 }
 
@@ -18,6 +19,7 @@ impl<'a> TypeChecker<'a> {
             current_return_type: None,
             errors: Vec::new(),
             types: HashMap::new(),
+            method_calls: HashMap::new(),
             inferred: HashMap::new(),
         }
     }
@@ -181,6 +183,36 @@ impl<'a> TypeChecker<'a> {
         }
     }
 
+    fn get_method_call_return_type(
+        &mut self,
+        f: &Spanned<Expression>,
+        method: SymbolId,
+        args: &[Spanned<Expression>],
+        span: &Span,
+    ) -> Result<Option<Type>, TypeErr> {
+        let Some(Type::Function(ret_type, arg_types)) = self.symbols.symbol(method).ty.clone()
+        else {
+            unreachable!("methods are declared with a function type");
+        };
+        // First argument is self.
+        if args.len() != arg_types.len() - 1 {
+            return Err(TypeErr {
+                msg: "Method has different number of arguments",
+                span: span.clone(),
+            });
+        }
+        for (arg, arg_type) in args.iter().zip(arg_types[1..].iter()) {
+            if self.get_expression_type(arg)? != *arg_type {
+                return Err(TypeErr {
+                    msg: "Arguments passed to method do not match type signature for method",
+                    span: arg.span.clone(),
+                });
+            }
+        }
+        self.method_calls.insert(f.id, method);
+        Ok(ret_type.map(|return_type| *return_type))
+    }
+
     fn get_call_expression_return_type(
         &mut self,
         f: &Spanned<Expression>,
@@ -189,6 +221,14 @@ impl<'a> TypeChecker<'a> {
     ) -> Result<Option<Type>, TypeErr> {
         if matches!(&f.node, Expression::Identifier(name) if name == "len") {
             return self.get_len_intrinsic_type(args, span).map(Some);
+        }
+
+        // Method call
+        if let Expression::Access(obj, member) = &f.node
+            && let Type::Struct(struct_name) = self.get_expression_type(obj)?
+            && let Some(method) = self.symbols.resolve_method(&struct_name.node, member)
+        {
+            return self.get_method_call_return_type(f, method, args, span);
         }
 
         match self.get_expression_type(f)? {
@@ -725,6 +765,68 @@ mod tests {
             checker.visit_module(&module);
             assert_eq!(checker.check().is_ok(), *expect_ok, "source: {}", source);
         }
+    }
+
+    #[test]
+    fn test_method_calls() {
+        let prelude = r#"
+            struct P { x: int }
+            impl P {
+                int get(self) { return self.x; }
+                void set(self, v: int) { self.x = v; }
+                P me(self) { return self; }
+            }
+        "#;
+        let cases = [
+            (
+                "int main() { let p = new P; p.set(3); return p.get(); }",
+                true,
+            ),
+            (
+                "int main() { let p = new P; return p.me().me().get(); }",
+                true,
+            ),
+            ("int main() { return (new P).get(); }", true),
+            ("int main() { let p = new P; return p.get(1); }", false),
+            (
+                "int main() { let p = new P; p.set(true); return 0; }",
+                false,
+            ),
+            (
+                "int main() { let p = new P; let v = p.set(1); return 0; }",
+                false,
+            ),
+            (
+                "int main() { let p = new P; let f = p.get; return 0; }",
+                false,
+            ),
+            ("int main() { let p = new P; return p.nope(); }", false),
+            ("int main() { let p = new P; return p.x(); }", false),
+            ("int main() { let n = 5; return n.get(); }", false),
+        ];
+        let sources: Vec<(String, bool)> = cases
+            .iter()
+            .map(|(body, ok)| (format!("{prelude}{body}"), *ok))
+            .collect();
+        let cases: Vec<(&str, bool)> = sources.iter().map(|(s, ok)| (s.as_str(), *ok)).collect();
+        check_cases(&cases);
+    }
+
+    #[test]
+    fn test_method_call_resolutions_are_recorded() {
+        let source = r#"
+            struct P { x: int }
+            impl P { int get(self) { return self.x; } }
+            int main() { let p = new P; return p.get(); }
+        "#;
+        let tokens = lexer::Lexer::lex(source).expect("lex");
+        let module = parser::Parser::new(tokens).parse().expect("parse");
+        let symbols = Resolver::new().resolve(&module).expect("resolve");
+        let mut checker = TypeChecker::new(&symbols);
+        checker.visit_module(&module);
+        checker.check().expect("check");
+        let (_, method) = checker.method_calls.iter().next().expect("one method call");
+        assert_eq!(symbols.symbol(*method).name, "P$get");
     }
 
     #[test]

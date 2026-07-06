@@ -373,7 +373,7 @@ mod tests {
     #[test]
     fn test_valid() {
         let source = concat!(
-            "return let if else while void int real char bool true false extern as struct new",
+            "return let if else while void int real char bool true false extern as struct impl new",
             " ( ) { } [ ] ; : , + - / % = > < ! . & | ^",
             " == >= <= != || && << >>",
             " 42 3.1415",
@@ -481,6 +481,7 @@ mod tests {
             ("extern", Keyword::Extern),
             ("as", Keyword::As),
             ("struct", Keyword::Struct),
+            ("impl", Keyword::Impl),
             ("new", Keyword::New),
             ("for", Keyword::For),
             ("break", Keyword::Break),

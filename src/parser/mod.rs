@@ -793,6 +793,121 @@ impl Parser {
         Ok(self.spanned(function, span))
     }
 
+    fn parse_method_parameters(
+        &mut self,
+        struct_name: &Spanned<String>,
+    ) -> Result<Vec<Spanned<IdentifierTypePair>>, ParseErr> {
+        self.pop_token(
+            Token::Symbol(Symbol::LeftParen),
+            "Expected ( to start the method parameter list",
+        )?;
+
+        let start = self.current_start();
+        let token = self.pop()?;
+        if !matches!(&token.token, Token::Identifier(name) if name == "self") {
+            return Err(ParseErr {
+                msg: "The first parameter of a method must be self: <type> <name>(self, <params>)",
+                token: Some(token),
+            });
+        }
+        let self_span = self.span_from(start);
+        let self_type =
+            Type::Struct(self.spanned(struct_name.node.clone(), struct_name.span.clone()));
+        let mut arguments = vec![self.spanned(
+            IdentifierTypePair {
+                name: "self".to_string(),
+                typename: self_type,
+            },
+            self_span,
+        )];
+
+        while self.peek()?.token != Token::Symbol(Symbol::RightParen) {
+            let token = self.peek()?;
+            match &token.token {
+                Token::Symbol(Symbol::Comma) => {
+                    self.pop()?;
+                    if self.peek()?.token == Token::Symbol(Symbol::RightParen) {
+                        break;
+                    }
+                    arguments.push(self.parse_identifier_type_pair()?);
+                }
+                Token::Symbol(Symbol::Colon) => {
+                    return Err(ParseErr {
+                        msg: "self takes no type annotation; it has the type of the impl'd struct",
+                        token: Some(token.clone()),
+                    });
+                }
+                _ => {
+                    return Err(ParseErr {
+                        msg: "Expected , or ) in the method parameter list",
+                        token: Some(token.clone()),
+                    });
+                }
+            }
+        }
+        self.pop()?;
+        Ok(arguments)
+    }
+
+    fn parse_method(
+        &mut self,
+        struct_name: &Spanned<String>,
+    ) -> Result<Spanned<Function>, ParseErr> {
+        let start = self.current_start();
+        let return_type = self.parse_return_type()?;
+        let name = self.parse_identifier()?;
+        let arguments = self.parse_method_parameters(struct_name)?;
+
+        let token = self.peek()?;
+        if token.token != Token::Symbol(Symbol::LeftBrace) {
+            return Err(ParseErr {
+                msg: "Expected method body: <type> <name>(self, <params>) { <stmt> ... }",
+                token: Some(token.clone()),
+            });
+        }
+        let statement = self.parse_statement()?;
+
+        let function = Function {
+            return_type,
+            name,
+            arguments,
+            statement,
+        };
+        let span = self.span_from(start);
+        Ok(self.spanned(function, span))
+    }
+
+    fn parse_impl(&mut self) -> Result<Spanned<Impl>, ParseErr> {
+        let start = self.current_start();
+        self.pop_token(
+            Token::Keyword(Keyword::Impl),
+            "Expected method block to start with 'impl': impl <struct> {...}",
+        )?;
+        let name_start = self.current_start();
+        let name = self.parse_identifier()?;
+        let name_span = self.span_from(name_start);
+        let struct_name = self.spanned(name, name_span);
+
+        self.pop_token(
+            Token::Symbol(Symbol::LeftBrace),
+            "Expected { to open the impl block: impl <struct> {...}",
+        )?;
+        let mut functions = vec![];
+        while self.peek()?.token != Token::Symbol(Symbol::RightBrace) {
+            functions.push(self.parse_method(&struct_name)?);
+        }
+        self.pop()?;
+
+        let span = self.span_from(start);
+        Ok(self.spanned(
+            Impl {
+                struct_name,
+                functions,
+            },
+            span,
+        ))
+    }
+
     fn parse_struct(&mut self) -> Result<Spanned<Struct>, ParseErr> {
         let start = self.current_start();
         self.pop_token(
@@ -822,6 +937,9 @@ impl Parser {
                 }
                 Token::Keyword(Keyword::Extern) => {
                     module.extern_functions.push(self.parse_extern_function()?);
+                }
+                Token::Keyword(Keyword::Impl) => {
+                    module.impls.push(self.parse_impl()?);
                 }
                 _ => {
                     module.functions.push(self.parse_function()?);
@@ -906,6 +1024,29 @@ mod tests {
             &["struct Person { age: int, name: [char]}", "struct Foo {}"],
             &["struct Foo", "struct {}", "struct Foo { foo, bar }"],
             Parser::parse_struct,
+        );
+    }
+
+    #[test]
+    fn test_parse_impl() {
+        test_parser(
+            &[
+                "impl Person {}",
+                "impl Person { int age(self) { return 1; } }",
+                "impl Person { void grow(self, by: int) {} void reset(self,) {} }",
+                "impl P { P me(self) { return self; } bool near(self, other: P, d: int) { return true; } }",
+            ],
+            &[
+                "impl {}",
+                "impl Person",
+                "impl Person { int age() { return 1; } }",
+                "impl Person { int age(self: Person) { return 1; } }",
+                "impl Person { int age(by: int) { return 1; } }",
+                "impl Person { int age(self, by) { return 1; } }",
+                "impl Person { int age(self) }",
+                "impl Person { struct Inner {} }",
+            ],
+            Parser::parse_impl,
         );
     }
 

@@ -132,6 +132,10 @@ pub trait ASTVisitor: Sized {
 
     fn visit_struct(&mut self, _: &Spanned<Struct>) {}
 
+    fn visit_impl(&mut self, impl_: &Spanned<Impl>) {
+        walk_impl(self, impl_);
+    }
+
     fn visit_extern_function(&mut self, func: &Spanned<ExternFunction>) {
         walk_extern_function(self, func);
     }
@@ -402,5 +406,15 @@ pub fn walk_module<V: ASTVisitor>(visitor: &mut V, module: &Module) {
         visitor.visit_function(func);
     }
 
+    for impl_ in module.impls.iter() {
+        visitor.visit_impl(impl_);
+    }
+
     visitor.visit_exit_scope();
+}
+
+pub fn walk_impl<V: ASTVisitor>(visitor: &mut V, impl_: &Spanned<Impl>) {
+    for func in impl_.node.functions.iter() {
+        visitor.visit_function(func);
+    }
 }
