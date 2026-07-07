@@ -3,12 +3,23 @@ use std::collections::HashMap;
 use super::{errors::TypeErr, symbol_table::*};
 use crate::parser::*;
 
+/// Built-in methods on `[T]`, dispatched by receiver type like struct
+/// methods but implemented by the backends.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ArrayMethod {
+    Len,
+    Append,
+    Insert,
+    Remove,
+}
+
 pub struct TypeChecker<'a> {
     symbols: &'a SymbolTable,
     current_return_type: Option<Type>,
     errors: Vec<TypeErr>,
     pub types: HashMap<NodeId, Type>,
     pub method_calls: HashMap<NodeId, SymbolId>,
+    pub array_method_calls: HashMap<NodeId, ArrayMethod>,
     inferred: HashMap<SymbolId, Type>,
 }
 
@@ -20,6 +31,7 @@ impl<'a> TypeChecker<'a> {
             errors: Vec::new(),
             types: HashMap::new(),
             method_calls: HashMap::new(),
+            array_method_calls: HashMap::new(),
             inferred: HashMap::new(),
         }
     }
@@ -163,24 +175,42 @@ impl<'a> TypeChecker<'a> {
         }
     }
 
-    fn get_len_intrinsic_type(
+    fn get_array_method_return_type(
         &mut self,
+        f: &Spanned<Expression>,
+        elem: Type,
+        member: &str,
         args: &[Spanned<Expression>],
         span: &Span,
-    ) -> Result<Type, TypeErr> {
-        let [arg] = args else {
+    ) -> Result<Option<Type>, TypeErr> {
+        let (method, expected, ret) = match member {
+            "len" => (ArrayMethod::Len, vec![], Some(Type::Int)),
+            "append" => (ArrayMethod::Append, vec![elem], None),
+            "insert" => (ArrayMethod::Insert, vec![Type::Int, elem], None),
+            "remove" => (ArrayMethod::Remove, vec![Type::Int], Some(elem)),
+            _ => {
+                return Err(TypeErr {
+                    msg: "Arrays have no such method: len, append, insert, remove",
+                    span: span.clone(),
+                });
+            }
+        };
+        if args.len() != expected.len() {
             return Err(TypeErr {
-                msg: "len expects exactly one argument",
+                msg: "Array method has different number of arguments",
                 span: span.clone(),
             });
-        };
-        match self.get_expression_type(arg)? {
-            Type::Array(_) => Ok(Type::Int),
-            _ => Err(TypeErr {
-                msg: "len expects an array or string argument",
-                span: span.clone(),
-            }),
         }
+        for (arg, arg_type) in args.iter().zip(expected.iter()) {
+            if self.get_expression_type(arg)? != *arg_type {
+                return Err(TypeErr {
+                    msg: "Arguments passed to array method do not match its signature",
+                    span: arg.span.clone(),
+                });
+            }
+        }
+        self.array_method_calls.insert(f.id, method);
+        Ok(ret)
     }
 
     fn get_method_call_return_type(
@@ -219,16 +249,19 @@ impl<'a> TypeChecker<'a> {
         args: &[Spanned<Expression>],
         span: &Span,
     ) -> Result<Option<Type>, TypeErr> {
-        if matches!(&f.node, Expression::Identifier(name) if name == "len") {
-            return self.get_len_intrinsic_type(args, span).map(Some);
-        }
-
         // Method call
-        if let Expression::Access(obj, member) = &f.node
-            && let Type::Struct(struct_name) = self.get_expression_type(obj)?
-            && let Some(method) = self.symbols.resolve_method(&struct_name.node, member)
-        {
-            return self.get_method_call_return_type(f, method, args, span);
+        if let Expression::Access(obj, member) = &f.node {
+            match self.get_expression_type(obj)? {
+                Type::Struct(struct_name) => {
+                    if let Some(method) = self.symbols.resolve_method(&struct_name.node, member) {
+                        return self.get_method_call_return_type(f, method, args, span);
+                    }
+                }
+                Type::Array(elem) => {
+                    return self.get_array_method_return_type(f, *elem, member, args, span);
+                }
+                _ => {}
+            }
         }
 
         match self.get_expression_type(f)? {
@@ -281,18 +314,22 @@ impl<'a> TypeChecker<'a> {
         span: &Span,
     ) -> Result<Type, TypeErr> {
         let left_type = self.get_expression_type(left)?;
-        if let Type::Struct(name) = left_type {
-            self.symbols
+        match left_type {
+            Type::Struct(name) => self
+                .symbols
                 .resolve_struct_member(&name.node, member)
                 .ok_or(TypeErr {
                     msg: "Invalid member for struct",
                     span: span.clone(),
-                })
-        } else {
-            Err(TypeErr {
+                }),
+            Type::Array(_) => Err(TypeErr {
+                msg: "Array methods are not values; call them: a.len()",
+                span: span.clone(),
+            }),
+            _ => Err(TypeErr {
                 msg: "Access operator must have struct type on the left",
                 span: span.clone(),
-            })
+            }),
         }
     }
 
@@ -677,22 +714,58 @@ mod tests {
     }
 
     #[test]
-    fn test_len_intrinsic_types() {
+    fn test_array_method_types() {
         let cases = [
             (
-                r#"int main() { let a: [int] = new int[3]; return len(a); }"#,
+                r#"int main() { let a: [int] = new int[3]; return a.len(); }"#,
                 true,
             ),
-            (r#"int main() { return len("hi"); }"#, true),
+            (r#"int main() { return "hi".len(); }"#, true),
             (
-                r#"real main() { let a: [int] = new int[3]; return len(a); }"#,
+                r#"int main() { let a = [1]; a.append(2); a.insert(0, 3); return a.remove(1); }"#,
+                true,
+            ),
+            (
+                r#"int main() { let a = [1]; a.remove(0); return 0; }"#,
+                true,
+            ),
+            (
+                r#"int main() { let m = [[1], [2]]; m[0].append(3); return m.remove(0).len(); }"#,
+                true,
+            ),
+            (
+                r#"real main() { let a: [int] = new int[3]; return a.len(); }"#,
                 false,
             ),
-            (r#"int main() { return len(5); }"#, false),
             (
-                r#"int main() { let a: [int] = new int[3]; return len(a, a); }"#,
+                r#"int main() { let a = [1]; return a.len(1); }"#,
                 false,
             ),
+            (
+                r#"int main() { let a = [1]; a.append(true); return 0; }"#,
+                false,
+            ),
+            (
+                r#"int main() { let a = [1]; a.append(1, 2); return 0; }"#,
+                false,
+            ),
+            (
+                r#"int main() { let a = [1]; a.insert(1.0, 2); return 0; }"#,
+                false,
+            ),
+            (
+                r#"int main() { let a = [1]; let x: bool = a.remove(0); return 0; }"#,
+                false,
+            ),
+            (
+                r#"int main() { let a = [1]; return a.push(2); }"#,
+                false,
+            ),
+            (
+                r#"int main() { let a = [1]; let f = a.len; return 0; }"#,
+                false,
+            ),
+            (r#"int main() { let n = 5; return n.len(); }"#, false),
         ];
 
         for (source, expect_ok) in cases {
@@ -1163,7 +1236,7 @@ mod tests {
     fn test_string_alias_is_interchangeable_with_char_array() {
         check_cases(&[
             (
-                r#"int main() { let s: string = "abc"; return len(s); }"#,
+                r#"int main() { let s: string = "abc"; return s.len(); }"#,
                 true,
             ),
             (
@@ -1177,7 +1250,7 @@ mod tests {
                 true,
             ),
             (
-                r#"int main() { let words: [string] = ["a", "b"]; return len(words); }"#,
+                r#"int main() { let words: [string] = ["a", "b"]; return words.len(); }"#,
                 true,
             ),
             (

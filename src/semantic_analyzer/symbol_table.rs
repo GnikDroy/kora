@@ -375,18 +375,6 @@ impl ASTVisitor for Resolver {
         }
     }
 
-    fn visit_call_expression(&mut self, expr: &Spanned<Expression>, args: &[Spanned<Expression>]) {
-        // An intrinsic callee is not a resolvable symbol; skip it, but still
-        // resolve the arguments.
-        if matches!(&expr.node, Expression::Identifier(name) if is_intrinsic(name)) {
-            for arg in args.iter() {
-                self.visit_expression(arg);
-            }
-            return;
-        }
-        walk_call_expression(self, expr, args);
-    }
-
     fn visit_expression(&mut self, expr: &Spanned<Expression>) {
         if let Expression::Identifier(name) = &expr.node {
             match self.lookup(name) {
@@ -501,9 +489,10 @@ mod tests {
     }
 
     #[test]
-    fn test_intrinsic_call_does_not_flag_undefined() {
+    fn test_free_len_call_is_undefined() {
+        // len is a method now: a.len(). The free form no longer resolves.
         let source = r#"int main() { let a: [int] = new int[3]; return len(a); }"#;
-        assert!(resolve(source).is_ok());
+        assert!(resolve(source).is_err());
     }
 
     #[test]
