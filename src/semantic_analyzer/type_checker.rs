@@ -82,7 +82,11 @@ impl<'a> TypeChecker<'a> {
         use Type::*;
 
         let left_type = self.get_expression_type(left)?;
-        let right_type = self.get_expression_type(right)?;
+        let right_type = if matches!(op, Assign) {
+            self.get_expression_type_expecting(right, &left_type)?
+        } else {
+            self.get_expression_type(right)?
+        };
 
         #[rustfmt::skip]
         match (left_type, op, right_type) {
@@ -202,7 +206,7 @@ impl<'a> TypeChecker<'a> {
             });
         }
         for (arg, arg_type) in args.iter().zip(expected.iter()) {
-            if self.get_expression_type(arg)? != *arg_type {
+            if self.get_expression_type_expecting(arg, arg_type)? != *arg_type {
                 return Err(TypeErr {
                     msg: "Arguments passed to array method do not match its signature",
                     span: arg.span.clone(),
@@ -232,7 +236,7 @@ impl<'a> TypeChecker<'a> {
             });
         }
         for (arg, arg_type) in args.iter().zip(arg_types[1..].iter()) {
-            if self.get_expression_type(arg)? != *arg_type {
+            if self.get_expression_type_expecting(arg, arg_type)? != *arg_type {
                 return Err(TypeErr {
                     msg: "Arguments passed to method do not match type signature for method",
                     span: arg.span.clone(),
@@ -274,7 +278,7 @@ impl<'a> TypeChecker<'a> {
                 }
 
                 for (arg, arg_type) in args.iter().zip(args_types) {
-                    if self.get_expression_type(arg)? != arg_type {
+                    if self.get_expression_type_expecting(arg, &arg_type)? != arg_type {
                         return Err(TypeErr {
                             msg: "Arguments passed to function do not match type signature for function",
                             span: arg.span.clone(),
@@ -478,8 +482,31 @@ impl<'a> TypeChecker<'a> {
         }
     }
 
+    /// Type-check an expression whose expected type is already known
+    fn get_expression_type_expecting(
+        &mut self,
+        expr: &Spanned<Expression>,
+        expected: &Type,
+    ) -> Result<Type, TypeErr> {
+        if let Expression::Array(elems) = &expr.node
+            && let Type::Array(elem_type) = expected
+        {
+            for elem in elems.iter() {
+                if self.get_expression_type_expecting(elem, elem_type)? != **elem_type {
+                    return Err(TypeErr {
+                        msg: "Array element does not match the expected element type",
+                        span: elem.span.clone(),
+                    });
+                }
+            }
+            self.types.insert(expr.id, expected.clone());
+            return Ok(expected.clone());
+        }
+        self.get_expression_type(expr)
+    }
+
     fn ensure_type(&mut self, expr: &Spanned<Expression>, expected: &Type) {
-        let expr_type = self.get_expression_type(expr);
+        let expr_type = self.get_expression_type_expecting(expr, expected);
         match expr_type {
             Ok(typename) if typename == *expected => {}
             Err(type_err) => self.errors.push(type_err),
@@ -725,10 +752,7 @@ mod tests {
                 r#"int main() { let a = [1]; a.append(2); a.insert(0, 3); return a.remove(1); }"#,
                 true,
             ),
-            (
-                r#"int main() { let a = [1]; a.remove(0); return 0; }"#,
-                true,
-            ),
+            (r#"int main() { let a = [1]; a.remove(0); return 0; }"#, true),
             (
                 r#"int main() { let m = [[1], [2]]; m[0].append(3); return m.remove(0).len(); }"#,
                 true,
@@ -737,10 +761,7 @@ mod tests {
                 r#"real main() { let a: [int] = new int[3]; return a.len(); }"#,
                 false,
             ),
-            (
-                r#"int main() { let a = [1]; return a.len(1); }"#,
-                false,
-            ),
+            (r#"int main() { let a = [1]; return a.len(1); }"#, false),
             (
                 r#"int main() { let a = [1]; a.append(true); return 0; }"#,
                 false,
@@ -757,14 +778,8 @@ mod tests {
                 r#"int main() { let a = [1]; let x: bool = a.remove(0); return 0; }"#,
                 false,
             ),
-            (
-                r#"int main() { let a = [1]; return a.push(2); }"#,
-                false,
-            ),
-            (
-                r#"int main() { let a = [1]; let f = a.len; return 0; }"#,
-                false,
-            ),
+            (r#"int main() { let a = [1]; return a.push(2); }"#, false),
+            (r#"int main() { let a = [1]; let f = a.len; return 0; }"#, false),
             (r#"int main() { let n = 5; return n.len(); }"#, false),
         ];
 
@@ -1026,7 +1041,7 @@ mod tests {
                 r#"int main() { let a: [int] = [1, 2.0]; return 0; }"#,
                 false,
             ),
-            (r#"int main() { let a: [int] = []; return 0; }"#, false),
+            (r#"int main() { let a: [int] = []; return 0; }"#, true),
         ]);
     }
 
