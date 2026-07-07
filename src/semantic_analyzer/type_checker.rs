@@ -134,6 +134,7 @@ impl<'a> TypeChecker<'a> {
             (Char, LessEqual, Char)    => Ok(Bool),
 
             (l @ Array(_), Equality | NotEquality, r) if l == r && Self::is_comparable(&l) => Ok(Bool),
+            (l @ Array(_), Add, r) if l == r => Ok(l),
             (left_type, Assign, right_type) => {
                 if !self.is_assignable(left) || matches!(left_type, Function(_, _)) {
                     Err(TypeErr{
@@ -1432,6 +1433,26 @@ mod tests {
                 r#"struct P { x: int } int main() { let b = new P[1] == new P[1]; return 0; }"#,
                 false,
             ),
+        ]);
+    }
+
+    #[test]
+    fn test_array_plus_is_concatenation() {
+        check_cases(&[
+            (r#"int main() { let a = [1] + [2]; return a.len(); }"#, true),
+            (r#"int main() { let a = [1, 2] + [3]; return a[2]; }"#, true),
+            (
+                r#"int main() { let s: string = "ab" + "cd"; return s.len(); }"#,
+                true,
+            ),
+            (
+                r#"int main() { let m = [[1]] + [[2]]; return m[1][0]; }"#,
+                true,
+            ),
+            (r#"int main() { let a = [1] + [2.0]; return 0; }"#, false),
+            (r#"int main() { let a = [1] + 2; return 0; }"#, false),
+            (r#"int main() { let a = 1 + [2]; return 0; }"#, false),
+            (r#"int main() { let a = [1] - [2]; return 0; }"#, false),
         ]);
     }
 
