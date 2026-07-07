@@ -183,6 +183,27 @@ impl<'a> TypeChecker<'a> {
         }
     }
 
+    fn get_copy_intrinsic_type(
+        &mut self,
+        args: &[Spanned<Expression>],
+        span: &Span,
+    ) -> Result<Type, TypeErr> {
+        let [arg] = args else {
+            return Err(TypeErr {
+                msg: "copy expects exactly one argument",
+                span: span.clone(),
+            });
+        };
+        let ty = self.get_expression_type(arg)?;
+        match ty {
+            Type::Array(_) | Type::Struct(_) => Ok(ty),
+            _ => Err(TypeErr {
+                msg: "copy expects a reference type; scalars are value types",
+                span: span.clone(),
+            }),
+        }
+    }
+
     fn get_array_method_return_type(
         &mut self,
         f: &Spanned<Expression>,
@@ -264,6 +285,11 @@ impl<'a> TypeChecker<'a> {
         args: &[Spanned<Expression>],
         span: &Span,
     ) -> Result<Option<Type>, TypeErr> {
+        // Intrinsics
+        if matches!(&f.node, Expression::Identifier(name) if name == "copy") {
+            return self.get_copy_intrinsic_type(args, span).map(Some);
+        }
+
         // Method call
         if let Expression::Access(obj, member) = &f.node {
             match self.get_expression_type(obj)? {
@@ -1439,6 +1465,50 @@ mod tests {
                 r#"struct P { x: int } int main() { let b = new P[1] == new P[1]; return 0; }"#,
                 false,
             ),
+        ]);
+    }
+
+    #[test]
+    fn test_method_names_are_not_reserved() {
+        check_cases(&[
+            (
+                r#"int len(x: int) { return x; } int main() { let a = [1]; return len(a.len()); }"#,
+                true,
+            ),
+            (
+                r#"int push(x: int) { return x; } int main() { return push(3); }"#,
+                true,
+            ),
+        ]);
+    }
+
+    #[test]
+    fn test_copy_intrinsic() {
+        check_cases(&[
+            (
+                r#"int main() { let a = [1, 2]; let b = copy(a); b.push(3); return a.len(); }"#,
+                true,
+            ),
+            (
+                r#"struct P { x: int } int main() { let p = new P { x: 1 }; let q = copy(p); return q.x; }"#,
+                true,
+            ),
+            (
+                r#"int main() { let s = copy("hi"); return s.len(); }"#,
+                true,
+            ),
+            (
+                r#"int main() { let m = [[1]]; let n = copy(m); return n[0][0]; }"#,
+                true,
+            ),
+            (r#"int main() { copy([1]); return 0; }"#, true),
+            (r#"int main() { let x = copy(5); return 0; }"#, false),
+            (r#"int main() { let x = copy('a'); return 0; }"#, false),
+            (
+                r#"int main() { let a = [1]; copy(a, a); return 0; }"#,
+                false,
+            ),
+            (r#"int main() { let x = copy(); return 0; }"#, false),
         ]);
     }
 

@@ -4,7 +4,7 @@ use super::errors::TypeErr;
 use crate::parser::*;
 
 /// Reserved intrinsic names, handled by the type checker and undeclarable by user code.
-pub const INTRINSICS: &[&str] = &["len"];
+pub const INTRINSICS: &[&str] = &["copy"];
 
 pub fn is_intrinsic(name: &str) -> bool {
     INTRINSICS.contains(&name)
@@ -380,7 +380,9 @@ impl ASTVisitor for Resolver {
     }
 
     fn visit_expression(&mut self, expr: &Spanned<Expression>) {
-        if let Expression::Identifier(name) = &expr.node {
+        if let Expression::Identifier(name) = &expr.node
+            && !is_intrinsic(name)
+        {
             match self.lookup(name) {
                 Some(id) => {
                     self.table.uses.insert(expr.id, id);
@@ -476,10 +478,10 @@ mod tests {
     #[test]
     fn test_intrinsic_names_cannot_be_declared() {
         let cases = [
-            r#"int len(a: int) { return a; } int main() { return 0; }"#,
-            r#"extern int len(a: int); int main() { return 0; }"#,
-            r#"int main() { let len: int = 1; return len; }"#,
-            r#"int main(len: int) { return len; }"#,
+            r#"int copy(a: int) { return a; } int main() { return 0; }"#,
+            r#"extern int copy(a: int); int main() { return 0; }"#,
+            r#"int main() { let copy: int = 1; return copy; }"#,
+            r#"int main(copy: int) { return copy; }"#,
         ];
         for source in cases {
             let errors = resolve(source).expect_err(source);
