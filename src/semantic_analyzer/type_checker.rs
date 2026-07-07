@@ -8,9 +8,12 @@ use crate::parser::*;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArrayMethod {
     Len,
-    Append,
+    Push,
+    Pop,
     Insert,
     Remove,
+    Slice,
+    Extend,
 }
 
 pub struct TypeChecker<'a> {
@@ -189,12 +192,19 @@ impl<'a> TypeChecker<'a> {
     ) -> Result<Option<Type>, TypeErr> {
         let (method, expected, ret) = match member {
             "len" => (ArrayMethod::Len, vec![], Some(Type::Int)),
-            "append" => (ArrayMethod::Append, vec![elem], None),
+            "push" => (ArrayMethod::Push, vec![elem], None),
+            "pop" => (ArrayMethod::Pop, vec![], Some(elem)),
             "insert" => (ArrayMethod::Insert, vec![Type::Int, elem], None),
             "remove" => (ArrayMethod::Remove, vec![Type::Int], Some(elem)),
+            "slice" => (
+                ArrayMethod::Slice,
+                vec![Type::Int, Type::Int],
+                Some(Type::Array(Box::new(elem))),
+            ),
+            "extend" => (ArrayMethod::Extend, vec![Type::Array(Box::new(elem))], None),
             _ => {
                 return Err(TypeErr {
-                    msg: "Arrays have no such method: len, append, insert, remove",
+                    msg: "Arrays have no such method: len, push, pop, insert, remove, slice, extend",
                     span: span.clone(),
                 });
             }
@@ -502,9 +512,7 @@ impl<'a> TypeChecker<'a> {
             ArrayIndex(left, right) => self.get_array_index_expression_type(left, right, span),
             Access(left, member) => self.get_access_expression_type(left, member, span),
             Construct(typename, size) => self.get_construct_expression_type(typename, size, span),
-            StructLiteral(typename, fields) => {
-                self.get_struct_literal_type(typename, fields, span)
-            }
+            StructLiteral(typename, fields) => self.get_struct_literal_type(typename, fields, span),
         }?;
         self.types.insert(expr.id, typename.clone());
         Ok(typename)
@@ -795,13 +803,55 @@ mod tests {
             ),
             (r#"int main() { return "hi".len(); }"#, true),
             (
-                r#"int main() { let a = [1]; a.append(2); a.insert(0, 3); return a.remove(1); }"#,
+                r#"int main() { let a = [1]; a.push(2); a.insert(0, 3); return a.remove(1); }"#,
                 true,
             ),
-            (r#"int main() { let a = [1]; a.remove(0); return 0; }"#, true),
             (
-                r#"int main() { let m = [[1], [2]]; m[0].append(3); return m.remove(0).len(); }"#,
+                r#"int main() { let a = [1]; a.remove(0); return 0; }"#,
                 true,
+            ),
+            (
+                r#"int main() { let m = [[1], [2]]; m[0].push(3); return m.remove(0).len(); }"#,
+                true,
+            ),
+            (r#"int main() { let a = [1, 2, 3]; return a.pop(); }"#, true),
+            (
+                r#"int main() { let a = [1, 2, 3]; return a.slice(1, 3).len(); }"#,
+                true,
+            ),
+            (
+                r#"int main() { let a = [1]; let b = [2]; a.extend(b); return a.len(); }"#,
+                true,
+            ),
+            (
+                r#"int main() { let s = "abc".slice(0, 1); return s.len(); }"#,
+                true,
+            ),
+            (
+                r#"int main() { let a = [[1]]; a.extend([[2]]); return a[1][0]; }"#,
+                true,
+            ),
+            (
+                r#"int main() { let a = [1]; let x = a.extend([2]); return 0; }"#,
+                false,
+            ),
+            (r#"int main() { let a = [1]; a.pop(1); return 0; }"#, false),
+            (
+                r#"int main() { let a = [1]; let x: bool = a.pop(); return 0; }"#,
+                false,
+            ),
+            (r#"int main() { let a = [1]; return a.slice(1); }"#, false),
+            (
+                r#"int main() { let a = [1]; return a.slice(0, 1); }"#,
+                false,
+            ),
+            (
+                r#"int main() { let a = [1]; a.extend(2); return 0; }"#,
+                false,
+            ),
+            (
+                r#"int main() { let a = [1]; let b = ["x"]; a.extend(b); return 0; }"#,
+                false,
             ),
             (
                 r#"real main() { let a: [int] = new int[3]; return a.len(); }"#,
@@ -809,11 +859,11 @@ mod tests {
             ),
             (r#"int main() { let a = [1]; return a.len(1); }"#, false),
             (
-                r#"int main() { let a = [1]; a.append(true); return 0; }"#,
+                r#"int main() { let a = [1]; a.push(true); return 0; }"#,
                 false,
             ),
             (
-                r#"int main() { let a = [1]; a.append(1, 2); return 0; }"#,
+                r#"int main() { let a = [1]; a.push(1, 2); return 0; }"#,
                 false,
             ),
             (
@@ -825,7 +875,10 @@ mod tests {
                 false,
             ),
             (r#"int main() { let a = [1]; return a.push(2); }"#, false),
-            (r#"int main() { let a = [1]; let f = a.len; return 0; }"#, false),
+            (
+                r#"int main() { let a = [1]; let f = a.len; return 0; }"#,
+                false,
+            ),
             (r#"int main() { let n = 5; return n.len(); }"#, false),
         ];
 
@@ -906,20 +959,23 @@ mod tests {
         check_cases(&[
             (r#"int main() { let a: [int] = []; return a.len(); }"#, true),
             (
-                r#"int main() { let a: [int] = []; a = []; a.append(1); return a[0]; }"#,
+                r#"int main() { let a: [int] = []; a = []; a.push(1); return a[0]; }"#,
                 true,
             ),
             (
                 r#"int count(v: [int]) { return v.len(); } int main() { return count([]); }"#,
                 true,
             ),
-            (r#"[int] empty() { return []; } int main() { return empty().len(); }"#, true),
+            (
+                r#"[int] empty() { return []; } int main() { return empty().len(); }"#,
+                true,
+            ),
             (
                 r#"int main() { let m: [[int]] = [[], [1]]; return m[0].len(); }"#,
                 true,
             ),
             (
-                r#"int main() { let m: [[int]] = []; m.append([]); m[0].append(1); return m[0][0]; }"#,
+                r#"int main() { let m: [[int]] = []; m.push([]); m[0].push(1); return m[0][0]; }"#,
                 true,
             ),
             (r#"int main() { let a = []; return 0; }"#, false),
@@ -947,14 +1003,17 @@ mod tests {
                 true,
             ),
             (
-                r#"int main() { let b = new Bag { items: [] }; b.items.append(3); return b.items[0]; }"#,
+                r#"int main() { let b = new Bag { items: [] }; b.items.push(3); return b.items[0]; }"#,
                 true,
             ),
             (
                 r#"int main() { return (new Point { x: 1, y: 2 }).x; }"#,
                 true,
             ),
-            (r#"int main() { let p = new Point { x: 1 }; return 0; }"#, false),
+            (
+                r#"int main() { let p = new Point { x: 1 }; return 0; }"#,
+                false,
+            ),
             (
                 r#"int main() { let p = new Point { x: 1, y: 2, x: 3 }; return 0; }"#,
                 false,
@@ -967,7 +1026,10 @@ mod tests {
                 r#"int main() { let p = new Point { x: true, y: 2 }; return 0; }"#,
                 false,
             ),
-            (r#"int main() { let p = new int { x: 1 }; return 0; }"#, false),
+            (
+                r#"int main() { let p = new int { x: 1 }; return 0; }"#,
+                false,
+            ),
             (
                 r#"int main() { new Point { x: 1, y: 2 } = new Point { x: 3, y: 4 }; return 0; }"#,
                 false,
