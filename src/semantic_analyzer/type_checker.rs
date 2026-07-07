@@ -394,13 +394,19 @@ impl<'a> TypeChecker<'a> {
         match size {
             Some(size) => {
                 let expr_type = self.get_expression_type(size)?;
-                if expr_type == Type::Int {
-                    Ok(Type::Array(Box::new(typename.clone())))
-                } else {
+                if expr_type != Type::Int {
                     Err(TypeErr {
                         msg: "Array constructor must be passed an integer inside []",
                         span: span.clone(),
                     })
+                } else if !matches!(typename, Type::Int | Type::Real | Type::Bool | Type::Char) {
+                    // Only scalars have a zero fill so they can be constructed with a given size
+                    Err(TypeErr {
+                        msg: "new T[n] requires a scalar element type (int, real, char, bool); build reference arrays with [] then push()",
+                        span: span.clone(),
+                    })
+                } else {
+                    Ok(Type::Array(Box::new(typename.clone())))
                 }
             }
             _ => match typename {
@@ -673,11 +679,11 @@ mod tests {
                 let b: int = 6;
                 let c: real = 6.2345;
                 let d: char = 'a';
-                let e: [Person] = new Person[23];
-                e[0] = new Person;
+                let e: [Person] = [];
+                e.push(new Person);
                 e[0].name = "Name";
                 e[0].age = 23;
-                e[1] = new Person;
+                e.push(new Person);
                 if (a - b == 1) {
                     print(a, b);
                 }
@@ -1433,6 +1439,22 @@ mod tests {
                 r#"struct P { x: int } int main() { let b = new P[1] == new P[1]; return 0; }"#,
                 false,
             ),
+        ]);
+    }
+
+    #[test]
+    fn test_sized_new_is_scalar_only() {
+        check_cases(&[
+            (r#"int main() { let a = new int[3]; return a[0]; }"#, true),
+            (r#"int main() { let a = new char[8]; return 0; }"#, true),
+            (r#"int main() { let a = new real[2]; return 0; }"#, true),
+            (r#"int main() { let a = new bool[2]; return 0; }"#, true),
+            (
+                r#"struct P { x: int } int main() { let a = new P[3]; return 0; }"#,
+                false,
+            ),
+            (r#"int main() { let a = new [int][3]; return 0; }"#, false),
+            (r#"int main() { let a = new string[3]; return 0; }"#, false),
         ]);
     }
 
