@@ -60,6 +60,14 @@ pub trait ASTVisitor: Sized {
         walk_access_expression(self, left, member);
     }
 
+    fn visit_struct_literal(
+        &mut self,
+        typename: &Type,
+        fields: &[(Spanned<String>, Spanned<Expression>)],
+    ) {
+        walk_struct_literal(self, typename, fields);
+    }
+
     fn visit_construct_expression(
         &mut self,
         typename: &Type,
@@ -269,6 +277,20 @@ pub fn walk_expression<V: ASTVisitor>(visitor: &mut V, expr: &Spanned<Expression
         Expression::Construct(typename, size) => {
             visitor.visit_construct_expression(typename, size);
         }
+        Expression::StructLiteral(typename, fields) => {
+            visitor.visit_struct_literal(typename, fields);
+        }
+    }
+}
+
+pub fn walk_struct_literal<V: ASTVisitor>(
+    visitor: &mut V,
+    typename: &Type,
+    fields: &[(Spanned<String>, Spanned<Expression>)],
+) {
+    visitor.visit_typename(typename);
+    for (_, value) in fields.iter() {
+        visitor.visit_expression(value);
     }
 }
 

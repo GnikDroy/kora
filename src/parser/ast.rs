@@ -170,6 +170,7 @@ pub enum Expression {
     Cast(Box<Spanned<Expression>>, Type),
     Access(Box<Spanned<Expression>>, String),
     Construct(Type, Option<Box<Spanned<Expression>>>),
+    StructLiteral(Type, Vec<(Spanned<String>, Spanned<Expression>)>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

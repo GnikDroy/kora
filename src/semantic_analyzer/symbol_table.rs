@@ -68,6 +68,10 @@ impl SymbolTable {
             .map(|(_, ty)| ty.clone())
     }
 
+    pub fn struct_member_count(&self, name: &str) -> Option<usize> {
+        self.structs.get(name).map(|def| def.members.len())
+    }
+
     pub fn resolve_method(&self, struct_name: &str, method: &str) -> Option<SymbolId> {
         self.methods
             .get(&(struct_name.to_string(), method.to_string()))

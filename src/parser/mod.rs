@@ -222,6 +222,16 @@ impl Parser {
                         "Expected ] after array constructor: new <type>[<expr>]",
                     )?;
                     Ok(expr)
+                } else if let Ok(token) = token
+                    && let Token::Symbol(Symbol::LeftBrace) = token.token
+                {
+                    let fields = self.parse_generic_delimited(
+                        Token::Symbol(Symbol::LeftBrace),
+                        Token::Symbol(Symbol::RightBrace),
+                        Token::Symbol(Symbol::Comma),
+                        Parser::parse_field_initializer,
+                    )?;
+                    Ok(Expression::StructLiteral(typename, fields))
                 } else {
                     Ok(Expression::Construct(typename, None))
                 }
@@ -379,6 +389,21 @@ impl Parser {
                 token: Some(token),
             }),
         }
+    }
+
+    fn parse_field_initializer(
+        &mut self,
+    ) -> Result<(Spanned<String>, Spanned<Expression>), ParseErr> {
+        let start = self.current_start();
+        let name = self.parse_identifier()?;
+        let name_span = self.span_from(start);
+        let name = self.spanned(name, name_span);
+        self.pop_token(
+            Token::Symbol(Symbol::Colon),
+            "Expected colon after struct literal field: <field>: <expr>",
+        )?;
+        let value = self.parse_expression()?;
+        Ok((name, value))
     }
 
     fn parse_identifier_type_pair(&mut self) -> Result<Spanned<IdentifierTypePair>, ParseErr> {
@@ -1024,6 +1049,27 @@ mod tests {
             &["struct Person { age: int, name: [char]}", "struct Foo {}"],
             &["struct Foo", "struct {}", "struct Foo { foo, bar }"],
             Parser::parse_struct,
+        );
+    }
+
+    #[test]
+    fn test_parse_struct_literal() {
+        test_parser(
+            &[
+                "new Point { x: 1, y: 2 }",
+                "new Point { x: 1, y: 2, }",
+                "new Foo {}",
+                "new Line { a: new Point { x: 0, y: 0 }, b: p }",
+                "new Bag { items: [1, 2], total: 1 + 2 }",
+            ],
+            &[
+                "new Point { x }",
+                "new Point { x: }",
+                "new Point { x: 1 y: 2 }",
+                "new Point { 1: 2 }",
+                "new Point { x: 1",
+            ],
+            Parser::parse_expression,
         );
     }
 

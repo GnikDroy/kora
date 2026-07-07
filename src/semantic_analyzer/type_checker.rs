@@ -419,7 +419,50 @@ impl<'a> TypeChecker<'a> {
             ArrayIndex(_, _) => true,
             Access(_, _) => true,
             Construct(_, _) => false,
+            StructLiteral(_, _) => false,
         }
+    }
+
+    fn get_struct_literal_type(
+        &mut self,
+        typename: &Type,
+        fields: &[(Spanned<String>, Spanned<Expression>)],
+        span: &Span,
+    ) -> Result<Type, TypeErr> {
+        let Type::Struct(name) = typename else {
+            return Err(TypeErr {
+                msg: "Only structs can be constructed with field initializers",
+                span: span.clone(),
+            });
+        };
+        for (i, (field, value)) in fields.iter().enumerate() {
+            if fields[..i].iter().any(|(prev, _)| prev.node == field.node) {
+                return Err(TypeErr {
+                    msg: "Duplicate field in struct literal",
+                    span: field.span.clone(),
+                });
+            }
+            let Some(field_type) = self.symbols.resolve_struct_member(&name.node, &field.node)
+            else {
+                return Err(TypeErr {
+                    msg: "Invalid member for struct",
+                    span: field.span.clone(),
+                });
+            };
+            if self.get_expression_type_expecting(value, &field_type)? != field_type {
+                return Err(TypeErr {
+                    msg: "Field value does not match the member's type",
+                    span: value.span.clone(),
+                });
+            }
+        }
+        if Some(fields.len()) != self.symbols.struct_member_count(&name.node) {
+            return Err(TypeErr {
+                msg: "Struct literal must initialize every member",
+                span: span.clone(),
+            });
+        }
+        Ok(typename.clone())
     }
 
     fn get_expression_type(&mut self, expr: &Spanned<Expression>) -> Result<Type, TypeErr> {
@@ -459,6 +502,9 @@ impl<'a> TypeChecker<'a> {
             ArrayIndex(left, right) => self.get_array_index_expression_type(left, right, span),
             Access(left, member) => self.get_access_expression_type(left, member, span),
             Construct(typename, size) => self.get_construct_expression_type(typename, size, span),
+            StructLiteral(typename, fields) => {
+                self.get_struct_literal_type(typename, fields, span)
+            }
         }?;
         self.types.insert(expr.id, typename.clone());
         Ok(typename)
@@ -853,6 +899,86 @@ mod tests {
             checker.visit_module(&module);
             assert_eq!(checker.check().is_ok(), *expect_ok, "source: {}", source);
         }
+    }
+
+    #[test]
+    fn test_empty_array_literals_where_type_is_expected() {
+        check_cases(&[
+            (r#"int main() { let a: [int] = []; return a.len(); }"#, true),
+            (
+                r#"int main() { let a: [int] = []; a = []; a.append(1); return a[0]; }"#,
+                true,
+            ),
+            (
+                r#"int count(v: [int]) { return v.len(); } int main() { return count([]); }"#,
+                true,
+            ),
+            (r#"[int] empty() { return []; } int main() { return empty().len(); }"#, true),
+            (
+                r#"int main() { let m: [[int]] = [[], [1]]; return m[0].len(); }"#,
+                true,
+            ),
+            (
+                r#"int main() { let m: [[int]] = []; m.append([]); m[0].append(1); return m[0][0]; }"#,
+                true,
+            ),
+            (r#"int main() { let a = []; return 0; }"#, false),
+            (r#"int main() { let a: int = []; return 0; }"#, false),
+            (r#"int main() { let a: [int] = [true]; return 0; }"#, false),
+            (r#"int main() { let a: [int] = [[]]; return 0; }"#, false),
+            (r#"int main() { []; return 0; }"#, false),
+        ]);
+    }
+
+    #[test]
+    fn test_struct_literals() {
+        let prelude = r#"
+            struct Point { x: int, y: int }
+            struct Line { a: Point, b: Point }
+            struct Bag { items: [int] }
+        "#;
+        let cases = [
+            (
+                r#"int main() { let p = new Point { x: 1, y: 2 }; return p.x + p.y; }"#,
+                true,
+            ),
+            (
+                r#"int main() { let l = new Line { a: new Point { x: 0, y: 0 }, b: new Point { x: 1, y: 1 } }; return l.b.x; }"#,
+                true,
+            ),
+            (
+                r#"int main() { let b = new Bag { items: [] }; b.items.append(3); return b.items[0]; }"#,
+                true,
+            ),
+            (
+                r#"int main() { return (new Point { x: 1, y: 2 }).x; }"#,
+                true,
+            ),
+            (r#"int main() { let p = new Point { x: 1 }; return 0; }"#, false),
+            (
+                r#"int main() { let p = new Point { x: 1, y: 2, x: 3 }; return 0; }"#,
+                false,
+            ),
+            (
+                r#"int main() { let p = new Point { x: 1, y: 2, z: 3 }; return 0; }"#,
+                false,
+            ),
+            (
+                r#"int main() { let p = new Point { x: true, y: 2 }; return 0; }"#,
+                false,
+            ),
+            (r#"int main() { let p = new int { x: 1 }; return 0; }"#, false),
+            (
+                r#"int main() { new Point { x: 1, y: 2 } = new Point { x: 3, y: 4 }; return 0; }"#,
+                false,
+            ),
+        ];
+        let sources: Vec<(String, bool)> = cases
+            .iter()
+            .map(|(body, ok)| (format!("{prelude}{body}"), *ok))
+            .collect();
+        let cases: Vec<(&str, bool)> = sources.iter().map(|(s, ok)| (s.as_str(), *ok)).collect();
+        check_cases(&cases);
     }
 
     #[test]
