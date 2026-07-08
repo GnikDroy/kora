@@ -20,12 +20,17 @@ impl Span {
     }
 }
 
-/// `ANON` is used for the single-source / test path.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SourceId(pub u32);
 
 impl SourceId {
-    pub const ANON: SourceId = SourceId(0);
+    pub const ANON: SourceId = SourceId(u32::MAX);
+}
+
+impl Default for SourceId {
+    fn default() -> Self {
+        SourceId::ANON
+    }
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]

@@ -2,6 +2,7 @@
 #![allow(dead_code)]
 
 mod lexer;
+mod loader;
 mod parser;
 mod semantic_analyzer;
 
