@@ -1,12 +1,12 @@
 use std::error::Error;
 use std::fmt;
 
-use super::LexerContext;
+use super::Position;
 
 #[derive(Debug)]
 pub struct LexerErr {
     pub msg: &'static str,
-    pub context: LexerContext,
+    pub position: Position,
     pub suggestion: String,
 }
 
@@ -17,7 +17,7 @@ impl fmt::Display for LexerErr {
         write!(
             f,
             "error: {} ({}:{})\nsuggestion: {}",
-            self.msg, self.context.row, self.context.col, self.suggestion
+            self.msg, self.position.row, self.position.col, self.suggestion
         )
     }
 }

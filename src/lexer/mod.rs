@@ -8,20 +8,20 @@ pub use token::*;
 
 /// Char stream over the whole source; remembers the last consumed position so
 /// tokens can span newlines and end-spans stay exact.
-struct Cursor<I: Iterator<Item = (LexerContext, char)>> {
+struct Cursor<I: Iterator<Item = (Position, char)>> {
     iter: Peekable<I>,
-    last: LexerContext,
+    last: Position,
 }
 
-impl<I: Iterator<Item = (LexerContext, char)>> Cursor<I> {
+impl<I: Iterator<Item = (Position, char)>> Cursor<I> {
     fn new(iter: I) -> Self {
         Cursor {
             iter: iter.peekable(),
-            last: LexerContext::default(),
+            last: Position::default(),
         }
     }
 
-    fn next(&mut self) -> Option<(LexerContext, char)> {
+    fn next(&mut self) -> Option<(Position, char)> {
         let item = self.iter.next();
         if let Some((ctx, _)) = &item {
             self.last = ctx.clone();
@@ -29,7 +29,7 @@ impl<I: Iterator<Item = (LexerContext, char)>> Cursor<I> {
         item
     }
 
-    fn peek(&mut self) -> Option<&(LexerContext, char)> {
+    fn peek(&mut self) -> Option<&(Position, char)> {
         self.iter.peek()
     }
 }
@@ -39,42 +39,42 @@ pub struct Lexer;
 
 impl Lexer {
     fn consume_whitespace(
-        _: &LexerContext,
-        _: &mut Cursor<impl Iterator<Item = (LexerContext, char)>>,
+        _: &Position,
+        _: &mut Cursor<impl Iterator<Item = (Position, char)>>,
         _: char,
     ) -> Result<Token, LexerErr> {
         Ok(Token::Whitespace)
     }
 
     fn consume_nothing_with_error(
-        context: &LexerContext,
-        _: &mut Cursor<impl Iterator<Item = (LexerContext, char)>>,
+        position: &Position,
+        _: &mut Cursor<impl Iterator<Item = (Position, char)>>,
         _: char,
     ) -> Result<Token, LexerErr> {
         Err(LexerErr {
             msg: "Invalid token",
-            context: context.clone(),
+            position: position.clone(),
             suggestion: "Did you perhaps forget to enclose it in quotes?".to_string(),
         })
     }
 
     fn consume_single_symbol(
-        context: &LexerContext,
-        _: &mut Cursor<impl Iterator<Item = (LexerContext, char)>>,
+        position: &Position,
+        _: &mut Cursor<impl Iterator<Item = (Position, char)>>,
         first: char,
     ) -> Result<Token, LexerErr> {
         Symbol::try_from(first)
             .map(Token::Symbol)
             .map_err(|_| LexerErr {
                 msg: "Invalid symbol",
-                context: context.clone(),
+                position: position.clone(),
                 suggestion: "This character is not a recognized symbol".to_string(),
             })
     }
 
     fn consume_double_symbol(
-        context: &LexerContext,
-        cursor: &mut Cursor<impl Iterator<Item = (LexerContext, char)>>,
+        position: &Position,
+        cursor: &mut Cursor<impl Iterator<Item = (Position, char)>>,
         first: char,
     ) -> Result<Token, LexerErr> {
         if let Some((_, next)) = cursor.peek() {
@@ -84,13 +84,13 @@ impl Lexer {
                 return Ok(Token::Symbol(symbol));
             }
         }
-        Lexer::consume_single_symbol(context, cursor, first)
+        Lexer::consume_single_symbol(position, cursor, first)
     }
 
     /// `#` line comment, skipped to end of line (lexed as `Whitespace`, dropped).
     fn consume_comment(
-        _: &LexerContext,
-        cursor: &mut Cursor<impl Iterator<Item = (LexerContext, char)>>,
+        _: &Position,
+        cursor: &mut Cursor<impl Iterator<Item = (Position, char)>>,
         _: char,
     ) -> Result<Token, LexerErr> {
         while let Some((_, c)) = cursor.peek() {
@@ -103,7 +103,7 @@ impl Lexer {
     }
 
     fn consume_number(
-        cursor: &mut Cursor<impl Iterator<Item = (LexerContext, char)>>,
+        cursor: &mut Cursor<impl Iterator<Item = (Position, char)>>,
         first: char,
     ) -> String {
         let mut literal = String::new();
@@ -121,8 +121,8 @@ impl Lexer {
     }
 
     fn consume_identifier_and_keyword(
-        _: &LexerContext,
-        cursor: &mut Cursor<impl Iterator<Item = (LexerContext, char)>>,
+        _: &Position,
+        cursor: &mut Cursor<impl Iterator<Item = (Position, char)>>,
         first: char,
     ) -> Result<Token, LexerErr> {
         let mut identifier = String::new();
@@ -147,8 +147,8 @@ impl Lexer {
     }
 
     fn consume_char_escape_code(
-        context: &LexerContext,
-        cursor: &mut Cursor<impl Iterator<Item = (LexerContext, char)>>,
+        position: &Position,
+        cursor: &mut Cursor<impl Iterator<Item = (Position, char)>>,
         _: char,
     ) -> Result<u8, LexerErr> {
         if let Some((_, escape)) = cursor.peek() {
@@ -163,7 +163,7 @@ impl Lexer {
                 _ => {
                     return Err(LexerErr {
                         msg: "Invalid escape sequence",
-                        context: context.clone(),
+                        position: position.clone(),
                         suggestion: "Valid sequences are [\\n, \\t, \\r, \\0, \\\\, \\', \\\"]"
                             .to_string(),
                     });
@@ -174,15 +174,15 @@ impl Lexer {
         } else {
             Err(LexerErr {
                 msg: "Incomplete escape sequence",
-                context: context.clone(),
+                position: position.clone(),
                 suggestion: "Valid sequences are [\\n, \\t, \\r, \\0, \\\\, \\', \\\"]".to_string(),
             })
         }
     }
 
     fn consume_char_literal(
-        context: &LexerContext,
-        cursor: &mut Cursor<impl Iterator<Item = (LexerContext, char)>>,
+        position: &Position,
+        cursor: &mut Cursor<impl Iterator<Item = (Position, char)>>,
         _: char,
     ) -> Result<Token, LexerErr> {
         if let Some((_, c)) = cursor.next()
@@ -192,11 +192,11 @@ impl Lexer {
                 _ if c.len_utf8() != 1 => {
                     return Err(LexerErr {
                         msg: "Char literals must only occupy one byte",
-                        context: context.clone(),
+                        position: position.clone(),
                         suggestion: "Perhaps you need a string literal? ' -> \"".to_string(),
                     });
                 }
-                _ if c == '\\' => Lexer::consume_char_escape_code(context, cursor, c)?,
+                _ if c == '\\' => Lexer::consume_char_escape_code(position, cursor, c)?,
                 _ => *c.to_string().as_bytes().first().unwrap(),
             };
 
@@ -207,22 +207,22 @@ impl Lexer {
             } else {
                 Err(LexerErr {
                     msg: "Char literals must end in '",
-                    context: context.clone(),
+                    position: position.clone(),
                     suggestion: "Did you miss a '?".to_string(),
                 })
             }
         } else {
             Err(LexerErr {
                 msg: "Incomplete char literal",
-                context: context.clone(),
+                position: position.clone(),
                 suggestion: "Did you forget to include a character?".to_string(),
             })
         }
     }
 
     fn consume_string_escape_code(
-        context: &LexerContext,
-        cursor: &mut Cursor<impl Iterator<Item = (LexerContext, char)>>,
+        position: &Position,
+        cursor: &mut Cursor<impl Iterator<Item = (Position, char)>>,
         _: char,
     ) -> Result<char, LexerErr> {
         if let Some((_, escape)) = cursor.peek() {
@@ -237,7 +237,7 @@ impl Lexer {
                 _ => {
                     return Err(LexerErr {
                         msg: "Invalid escape sequence",
-                        context: context.clone(),
+                        position: position.clone(),
                         suggestion: "Valid sequences are [\\n, \\t, \\r, \\0, \\\\, \\', \\\"]"
                             .to_string(),
                     });
@@ -248,15 +248,15 @@ impl Lexer {
         } else {
             Err(LexerErr {
                 msg: "Incomplete escape sequence",
-                context: context.clone(),
+                position: position.clone(),
                 suggestion: "Valid sequences are [\\n, \\t, \\r, \\0, \\\\, \\', \\\"]".to_string(),
             })
         }
     }
 
     fn consume_string_literal(
-        context: &LexerContext,
-        cursor: &mut Cursor<impl Iterator<Item = (LexerContext, char)>>,
+        position: &Position,
+        cursor: &mut Cursor<impl Iterator<Item = (Position, char)>>,
         _: char,
     ) -> Result<Token, LexerErr> {
         let mut literal = String::new();
@@ -269,7 +269,7 @@ impl Lexer {
                 }
                 _ => {
                     let c = if c == '\\' {
-                        Lexer::consume_string_escape_code(context, cursor, c)?
+                        Lexer::consume_string_escape_code(position, cursor, c)?
                     } else {
                         c
                     };
@@ -280,14 +280,14 @@ impl Lexer {
 
         Err(LexerErr {
             msg: "Incomplete string literal",
-            context: context.clone(),
+            position: position.clone(),
             suggestion: "Did you miss a quotation mark '\"'?".to_string(),
         })
     }
 
     fn consume_numeric(
-        context: &LexerContext,
-        cursor: &mut Cursor<impl Iterator<Item = (LexerContext, char)>>,
+        position: &Position,
+        cursor: &mut Cursor<impl Iterator<Item = (Position, char)>>,
         first: char,
     ) -> Result<Token, LexerErr> {
         let mut literal = Lexer::consume_number(cursor, first);
@@ -300,7 +300,7 @@ impl Lexer {
                 .map(Token::RealLiteral)
                 .map_err(|_| LexerErr {
                     msg: "Real number cannot be fit in 64 bits",
-                    context: context.clone(),
+                    position: position.clone(),
                     suggestion:
                         "Select a smaller / less precise real number, or a different data type"
                             .to_string(),
@@ -312,7 +312,7 @@ impl Lexer {
             .map(Token::IntegerLiteral)
             .map_err(|_| LexerErr {
                 msg: "Integer too big to fit in 64 bits",
-                context: context.clone(),
+                position: position.clone(),
                 suggestion: "Select a smaller value for the integer, or a different data type"
                     .to_string(),
             })
@@ -325,18 +325,18 @@ impl Lexer {
         let mut row: isize = 1;
         let mut col: isize = 1;
         let stream = source.chars().map(move |c| {
-            let context = LexerContext { row, col };
+            let position = Position { row, col };
             if c == '\n' {
                 row += 1;
                 col = 1;
             } else {
                 col += 1;
             }
-            (context, c)
+            (position, c)
         });
 
         let mut cursor = Cursor::new(stream);
-        while let Some((start_context, c)) = cursor.next() {
+        while let Some((start_position, c)) = cursor.next() {
             let consumer = match c {
                 ' ' | '\t' | '\n' | '\r' => Lexer::consume_whitespace,
                 '0'..='9' => Lexer::consume_numeric,
@@ -349,16 +349,16 @@ impl Lexer {
                 _ => Lexer::consume_nothing_with_error,
             };
 
-            let token = consumer(&start_context, &mut cursor, c)?;
+            let token = consumer(&start_position, &mut cursor, c)?;
 
             // End span is the last char the consumer ate.
-            let end_context = cursor.last.clone();
+            let end_position = cursor.last.clone();
 
             if token != Token::Whitespace {
                 tokens.push(TokenInfo {
                     token,
-                    start: start_context,
-                    end: end_context,
+                    start: start_position,
+                    end: end_position,
                 });
             }
         }
@@ -373,7 +373,7 @@ mod tests {
     #[test]
     fn test_valid() {
         let source = concat!(
-            "return let if else while void int real char bool true false extern as struct impl new",
+            "return let if else while void int real char bool true false extern as struct impl new import",
             " ( ) { } [ ] ; : , + - / % = > < ! . & | ^",
             " == >= <= != || && << >>",
             " 42 3.1415",
@@ -486,6 +486,7 @@ mod tests {
             ("for", Keyword::For),
             ("break", Keyword::Break),
             ("continue", Keyword::Continue),
+            ("import", Keyword::Import),
         ];
         for (source, keyword) in cases {
             let toks = Lexer::lex(source).unwrap();

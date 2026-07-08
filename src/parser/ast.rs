@@ -1,27 +1,38 @@
-use crate::lexer::{Keyword, LexerContext, Symbol, Token};
+use crate::lexer::{Keyword, Position, Symbol, Token};
 use std::fmt;
 use std::hash::{Hash, Hasher};
 
 /// Source range for an AST node
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Span {
-    pub start: LexerContext,
-    pub end: LexerContext,
+    pub source: SourceId,
+    pub start: Position,
+    pub end: Position,
 }
 
 impl Span {
     pub fn to(&self, other: &Span) -> Span {
         Span {
+            source: self.source,
             start: self.start.clone(),
             end: other.end.clone(),
         }
     }
 }
 
-/// Stable identity for an AST node, assigned by the parser.
-/// Used as the key for side tables.
+/// `ANON` is used for the single-source / test path.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct NodeId(pub u32);
+pub struct SourceId(pub u32);
+
+impl SourceId {
+    pub const ANON: SourceId = SourceId(0);
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct NodeId {
+    pub source: SourceId,
+    pub index: u32,
+}
 
 /// An AST node annotated with where it was written and a stable `NodeId`.
 /// Equality, `Hash`, and `Debug` delegate to `node` - the `span` and `id` are
@@ -61,10 +72,17 @@ impl<T: Hash> Hash for Spanned<T> {
 
 #[derive(Debug, Default)]
 pub struct Module {
+    pub imports: Vec<Spanned<Import>>,
     pub structs: Vec<Spanned<Struct>>,
     pub extern_functions: Vec<Spanned<ExternFunction>>,
     pub functions: Vec<Spanned<Function>>,
     pub impls: Vec<Spanned<Impl>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Import {
+    pub path: String,
+    pub alias: Option<String>,
 }
 
 /// Methods for a struct. Each function's first argument is the synthesized

@@ -6,27 +6,36 @@ pub use ast::*;
 pub use errors::*;
 pub use visitor::*;
 
-use crate::lexer::{Keyword, LexerContext, Symbol, Token, TokenInfo};
+use crate::lexer::{Keyword, Position, Symbol, Token, TokenInfo};
 
 pub struct Parser {
     tokens: Vec<TokenInfo>,
-    last_end: LexerContext,
-    next_node_id: u32,
+    last_end: Position,
+    source: SourceId,
+    next_index: u32,
 }
 
 impl Parser {
-    pub fn new(mut tokens: Vec<TokenInfo>) -> Parser {
+    pub fn new(tokens: Vec<TokenInfo>) -> Parser {
+        Parser::with_source(tokens, SourceId::ANON)
+    }
+
+    pub fn with_source(mut tokens: Vec<TokenInfo>, source: SourceId) -> Parser {
         tokens.reverse();
         Parser {
             tokens,
-            last_end: LexerContext::default(),
-            next_node_id: 0,
+            last_end: Position::default(),
+            source,
+            next_index: 0,
         }
     }
 
     fn spanned<T>(&mut self, node: T, span: Span) -> Spanned<T> {
-        let id = NodeId(self.next_node_id);
-        self.next_node_id += 1;
+        let id = NodeId {
+            source: self.source,
+            index: self.next_index,
+        };
+        self.next_index += 1;
         Spanned::new(node, span, id)
     }
 
@@ -46,14 +55,15 @@ impl Parser {
         Ok(token)
     }
 
-    fn current_start(&self) -> LexerContext {
+    fn current_start(&self) -> Position {
         self.tokens
             .last()
             .map_or_else(|| self.last_end.clone(), |t| t.start.clone())
     }
 
-    fn span_from(&self, start: LexerContext) -> Span {
+    fn span_from(&self, start: Position) -> Span {
         Span {
+            source: self.source,
             start,
             end: self.last_end.clone(),
         }
@@ -725,6 +735,7 @@ impl Parser {
     fn parse_typename(&mut self) -> Result<Type, ParseErr> {
         let token = self.pop()?;
         let span = Span {
+            source: self.source,
             start: token.start.clone(),
             end: token.end.clone(),
         };
@@ -762,6 +773,39 @@ impl Parser {
             Token::Symbol(Symbol::Comma),
             Parser::parse_identifier_type_pair,
         )
+    }
+
+    fn parse_import(&mut self) -> Result<Spanned<Import>, ParseErr> {
+        let start = self.current_start();
+        self.pop_token(
+            Token::Keyword(Keyword::Import),
+            "Expected import declaration",
+        )?;
+
+        let token = self.pop()?;
+        let Token::StringLiteral(path) = token.token else {
+            return Err(ParseErr {
+                msg: "Expected a quoted path after import: import \"path.kora\";",
+                token: Some(token),
+            });
+        };
+
+        let alias = if let Ok(TokenInfo {
+            token: Token::Identifier(_),
+            ..
+        }) = self.peek()
+        {
+            Some(self.parse_identifier()?)
+        } else {
+            None
+        };
+
+        self.pop_token(
+            Token::Symbol(Symbol::Semicolon),
+            "Expected semicolon ; to end import declaration",
+        )?;
+        let span = self.span_from(start);
+        Ok(self.spanned(Import { path, alias }, span))
     }
 
     fn parse_extern_function(&mut self) -> Result<Spanned<ExternFunction>, ParseErr> {
@@ -957,6 +1001,9 @@ impl Parser {
         while !self.tokens.is_empty() {
             let token = self.peek()?;
             match token.token {
+                Token::Keyword(Keyword::Import) => {
+                    module.imports.push(self.parse_import()?);
+                }
                 Token::Keyword(Keyword::Struct) => {
                     module.structs.push(self.parse_struct()?);
                 }
@@ -983,7 +1030,7 @@ impl Parser {
 mod tests {
     use crate::{lexer, parser};
 
-    use super::Parser;
+    use super::{Parser, SourceId};
 
     fn test_parser_valid<T: std::fmt::Debug>(
         sources: &[&str],
@@ -1041,6 +1088,43 @@ mod tests {
             ],
             Parser::parse_module,
         );
+    }
+
+    #[test]
+    fn test_parse_import() {
+        test_parser(
+            &[
+                r#"import "util.kora";"#,
+                r#"import "a.kora"; import "b.kora"; int main(){}"#,
+                r#"import "sub/thing.kora"; struct P { x: int }"#,
+                r#"import "sub/util.kora" u; int main(){ return 0; }"#,
+            ],
+            &[
+                r#"import util;"#,
+                r#"import "util.kora""#,
+                r#"import;"#,
+                r#"import "util.kora" 3;"#,
+            ],
+            Parser::parse_module,
+        );
+    }
+
+    #[test]
+    fn test_node_ids_are_unique_per_source() {
+        let toks_a = lexer::Lexer::lex("int a(){ return 1; }").expect("lex");
+        let ma = Parser::with_source(toks_a, SourceId(1))
+            .parse()
+            .expect("parse a");
+
+        let toks_b = lexer::Lexer::lex("int b(){ return 2; }").expect("lex");
+        let mb = Parser::with_source(toks_b, SourceId(2))
+            .parse()
+            .expect("parse b");
+
+        let id_a = ma.functions[0].id;
+        let id_b = mb.functions[0].id;
+        assert_eq!(id_a.index, id_b.index);
+        assert_ne!(id_a, id_b);
     }
 
     #[test]

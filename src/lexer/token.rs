@@ -21,6 +21,7 @@ pub enum Keyword {
     For,
     Break,
     Continue,
+    Import,
 }
 
 impl TryFrom<&str> for Keyword {
@@ -49,6 +50,7 @@ impl TryFrom<&str> for Keyword {
             "for"    => Ok(Keyword::For),
             "break"  => Ok(Keyword::Break),
             "continue" => Ok(Keyword::Continue),
+            "import" => Ok(Keyword::Import),
             _ => Err(()),
         }
     }
@@ -157,7 +159,7 @@ pub enum Token {
 }
 
 #[derive(Debug, Default, Clone, PartialEq)]
-pub struct LexerContext {
+pub struct Position {
     pub col: isize,
     pub row: isize,
 }
@@ -165,6 +167,6 @@ pub struct LexerContext {
 #[derive(Debug, Clone, PartialEq)]
 pub struct TokenInfo {
     pub token: Token,
-    pub start: LexerContext,
-    pub end: LexerContext,
+    pub start: Position,
+    pub end: Position,
 }
