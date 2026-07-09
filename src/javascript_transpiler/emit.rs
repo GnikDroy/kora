@@ -52,6 +52,16 @@ impl JavascriptTranspiler {
             Cast         => panic!(),
         }
     }
+
+    fn operand(&mut self, e: &Spanned<Expression>) {
+        if matches!(e.node, Expression::Binary(..) | Expression::Unary(..)) {
+            self.source.push('(');
+            self.visit_expression(e);
+            self.source.push(')');
+        } else {
+            self.visit_expression(e);
+        }
+    }
 }
 
 impl ASTVisitor for JavascriptTranspiler {
@@ -101,7 +111,6 @@ impl ASTVisitor for JavascriptTranspiler {
                 self.source.push('}');
             }
         }
-        self.source.push('\n');
     }
 
     fn visit_statement(&mut self, stmt: &Spanned<Statement>) {
@@ -200,7 +209,7 @@ impl ASTVisitor for JavascriptTranspiler {
     }
 
     fn visit_boolean_literal(&mut self, b: &bool) {
-        self.source.push_str(&format!("{}", b));
+        self.source.push_str(if *b { "true" } else { "false" });
     }
 
     fn visit_char_literal(&mut self, c: &u8) {
@@ -244,11 +253,11 @@ impl ASTVisitor for JavascriptTranspiler {
 
     fn visit_array(&mut self, exprs: &[Spanned<Expression>]) {
         self.source.push('[');
-        for expr in exprs.iter() {
-            self.source.push('(');
+        for (i, expr) in exprs.iter().enumerate() {
+            if i > 0 {
+                self.source.push(',');
+            }
             self.visit_expression(expr);
-            self.source.push(')');
-            self.source.push(',');
         }
         self.source.push(']');
     }
@@ -276,46 +285,37 @@ impl ASTVisitor for JavascriptTranspiler {
         // `+` on arrays is pure concatenation. JS `+` would string-coerce,
         // so emit the (pure) `.concat`.
         if matches!(op, BinaryOp::Add) && matches!(self.types.get(&left.id), Some(Type::Array(_))) {
-            self.source.push('(');
-            self.visit_expression(left);
-            self.source.push_str(").concat(");
+            self.operand(left);
+            self.source.push_str(".concat(");
             self.visit_expression(right);
             self.source.push(')');
             return;
         }
 
-        // JS `/` is float division. For Kora `int / int` we need
-        // truncation toward zero to match C-style integer semantics.
+        // 64-bit-correct bitwise: compute in BigInt, then wrap back to i64.
+        use BinaryOp::{BitAnd, BitOr, BitXor, ShiftLeft, ShiftRight};
+        if matches!(op, BitAnd | BitOr | BitXor | ShiftLeft | ShiftRight) {
+            self.source.push_str("Number(BigInt.asIntN(64,BigInt(");
+            self.visit_expression(left);
+            self.source.push(')');
+            self.source
+                .push_str(JavascriptTranspiler::repr_binary_operator(op));
+            self.source.push_str("BigInt(");
+            self.visit_expression(right);
+            self.source.push_str(")))");
+            return;
+        }
+
+        // JS `/` is float division; Kora `int / int` truncates toward zero.
         let int_div =
             matches!(op, BinaryOp::Divide) && self.types.get(&left.id) == Some(&Type::Int);
-
-        use BinaryOp::{BitAnd, BitOr, BitXor, ShiftLeft, ShiftRight};
-        let bitwise = matches!(op, BitAnd | BitOr | BitXor | ShiftLeft | ShiftRight);
-
         if int_div {
             self.source.push_str("Math.trunc(");
         }
-        if bitwise {
-            self.source.push_str("Number(BigInt.asIntN(64,BigInt(");
-        } else {
-            self.source.push('(');
-        }
-        self.visit_expression(left);
-        self.source.push(')');
-        if !matches!(op, BinaryOp::Cast) {
-            self.source
-                .push_str(JavascriptTranspiler::repr_binary_operator(op));
-        }
-        if bitwise {
-            self.source.push_str("BigInt(");
-        } else {
-            self.source.push('(');
-        }
-        self.visit_expression(right);
-        self.source.push(')');
-        if bitwise {
-            self.source.push_str("))");
-        }
+        self.operand(left);
+        self.source
+            .push_str(JavascriptTranspiler::repr_binary_operator(op));
+        self.operand(right);
         if int_div {
             self.source.push(')');
         }
@@ -324,9 +324,7 @@ impl ASTVisitor for JavascriptTranspiler {
     fn visit_unary_expression(&mut self, op: &UnaryOp, expr: &Spanned<Expression>) {
         self.source
             .push_str(JavascriptTranspiler::repr_unary_operator(op));
-        self.source.push('(');
-        self.visit_expression(expr);
-        self.source.push(')');
+        self.operand(expr);
     }
 
     fn visit_call_expression(&mut self, expr: &Spanned<Expression>, exprs: &[Spanned<Expression>]) {
@@ -347,9 +345,7 @@ impl ASTVisitor for JavascriptTranspiler {
             let Expression::Access(obj, _) = &expr.node else {
                 unreachable!("array method calls are calls on an access expression");
             };
-            self.source.push('(');
-            self.visit_expression(obj);
-            self.source.push(')');
+            self.operand(obj);
             match method {
                 ArrayMethod::Len => self.source.push_str(".length"),
                 ArrayMethod::Push => {
@@ -393,9 +389,9 @@ impl ASTVisitor for JavascriptTranspiler {
             let Expression::Access(obj, _) = &expr.node else {
                 unreachable!("method calls are calls on an access expression");
             };
-            self.source.push('(');
-            if self.async_fns.contains(&name) {
-                self.source.push_str("await ");
+            let is_async = self.async_fns.contains(&name);
+            if is_async {
+                self.source.push_str("(await ");
             }
             self.source.push_str(&name);
             self.source.push('(');
@@ -404,19 +400,20 @@ impl ASTVisitor for JavascriptTranspiler {
                 self.source.push(',');
                 self.visit_expression(expr);
             }
-            self.source.push_str("))");
+            self.source.push(')');
+            if is_async {
+                self.source.push(')');
+            }
             return;
         }
 
         // Only await calls into functions we know are async.
-        let is_async_call = match &expr.node {
+        let is_async = match &expr.node {
             Expression::Identifier(name) => self.async_fns.contains(name),
             _ => false,
         };
-
-        self.source.push('(');
-        if is_async_call {
-            self.source.push_str("await ");
+        if is_async {
+            self.source.push_str("(await ");
         }
         self.visit_expression(expr);
         self.source.push('(');
@@ -427,7 +424,9 @@ impl ASTVisitor for JavascriptTranspiler {
             self.visit_expression(expr);
         }
         self.source.push(')');
-        self.source.push(')');
+        if is_async {
+            self.source.push(')');
+        }
     }
 
     fn visit_array_index_expression(
@@ -435,12 +434,10 @@ impl ASTVisitor for JavascriptTranspiler {
         left: &Spanned<Expression>,
         right: &Spanned<Expression>,
     ) {
-        self.source.push('(');
-        self.visit_expression(left);
+        self.operand(left);
         self.source.push('[');
         self.visit_expression(right);
         self.source.push(']');
-        self.source.push(')');
     }
 
     fn visit_cast_expression(&mut self, expr: &Spanned<Expression>, typename: &Type) {
@@ -489,11 +486,9 @@ impl ASTVisitor for JavascriptTranspiler {
     }
 
     fn visit_access_expression(&mut self, left: &Spanned<Expression>, member: &str) {
-        self.source.push('(');
-        self.visit_expression(left);
+        self.operand(left);
         self.source.push('.');
         self.source.push_str(member);
-        self.source.push(')');
     }
 
     fn visit_struct_literal(

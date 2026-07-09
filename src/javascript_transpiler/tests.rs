@@ -147,8 +147,8 @@ fn test_methods_emit_mangled_global_functions() {
     assert!(js.contains("function P$get(self)"), "{js}");
     assert!(js.contains("function P$me(self)"), "{js}");
     assert!(js.contains("function P$set(self, v)"), "{js}");
-    assert!(js.contains("(P$set(p,3))"), "{js}");
-    assert!(js.contains("(P$get((P$me(p))))"), "{js}");
+    assert!(js.contains("P$set(p,3)"), "{js}");
+    assert!(js.contains("P$get(P$me(p))"), "{js}");
 }
 
 #[test]
@@ -190,13 +190,13 @@ fn test_array_methods_emit_js_builtins() {
             }
         "#,
     );
-    assert!(js.contains("(a).push(3)"), "{js}");
-    assert!(js.contains("(a).splice(0,0,4)"), "{js}");
-    assert!(js.contains("(a).splice(1,1)[0]"), "{js}");
-    assert!(js.contains("(a).pop()"), "{js}");
-    assert!(js.contains("(a).slice(0,1)"), "{js}");
-    assert!(js.contains("(a).push(..."), "{js}");
-    assert!(js.contains("(a).length"), "{js}");
+    assert!(js.contains("a.push(3)"), "{js}");
+    assert!(js.contains("a.splice(0,0,4)"), "{js}");
+    assert!(js.contains("a.splice(1,1)[0]"), "{js}");
+    assert!(js.contains("a.pop()"), "{js}");
+    assert!(js.contains("a.slice(0,1)"), "{js}");
+    assert!(js.contains("a.push(..."), "{js}");
+    assert!(js.contains("a.length"), "{js}");
 }
 
 #[test]
@@ -216,7 +216,7 @@ fn test_copy_and_array_plus_emit() {
     );
     assert!(js.contains("Array.from(a)"), "{js}");
     assert!(js.contains("({...p})") || js.contains("{...p}"), "{js}");
-    assert!(js.contains(").concat("), "{js}");
+    assert!(js.contains("a.concat(b)"), "{js}");
     assert!(js.contains("({x:1})") || js.contains("{x:"), "{js}");
 }
 
@@ -235,9 +235,9 @@ fn test_array_equality_emits_structural_compare() {
     );
     assert!(js.contains("__kora_runtime_equality_intrinsic("), "{js}");
     assert!(js.contains("!__kora_runtime_equality_intrinsic("), "{js}");
-    assert!(js.contains("('a')"), "{js}");
+    assert!(js.contains("s[0]==='a'"), "{js}");
     assert!(
-        !js.contains("__kora_runtime_equality_intrinsic(('a')"),
+        !js.contains("__kora_runtime_equality_intrinsic(s[0]"),
         "{js}"
     );
 }
