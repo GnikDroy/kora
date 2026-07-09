@@ -392,7 +392,7 @@ mod tests {
     #[test]
     fn test_invalid() {
         let sources = [
-            "?",
+            "@",
             "'字'",
             "'a",
             "'\\'",
@@ -447,7 +447,7 @@ mod tests {
 
     #[test]
     fn test_error_display_includes_position_and_suggestion() {
-        let err = Lexer::lex("?").expect_err("expected lex error");
+        let err = Lexer::lex("@").expect_err("expected lex error");
         let rendered = err.to_string();
         assert!(rendered.contains("1:1"), "rendered: {}", rendered);
         assert!(rendered.contains("quotes"), "rendered: {}", rendered);

@@ -296,6 +296,33 @@ fn test_scalar_arrays_are_zero_filled() {
 }
 
 #[test]
+fn test_optionals_emit() {
+    let js = transpile(
+        r#"
+            struct Node { value: int, next: Node? }
+            int main() {
+                let x: int? = 5;
+                let y: int? = none;
+                let z = x!;
+                if (y == none) { return 1; }
+                let n = new Node { value: 1, next: none };
+                if (n.next != none) { return n.next!.value; }
+                return z;
+            }
+        "#,
+    );
+    // `none` is null; force-unwrap goes through the runtime helper.
+    assert!(js.contains("let y = null"), "{js}");
+    assert!(js.contains("__kora_runtime_unwrap(x)"), "{js}");
+    assert!(js.contains("__kora_runtime_unwrap(n.next).value"), "{js}");
+    // `== none` / `!= none` use loose equality so undefined fields match.
+    assert!(js.contains("y==null"), "{js}");
+    assert!(js.contains("n.next!=null"), "{js}");
+    // The unwrap helper is appended to the prelude.
+    assert!(js.contains("function __kora_runtime_unwrap("), "{js}");
+}
+
+#[test]
 fn transpiles_ui_examples() {
     let examples: &[(&str, &str)] = &[
         ("mandelbrot", include_str!("../../res/mandelbrot.kora")),

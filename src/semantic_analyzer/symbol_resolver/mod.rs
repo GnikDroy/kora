@@ -21,7 +21,7 @@ pub(super) fn check_typename(table: &SymbolTable, errors: &mut Vec<TypeErr>, ty:
                 });
             }
         }
-        Type::Array(inner) => check_typename(table, errors, inner),
+        Type::Array(inner) | Type::Optional(inner) => check_typename(table, errors, inner),
         Type::Function(return_type, args) => {
             if let Some(return_type) = return_type {
                 check_typename(table, errors, return_type);

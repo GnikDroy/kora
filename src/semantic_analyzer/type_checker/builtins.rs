@@ -118,13 +118,25 @@ pub fn is_cast_possible(from: &Type, to: &Type) -> bool {
 pub fn is_comparable(ty: &Type) -> bool {
     match ty {
         Type::Int | Type::Real | Type::Bool | Type::Char => true,
-        Type::Array(inner) => is_comparable(inner),
+        Type::Array(inner) | Type::Optional(inner) => is_comparable(inner),
         Type::Struct(_) | Type::Function(_, _) => false,
     }
 }
 
 pub fn is_scalar(ty: &Type) -> bool {
     matches!(ty, Type::Int | Type::Real | Type::Bool | Type::Char)
+}
+
+pub fn is_optional(ty: &Type) -> bool {
+    matches!(ty, Type::Optional(_))
+}
+
+/// The inner type of an optional, or the type itself when not optional.
+pub fn strip_optional(ty: &Type) -> &Type {
+    match ty {
+        Type::Optional(inner) => inner,
+        _ => ty,
+    }
 }
 
 #[cfg(test)]

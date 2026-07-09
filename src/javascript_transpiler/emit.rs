@@ -4,7 +4,7 @@ use super::mangle::mangle;
 use crate::parser::*;
 use crate::semantic_analyzer::ArrayMethod;
 
-const EQUALITY_INTRINSIC: &str = "\
+const INTRINSICS: &str = "\
 function __kora_runtime_equality_intrinsic(a, b) {
     if (a === b) return true;
     if (!Array.isArray(a) || !Array.isArray(b)) return a === b;
@@ -13,6 +13,11 @@ function __kora_runtime_equality_intrinsic(a, b) {
         if (!__kora_runtime_equality_intrinsic(a[i], b[i])) return false;
     }
     return true;
+}
+
+function __kora_runtime_unwrap(x) {
+    if (x === null || x === undefined) throw new Error(\"force-unwrapped a none value\");
+    return x;
 }
 ";
 
@@ -68,7 +73,7 @@ impl ASTVisitor for JavascriptTranspiler {
     fn visit_module(&mut self, module: &Module) {
         walk_module(self, module);
         self.source.push('\n');
-        self.source.push_str(EQUALITY_INTRINSIC);
+        self.source.push_str(INTRINSICS);
     }
 
     fn visit_extern_function(&mut self, _: &Spanned<ExternFunction>) {}
@@ -247,6 +252,16 @@ impl ASTVisitor for JavascriptTranspiler {
         self.source.push(')');
     }
 
+    fn visit_none_literal(&mut self) {
+        self.source.push_str("null");
+    }
+
+    fn visit_unwrap_expression(&mut self, expr: &Spanned<Expression>) {
+        self.source.push_str("__kora_runtime_unwrap(");
+        self.visit_expression(expr);
+        self.source.push(')');
+    }
+
     fn visit_identifier(&mut self, s: &String) {
         self.source.push_str(s.as_str());
     }
@@ -268,6 +283,25 @@ impl ASTVisitor for JavascriptTranspiler {
         op: &BinaryOp,
         right: &Spanned<Expression>,
     ) {
+        // Optional comparison: `x == none`, `x != none`, or two optionals.
+        // Loose `==`/`!=` so a `none` (null) matches an uninitialized field
+        // (undefined) from a bare `new Struct`.
+        if matches!(op, BinaryOp::Equality | BinaryOp::NotEquality)
+            && (matches!(left.node, Expression::NoneLiteral)
+                || matches!(right.node, Expression::NoneLiteral)
+                || matches!(self.types.get(&left.id), Some(Type::Optional(_)))
+                || matches!(self.types.get(&right.id), Some(Type::Optional(_))))
+        {
+            self.operand(left);
+            self.source.push_str(if matches!(op, BinaryOp::Equality) {
+                "=="
+            } else {
+                "!="
+            });
+            self.operand(right);
+            return;
+        }
+
         if matches!(op, BinaryOp::Equality | BinaryOp::NotEquality)
             && matches!(self.types.get(&left.id), Some(Type::Array(_)))
         {

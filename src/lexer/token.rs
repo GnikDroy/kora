@@ -22,6 +22,7 @@ pub enum Keyword {
     Break,
     Continue,
     Import,
+    None,
 }
 
 impl TryFrom<&str> for Keyword {
@@ -51,6 +52,7 @@ impl TryFrom<&str> for Keyword {
             "break"  => Ok(Keyword::Break),
             "continue" => Ok(Keyword::Continue),
             "import" => Ok(Keyword::Import),
+            "none"   => Ok(Keyword::None),
             _ => Err(()),
         }
     }
@@ -88,6 +90,7 @@ pub enum Symbol {
     LessLess,
     GreaterGreater,
     Dot,
+    Question,
 }
 
 impl TryFrom<char> for Symbol {
@@ -117,6 +120,7 @@ impl TryFrom<char> for Symbol {
             '&' => Ok(Ampersand),
             '^' => Ok(Caret),
             '.' => Ok(Dot),
+            '?' => Ok(Question),
             _ => Err(()),
         }
     }

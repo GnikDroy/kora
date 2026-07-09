@@ -39,14 +39,34 @@ impl TypeChecker<'_> {
         right: &Spanned<Expression>,
         span: &Span,
     ) -> Result<Type, TypeErr> {
-        let left_type = self.get_expression_type(left)?;
-        let right_type = if matches!(op, BinaryOp::Assign) {
-            self.get_expression_type_expecting(right, &left_type)?
-        } else {
-            self.get_expression_type(right)?
-        };
+        let is_equality = matches!(op, BinaryOp::Equality | BinaryOp::NotEquality);
+        let left_none = matches!(left.node, Expression::NoneLiteral);
+        let right_none = matches!(right.node, Expression::NoneLiteral);
+        if is_equality && (left_none || right_none) {
+            if left_none && right_none {
+                return Err(TypeErr {
+                    msg: "`none` cannot be compared with `none`",
+                    span: span.clone(),
+                });
+            }
+            let other = if left_none { right } else { left };
+            let other_type = self.get_expression_type(other)?;
+            if let Type::Optional(_) = other_type {
+                self.types
+                    .insert(if left_none { left.id } else { right.id }, other_type);
+                return Ok(Type::Bool);
+            }
+            return Err(TypeErr {
+                msg: "`none` can only be compared against an optional (T?)",
+                span: span.clone(),
+            });
+        }
 
+        let left_type = self.get_expression_type(left)?;
+
+        // This assign block has to appear before right type is computed.
         if matches!(op, BinaryOp::Assign) {
+            let right_type = self.get_expression_type_expecting(right, &left_type)?;
             if !self.is_assignable(left) || matches!(left_type, Type::Function(_, _)) {
                 return Err(TypeErr {
                     msg: "LHS of assign expression is not assignable",
@@ -60,6 +80,22 @@ impl TypeChecker<'_> {
                 });
             }
             return Ok(left_type);
+        }
+
+        let right_type = self.get_expression_type(right)?;
+
+        // Equality for optionals
+        if is_equality && (builtins::is_optional(&left_type) || builtins::is_optional(&right_type))
+        {
+            let l = builtins::strip_optional(&left_type);
+            let r = builtins::strip_optional(&right_type);
+            if l == r && builtins::is_comparable(l) {
+                return Ok(Type::Bool);
+            }
+            return Err(TypeErr {
+                msg: "Optionals can only be compared with a matching, comparable type",
+                span: span.clone(),
+            });
         }
 
         builtins::binary_result(&left_type, op, &right_type).ok_or_else(|| TypeErr {
@@ -172,8 +208,7 @@ impl TypeChecker<'_> {
             return self.get_copy_intrinsic_type(args, span).map(Some);
         }
 
-        // Method call `obj.method(...)`. Skipped when the access is a
-        // module-qualified reference, which the resolver bound to a symbol.
+        // Method call `obj.method(...)`. Skipped when the access is a module.
         if let Expression::Access(obj, member) = &f.node
             && self.symbols.symbol_id_of_use(f.id).is_none()
         {
@@ -368,6 +403,17 @@ impl TypeChecker<'_> {
             CharLiteral(_) => Ok(Type::Char),
             StringLiteral(_) => Ok(Type::Array(Box::new(Type::Char))),
             BoolLiteral(_) => Ok(Type::Bool),
+            NoneLiteral => Err(TypeErr {
+                msg: "Cannot infer the type of `none`; give the target an optional type T?",
+                span: span.clone(),
+            }),
+            Unwrap(inner) => match self.get_expression_type(inner)? {
+                Type::Optional(ty) => Ok(*ty),
+                _ => Err(TypeErr {
+                    msg: "`!` force-unwraps an optional (T?); this operand is not optional",
+                    span: span.clone(),
+                }),
+            },
             Array(exprs) => self.get_array_type(exprs, span),
             Identifier(_) => {
                 let id = self.symbols.symbol_id_of_use(expr.id).ok_or(TypeErr {
@@ -433,6 +479,19 @@ impl TypeChecker<'_> {
         expr: &Spanned<Expression>,
         expected: &Type,
     ) -> Result<Type, TypeErr> {
+        // Optionals wrap implicity, but unwrap explicity with !
+        if let Type::Optional(inner) = expected {
+            if matches!(&expr.node, Expression::NoneLiteral) {
+                self.types.insert(expr.id, expected.clone());
+                return Ok(expected.clone());
+            }
+            let actual = self.get_expression_type_expecting(expr, inner)?;
+            if actual == **inner || actual == *expected {
+                return Ok(expected.clone());
+            }
+            return Ok(actual);
+        }
+
         if let Expression::Array(elems) = &expr.node
             && let Type::Array(elem_type) = expected
         {
@@ -1001,6 +1060,84 @@ mod tests {
             (
                 r#"int push(x: int) { return x; } int main() { return push(3); }"#,
                 true,
+            ),
+        ]);
+    }
+
+    #[test]
+    fn test_optionals() {
+        check_cases(&[
+            // A T or `none` implicitly satisfies a T? slot.
+            (r#"int main() { let x: int? = 5; return 0; }"#, true),
+            (r#"int main() { let x: int? = none; return 0; }"#, true),
+            (
+                r#"int main() { let x: int? = 5; x = none; x = 7; return 0; }"#,
+                true,
+            ),
+            // Force-unwrap yields the inner type.
+            (
+                r#"int main() { let x: int? = 5; let y: int = x!; return y; }"#,
+                true,
+            ),
+            // `== none` / `!= none` on an optional.
+            (
+                r#"int main() { let x: int? = none; if (x == none) { return 1; } if (x != none) { return 2; } return 0; }"#,
+                true,
+            ),
+            // Same-typed optional comparison, and T? vs T.
+            (
+                r#"int main() { let a: int? = 1; let b: int? = 2; if (a == b) { return 1; } if (a == 3) { return 2; } return 0; }"#,
+                true,
+            ),
+            // Optional struct fields, including a recursive linked list.
+            (
+                r#"struct Node { value: int, next: Node? }
+                   int main() { let n = new Node { value: 1, next: none }; return n.value; }"#,
+                true,
+            ),
+            (
+                r#"struct Node { value: int, next: Node? }
+                   int head(n: Node) { if (n.next != none) { return n.next!.value; } return n.value; }
+                   int main() { return 0; }"#,
+                true,
+            ),
+            // Optional return type accepts a value or none.
+            (
+                r#"int? find(k: int) { if (k > 0) { return k; } return none; }
+                   int main() { let r = find(2); if (r != none) { return r!; } return 0; }"#,
+                true,
+            ),
+            // Optional array element and optional-of-array.
+            (
+                r#"int main() { let xs: [int?] = [1, none, 3]; return 0; }"#,
+                true,
+            ),
+            (r#"int main() { let a: [int]? = none; return 0; }"#, true),
+            (r#"int main() { let a: [int]? = []; return 0; }"#, true),
+            // `none` needs an expected optional type.
+            (r#"int main() { let x = none; return 0; }"#, false),
+            (r#"int main() { let x: int = none; return 0; }"#, false),
+            // Unwrapping a non-optional is an error.
+            (r#"int main() { let x: int = 5; return x!; }"#, false),
+            // T? does not implicitly narrow to T.
+            (
+                r#"int main() { let x: int? = 5; let y: int = x; return y; }"#,
+                false,
+            ),
+            // `none` only compares against optionals; not two nones.
+            (
+                r#"int main() { let x: int = 5; if (x == none) { return 1; } return 0; }"#,
+                false,
+            ),
+            (r#"int main() { if (none == none) { } return 0; }"#, false),
+            // `if (none)` — none is not a bool.
+            (r#"int main() { if (none) { } return 0; }"#, false),
+            // Wrong inner type against a T? slot.
+            (r#"int main() { let x: int? = true; return 0; }"#, false),
+            // Comparing optionals of different inner types.
+            (
+                r#"int main() { let a: int? = 1; let b: real? = 2.0; if (a == b) { } return 0; }"#,
+                false,
             ),
         ]);
     }

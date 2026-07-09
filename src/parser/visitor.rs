@@ -15,6 +15,12 @@ pub trait ASTVisitor: Sized {
 
     fn visit_string_literal(&mut self, _: &String) {}
 
+    fn visit_none_literal(&mut self) {}
+
+    fn visit_unwrap_expression(&mut self, expr: &Spanned<Expression>) {
+        walk_unwrap_expression(self, expr);
+    }
+
     fn visit_identifier(&mut self, _: &String) {}
 
     fn visit_typename(&mut self, _: &Type) {}
@@ -215,6 +221,10 @@ pub fn walk_construct_expression<V: ASTVisitor>(
     }
 }
 
+pub fn walk_unwrap_expression<V: ASTVisitor>(visitor: &mut V, expr: &Spanned<Expression>) {
+    visitor.visit_expression(expr);
+}
+
 pub fn walk_unary_expression<V: ASTVisitor>(
     visitor: &mut V,
     _: &UnaryOp,
@@ -249,6 +259,12 @@ pub fn walk_expression<V: ASTVisitor>(visitor: &mut V, expr: &Spanned<Expression
         }
         Expression::RealLiteral(r) => {
             visitor.visit_real_literal(r);
+        }
+        Expression::NoneLiteral => {
+            visitor.visit_none_literal();
+        }
+        Expression::Unwrap(inner) => {
+            visitor.visit_unwrap_expression(inner);
         }
         Expression::Array(exprs) => {
             visitor.visit_array(exprs);

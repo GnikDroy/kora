@@ -140,6 +140,17 @@ impl Parser {
         None
     }
 
+    fn parselet_none_literal(&mut self) -> Option<Result<Expression, ParseErr>> {
+        let token = self.peek();
+        if let Ok(token) = token
+            && matches!(token.token, Token::Keyword(Keyword::None))
+        {
+            self.pop().unwrap();
+            return Some(Ok(Expression::NoneLiteral));
+        }
+        None
+    }
+
     fn parselet_real_literal(&mut self) -> Option<Result<Expression, ParseErr>> {
         let token = self.peek();
         if let Ok(token) = token
@@ -276,6 +287,7 @@ impl Parser {
             Parser::parselet_string_literal,
             Parser::parselet_boolean_literal,
             Parser::parselet_real_literal,
+            Parser::parselet_none_literal,
             Parser::parselet_identifier,
             Parser::parselet_parenthesized_expression,
             Parser::parselet_array_literal,
@@ -349,6 +361,15 @@ impl Parser {
         Ok(Expression::Access(Box::new(term), member))
     }
 
+    fn parselet_infix_unwrap(
+        &mut self,
+        _: InfixOperator,
+        term: Spanned<Expression>,
+    ) -> Result<Expression, ParseErr> {
+        self.pop().unwrap();
+        Ok(Expression::Unwrap(Box::new(term)))
+    }
+
     fn parselet_infix_operators(
         &mut self,
         op: InfixOperator,
@@ -360,6 +381,7 @@ impl Parser {
             InfixOperator::FunctionCall => self.parselet_infix_function_call(op, term),
             InfixOperator::ArrayIndex => self.parselet_infix_array_index(op, term),
             InfixOperator::Access => self.parselet_infix_access(op, term),
+            InfixOperator::Unwrap => self.parselet_infix_unwrap(op, term),
         }
     }
 
@@ -739,7 +761,7 @@ impl Parser {
             start: token.start.clone(),
             end: token.end.clone(),
         };
-        match token.token {
+        let base = match token.token {
             Token::Keyword(Keyword::Int) => Ok(Type::Int),
             Token::Keyword(Keyword::Real) => Ok(Type::Real),
             Token::Keyword(Keyword::Char) => Ok(Type::Char),
@@ -754,6 +776,23 @@ impl Parser {
                 msg: "Expected type declaration: <type> | [<type>]",
                 token: Some(token.clone()),
             }),
+        }?;
+
+        if let Ok(next) = self.peek()
+            && matches!(next.token, Token::Symbol(Symbol::Question))
+        {
+            self.pop()?;
+            if let Ok(next) = self.peek()
+                && matches!(next.token, Token::Symbol(Symbol::Question))
+            {
+                return Err(ParseErr {
+                    msg: "Nested optionals are not supported: write T?, not T??",
+                    token: Some(self.peek()?.clone()),
+                });
+            }
+            Ok(Type::Optional(Box::new(base)))
+        } else {
+            Ok(base)
         }
     }
 
@@ -1209,9 +1248,37 @@ mod tests {
                 "custom_type",
                 "string",
                 "[string]",
+                "int?",
+                "[int]?",
+                "[int?]",
+                "Node?",
+                "string?",
             ],
-            &["", "2000", "{0}", "[int", "]", "void", "[void]"],
+            &[
+                "", "2000", "{0}", "[int", "]", "void", "[void]", "int??", "?int",
+            ],
             Parser::parse_typename,
+        );
+    }
+
+    #[test]
+    fn test_parse_optionals() {
+        test_parser(
+            &[
+                "none",
+                "x!",
+                "a.b!",
+                "x!.next",
+                "arr[0]!",
+                "f()!",
+                "x == none",
+                "node.next != none",
+                "-x!",
+                "x!!",
+                "!x",
+            ],
+            &["!", "== none"],
+            Parser::parse_expression,
         );
     }
 

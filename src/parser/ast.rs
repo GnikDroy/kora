@@ -150,6 +150,7 @@ pub enum Type {
     Bool,
     Char,
     Array(Box<Type>),
+    Optional(Box<Type>),
     Struct(Spanned<String>),
     Function(Option<Box<Type>>, Vec<Type>),
 }
@@ -184,6 +185,8 @@ pub enum Expression {
     StringLiteral(String),
     BoolLiteral(bool),
     RealLiteral(f64),
+    NoneLiteral,
+    Unwrap(Box<Spanned<Expression>>),
     Array(Vec<Spanned<Expression>>),
     Identifier(String),
     Binary(Box<Spanned<Expression>>, BinaryOp, Box<Spanned<Expression>>),
@@ -247,6 +250,7 @@ pub enum InfixOperator {
     FunctionCall,
     ArrayIndex,
     Access,
+    Unwrap,
 }
 
 impl TryFrom<Token> for InfixOperator {
@@ -279,6 +283,7 @@ impl TryFrom<Token> for InfixOperator {
             Token::Symbol(Symbol::LeftParen)          => Ok(FunctionCall),
             Token::Symbol(Symbol::LeftBracket)        => Ok(ArrayIndex),
             Token::Symbol(Symbol::Dot)                => Ok(Access),
+            Token::Symbol(Symbol::Exclam)             => Ok(Unwrap),
             _ => Err(()),
         }
     }
@@ -305,7 +310,10 @@ impl InfixOperator {
                 | BinaryOp::ShiftRight => 14,
                 BinaryOp::Cast => 16,
             },
-            InfixOperator::FunctionCall | InfixOperator::ArrayIndex | InfixOperator::Access => 202,
+            InfixOperator::FunctionCall
+            | InfixOperator::ArrayIndex
+            | InfixOperator::Access
+            | InfixOperator::Unwrap => 202,
         }
     }
 
@@ -333,7 +341,10 @@ impl InfixOperator {
                 | BinaryOp::ShiftRight => true,
                 BinaryOp::Assign => false,
             },
-            InfixOperator::FunctionCall | InfixOperator::ArrayIndex | InfixOperator::Access => true,
+            InfixOperator::FunctionCall
+            | InfixOperator::ArrayIndex
+            | InfixOperator::Access
+            | InfixOperator::Unwrap => true,
         }
     }
 
