@@ -6,6 +6,8 @@ mod parser;
 mod semantic_analyzer;
 
 use std::collections::HashMap;
+use std::error::Error;
+use std::fmt;
 use std::path::Path;
 
 use loader::{LoadedProgram, Loader};
@@ -31,6 +33,28 @@ pub enum CompileErr {
     Lex(LexerErr),
     Parse(ParseErr),
     Semantic(TypeErr),
+}
+
+impl Error for CompileErr {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Load(err) => Some(err),
+            Self::Lex(err) => Some(err),
+            Self::Parse(err) => Some(err),
+            Self::Semantic(err) => Some(err),
+        }
+    }
+}
+
+impl fmt::Display for CompileErr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CompileErr::Load(err) => write!(f, "{err}"),
+            CompileErr::Lex(err) => write!(f, "{err}"),
+            CompileErr::Parse(err) => write!(f, "{err}"),
+            CompileErr::Semantic(err) => write!(f, "{err}"),
+        }
+    }
 }
 
 /// Compiler for the frontend
