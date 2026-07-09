@@ -152,3 +152,118 @@ impl<'a> GlobalsCollector<'a> {
         scope.insert(name, id);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::super::test_support::*;
+    use crate::parser::Type;
+
+    #[test]
+    fn test_collects_struct_members() {
+        let symbols =
+            resolve(r#"struct Point { x: int, y: [char] } int main() { return 0; }"#).expect("ok");
+        assert!(symbols.struct_exists("Point"));
+        assert_eq!(symbols.struct_member("Point", "x"), Some(Type::Int));
+        assert_eq!(
+            symbols.struct_member("Point", "y"),
+            Some(Type::Array(Box::new(Type::Char)))
+        );
+        assert_eq!(symbols.struct_member("Point", "z"), None);
+        assert_eq!(symbols.struct_member("Missing", "x"), None);
+    }
+
+    #[test]
+    fn test_collects_methods() {
+        let symbols = resolve(
+            r#"
+            struct P { x: int }
+            impl P { int get(self) { return self.x; } }
+            impl P { void set(self, v: int) { self.x = v; } }
+            "#,
+        )
+        .expect("ok");
+        let get = symbols.struct_method("P", "get").expect("get");
+        assert_eq!(symbols.symbol(get).name, "get");
+        assert!(symbols.struct_method("P", "set").is_some());
+        assert!(symbols.struct_method("P", "missing").is_none());
+        assert!(symbols.struct_method("Q", "get").is_none());
+    }
+
+    #[test]
+    fn test_top_level_symbols_are_bare_and_distinct() {
+        let program = load_program(
+            "main.kora",
+            vec![
+                (
+                    "main.kora",
+                    r#"import "a.kora"; import "b.kora"; int main() { return 0; }"#,
+                ),
+                ("a.kora", "int helper() { return 1; }"),
+                ("b.kora", "int helper() { return 2; }"),
+            ],
+        );
+        let symbols = resolve_program(&program).expect("ok");
+        let a = source_module(&program, "a.kora").module.functions[0].id;
+        let b = source_module(&program, "b.kora").module.functions[0].id;
+        let a_id = symbols.symbol_id_of_declaration(a).unwrap();
+        let b_id = symbols.symbol_id_of_declaration(b).unwrap();
+        assert_eq!(symbols.symbol(a_id).name, "helper");
+        assert_eq!(symbols.symbol(b_id).name, "helper");
+        assert_ne!(a_id, b_id);
+    }
+
+    #[test]
+    fn test_rejects_duplicate_globals() {
+        let cases = [
+            r#"int f() { return 0; } int f() { return 1; } int main() { return 0; }"#,
+            r#"extern int g(a: int); int g(a: int) { return a; } int main() { return 0; }"#,
+            r#"struct P { x: int } struct P { y: int } int main() { return 0; }"#,
+            r#"struct P { x: int, x: int } int main() { return 0; }"#,
+        ];
+        for source in cases {
+            assert_eq!(resolve(source).expect_err(source).len(), 1, "{source}");
+        }
+    }
+
+    #[test]
+    fn test_rejects_intrinsic_global() {
+        for source in [
+            r#"int copy(a: int) { return a; } int main() { return 0; }"#,
+            r#"extern int copy(a: int); int main() { return 0; }"#,
+        ] {
+            let errors = resolve(source).expect_err(source);
+            assert!(
+                errors.iter().any(|e| e.msg.contains("intrinsic")),
+                "{source}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_rejects_undefined_type_in_member() {
+        let source = r#"struct S { a: [Undefined], b: int } int main() { return 0; }"#;
+        assert_eq!(resolve(source).expect_err("undefined type").len(), 1);
+    }
+
+    #[test]
+    fn test_impl_errors() {
+        for source in [
+            "impl Missing { int f(self) { return 1; } }",
+            "struct P { age: int } impl P { int age(self) { return self.age; } }",
+            "struct P { x: int } impl P { int f(self) { return 1; } int f(self) { return 2; } }",
+        ] {
+            assert!(resolve(source).is_err(), "{source}");
+        }
+    }
+
+    #[test]
+    fn test_forward_and_self_referential_structs_resolve() {
+        let source = r#"
+            struct Node { next: Node, value: int }
+            struct A { b: B }
+            struct B { n: int }
+            int main() { return 0; }
+        "#;
+        assert!(resolve(source).is_ok());
+    }
+}

@@ -34,3 +34,43 @@ pub(super) fn check_typename(table: &SymbolTable, errors: &mut Vec<TypeErr>, ty:
         _ => {}
     }
 }
+
+#[cfg(test)]
+pub(super) mod test_support {
+    use std::collections::HashMap;
+    use std::path::Path;
+
+    use super::{Resolver, SymbolTable, TypeErr};
+    use crate::loader::{LoadedModule, LoadedProgram, Loader};
+    use crate::{lexer, parser};
+
+    pub(super) fn resolve(source: &str) -> Result<SymbolTable, Vec<TypeErr>> {
+        let tokens = lexer::Lexer::lex(source).expect("lex");
+        let module = parser::Parser::new(tokens).parse().expect("parse");
+        Resolver::new().resolve(&[&module])
+    }
+
+    pub(super) fn resolve_program(program: &LoadedProgram) -> Result<SymbolTable, Vec<TypeErr>> {
+        Resolver::new().resolve_program(program)
+    }
+
+    pub(super) fn load_program(
+        entry: &str,
+        files: Vec<(&'static str, &'static str)>,
+    ) -> LoadedProgram {
+        let map: HashMap<String, String> = files
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        let provider = move |p: &Path| p.to_str().and_then(|s| map.get(s)).cloned();
+        Loader::new(&provider).load(entry).expect("load")
+    }
+
+    pub(super) fn source_module<'a>(program: &'a LoadedProgram, path: &str) -> &'a LoadedModule {
+        program
+            .modules
+            .iter()
+            .find(|m| program.sources[m.id.0 as usize].path.to_str() == Some(path))
+            .expect("module present")
+    }
+}

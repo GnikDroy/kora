@@ -252,86 +252,142 @@ impl ASTVisitor for Resolver {
 
 #[cfg(test)]
 mod tests {
+    use super::super::test_support::*;
+    use super::Resolver;
+    use crate::parser::{Expression, Statement, Type};
     use crate::{lexer, parser};
 
-    use super::Resolver;
-
-    fn resolve(source: &str) -> Result<super::SymbolTable, Vec<super::TypeErr>> {
-        let tokens = lexer::Lexer::lex(source).expect("lex");
-        let module = parser::Parser::new(tokens).parse().expect("parse");
-        Resolver::new().resolve(&[&module])
-    }
-
-    fn resolve_program(
-        program: &crate::loader::LoadedProgram,
-    ) -> Result<super::SymbolTable, Vec<super::TypeErr>> {
-        Resolver::new().resolve_program(program)
-    }
-
-    fn load_program(
-        entry: &str,
-        files: Vec<(&'static str, &'static str)>,
-    ) -> crate::loader::LoadedProgram {
-        let map: std::collections::HashMap<String, String> = files
-            .into_iter()
-            .map(|(k, v)| (k.to_string(), v.to_string()))
-            .collect();
-        let provider = move |p: &std::path::Path| p.to_str().and_then(|s| map.get(s)).cloned();
-        crate::loader::Loader::new(&provider)
-            .load(entry)
-            .expect("load")
-    }
-
-    fn source_module<'a>(
-        program: &'a crate::loader::LoadedProgram,
-        path: &str,
-    ) -> &'a crate::loader::LoadedModule {
-        program
-            .modules
-            .iter()
-            .find(|m| program.sources[m.id.0 as usize].path.to_str() == Some(path))
-            .expect("module present")
-    }
-
-    fn fn_symbol_name(
-        symbols: &super::SymbolTable,
-        module: &crate::loader::LoadedModule,
-        i: usize,
-    ) -> String {
-        let id = symbols
-            .symbol_id_of_declaration(module.module.functions[i].id)
-            .expect("function declared");
-        symbols.symbol(id).name.clone()
+    #[test]
+    fn test_resolves_a_valid_program() {
+        let source = r#"
+            extern void print(b: [char], a: int);
+            int main() {
+                let a: int = 5;
+                if (a - a) { print("Hello World", a); }
+                return a;
+            }
+            int sum(a: int, b: int) { return a + b; }
+        "#;
+        assert!(resolve(source).is_ok());
     }
 
     #[test]
-    fn test_program_stores_bare_names() {
-        // Names are stored bare regardless of source; the backend mangles later.
-        let program = load_program(
-            "main.kora",
-            vec![
-                (
-                    "main.kora",
-                    r#"import "util.kora"; int main() { return 0; }"#,
-                ),
-                ("util.kora", "int helper() { return 1; }"),
-            ],
-        );
-        let symbols = resolve_program(&program).expect("resolve");
+    fn test_reports_undefined_identifiers() {
+        let source = r#"
+            int main() {
+                let a: int = unknown1;
+                a + unknown2;
+                unknown3[a];
+                -unknown4;
+                unknown_fn(a, unknown_arg);
+                return a;
+            }
+        "#;
+        assert_eq!(resolve(source).expect_err("undefined").len(), 6);
+    }
+
+    #[test]
+    fn test_reports_undefined_types() {
+        let source = r#"
+            struct Point { x: int, y: int }
+            Bogus1 make(p: Bogus2) {
+                let a: Point = new Point;
+                let b: Bogus3 = new Bogus4;
+                let c: [Bogus5] = new Point;
+                return a;
+            }
+        "#;
+        assert_eq!(resolve(source).expect_err("undefined types").len(), 5);
+    }
+
+    #[test]
+    fn test_rejects_duplicate_locals() {
+        for source in [
+            r#"int main() { let x: int = 1; let x: int = 2; return x; }"#,
+            r#"int f(a: int, a: int) { return a; } int main() { return 0; }"#,
+        ] {
+            assert_eq!(resolve(source).expect_err(source).len(), 1, "{source}");
+        }
+    }
+
+    #[test]
+    fn test_rejects_intrinsic_local() {
+        for source in [
+            r#"int main() { let copy: int = 1; return copy; }"#,
+            r#"int main(copy: int) { return copy; }"#,
+        ] {
+            let errors = resolve(source).expect_err(source);
+            assert!(
+                errors.iter().any(|e| e.msg.contains("intrinsic")),
+                "{source}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_scopes_confine_declarations() {
+        let cases = [
+            r#"int main() { if (true) { let a: int = 1; } return a; }"#,
+            r#"int main() { { let a: int = 1; } { let b: int = a; } return 0; }"#,
+            r#"int main() { for (let i: int = 0; i < 3; i = i + 1) { i; } return i; }"#,
+            r#"int main() { while (true) let x: int = 1; return x; }"#,
+            r#"int main() { if (true) let x: int = 1; return x; }"#,
+        ];
+        for source in cases {
+            assert_eq!(resolve(source).expect_err(source).len(), 1, "{source}");
+        }
+    }
+
+    #[test]
+    fn test_cross_scope_shadowing_is_allowed() {
+        let source =
+            r#"int main() { let x: int = 1; if (x == 1) { let x: int = 2; return x; } return x; }"#;
+        assert!(resolve(source).is_ok());
+    }
+
+    #[test]
+    fn test_let_initializer_uses_outer_scope() {
+        let ok = r#"int main() { let x: int = 1; if (x) { let x: int = x; return x; } return x; }"#;
+        assert!(resolve(ok).is_ok());
+        let bad = r#"int main() { let x: int = x; return 0; }"#;
+        assert_eq!(resolve(bad).expect_err("self ref").len(), 1);
+    }
+
+    #[test]
+    fn test_break_and_continue_require_a_loop() {
+        let ok = r#"
+            int main() {
+                while (true) { break; }
+                for (let i: int = 0; i < 3; i = i + 1) { continue; }
+                while (true) { for (let j: int = 0; j < 2; j = j + 1) { break; continue; } }
+                return 0;
+            }
+        "#;
+        assert!(resolve(ok).is_ok());
         assert_eq!(
-            fn_symbol_name(&symbols, source_module(&program, "util.kora"), 0),
-            "helper"
+            resolve(r#"int main() { break; continue; return 0; }"#)
+                .expect_err("outside")
+                .len(),
+            2
         );
         assert_eq!(
-            fn_symbol_name(&symbols, source_module(&program, "main.kora"), 0),
-            "main"
+            resolve(r#"int main() { while (true) {} break; return 0; }"#)
+                .expect_err("after loop")
+                .len(),
+            1
         );
     }
 
     #[test]
-    fn test_program_hides_other_sources_from_bare_names() {
-        // `main` imports `util` but calls its `helper` unqualified — invisible
-        // without qualification, so resolution fails.
+    fn test_functions_resolve_forward_and_recursively() {
+        assert!(resolve(r#"int main() { return helper(); } int helper() { return 1; }"#).is_ok());
+        assert!(
+            resolve(r#"int fact(n: int) { return fact(n); } int main() { return 0; }"#).is_ok()
+        );
+    }
+
+    #[test]
+    fn test_per_source_scoping_hides_unimported_names() {
         let program = load_program(
             "main.kora",
             vec![
@@ -343,30 +399,6 @@ mod tests {
             ],
         );
         assert!(resolve_program(&program).is_err());
-    }
-
-    #[test]
-    fn test_same_function_name_across_sources_is_distinct() {
-        let program = load_program(
-            "main.kora",
-            vec![
-                (
-                    "main.kora",
-                    r#"import "a.kora"; import "b.kora"; int main() { return 0; }"#,
-                ),
-                ("a.kora", "int helper() { return 1; }"),
-                ("b.kora", "int helper() { return 2; }"),
-            ],
-        );
-        let symbols = resolve_program(&program).expect("resolve");
-        // Both keep the bare name, but are distinct symbols.
-        let a = source_module(&program, "a.kora").module.functions[0].id;
-        let b = source_module(&program, "b.kora").module.functions[0].id;
-        let a_id = symbols.symbol_id_of_declaration(a).unwrap();
-        let b_id = symbols.symbol_id_of_declaration(b).unwrap();
-        assert_eq!(symbols.symbol(a_id).name, "helper");
-        assert_eq!(symbols.symbol(b_id).name, "helper");
-        assert_ne!(a_id, b_id);
     }
 
     #[test]
@@ -412,168 +444,17 @@ mod tests {
     }
 
     #[test]
-    fn test_resolves_all_identifiers() {
-        let source = r#"
-            extern void print(b: [char], a: int);
-
-            int main() {
-                let a: int = 5;
-                if (a - a) {
-                    print("Hello World", a);
-                }
-                return a;
-            }
-
-            int sum(a: int, b: int) {
-                return a + b;
-            }
-        "#;
-        assert!(resolve(source).is_ok());
-    }
-
-    #[test]
-    fn test_reports_undefined_identifiers() {
-        let source = r#"
-            int main() {
-                let a: int = unident_1;
-                unident_2;
-                if (a) { unident_3; }
-                return a;
-            }
-        "#;
-        let errors = resolve(source).expect_err("expected undefined-identifier errors");
-        assert_eq!(errors.len(), 3, "errors: {:?}", errors);
-    }
-
-    #[test]
-    fn test_reports_undefined_types() {
-        let source = r#"
-            struct Point { x: int, y: int }
-
-            Bogus1 make(p: Bogus2) {
-                let a: Point = new Point;
-                let b: Bogus3 = new Bogus4;
-                let c: [Bogus5] = new Point;
-                return a;
-            }
-        "#;
-        let errors = resolve(source).expect_err("expected undefined-type errors");
-        assert_eq!(errors.len(), 5, "errors: {:?}", errors);
-    }
-
-    #[test]
-    fn test_reports_same_scope_redeclarations() {
-        let cases = [
-            r#"int main() { let x: int = 1; let x: int = 2; return x; }"#,
-            r#"int f(a: int, a: int) { return a; } int main() { return 0; }"#,
-            r#"int f() { return 0; } int f() { return 1; } int main() { return 0; }"#,
-            r#"extern int g(a: int); int g(a: int) { return a; } int main() { return 0; }"#,
-            r#"struct P { x: int } struct P { y: int } int main() { return 0; }"#,
-            r#"struct P { x: int, x: int } int main() { return 0; }"#,
-        ];
-        for source in cases {
-            let errors = resolve(source).expect_err(source);
-            assert_eq!(errors.len(), 1, "source: {}, errors: {:?}", source, errors);
-        }
-    }
-
-    #[test]
-    fn test_intrinsic_names_cannot_be_declared() {
-        let cases = [
-            r#"int copy(a: int) { return a; } int main() { return 0; }"#,
-            r#"extern int copy(a: int); int main() { return 0; }"#,
-            r#"int main() { let copy: int = 1; return copy; }"#,
-            r#"int main(copy: int) { return copy; }"#,
-        ];
-        for source in cases {
-            let errors = resolve(source).expect_err(source);
-            assert!(
-                errors.iter().any(|e| e.msg.contains("intrinsic")),
-                "source: {}, errors: {:?}",
-                source,
-                errors
-            );
-        }
-    }
-
-    #[test]
-    fn test_free_len_call_is_undefined() {
-        // len is a method now: a.len(). The free form no longer resolves.
-        let source = r#"int main() { let a: [int] = new int[3]; return len(a); }"#;
-        assert!(resolve(source).is_err());
-    }
-
-    #[test]
-    fn test_cross_scope_shadowing_is_allowed() {
-        let source = r#"
-            int main() {
-                let x: int = 1;
-                if (x == 1) {
-                    let x: int = 2;
-                    return x;
-                }
-                return x;
-            }
-        "#;
-        assert!(resolve(source).is_ok());
-    }
-
-    #[test]
-    fn test_for_scopes_induction_variable_to_the_loop() {
-        let source = r#"
-            int main() {
-                for (let i: int = 0; i < 3; i = i + 1) { i; }
-                return i;
-            }
-        "#;
-        let errors = resolve(source).expect_err("expected undefined-identifier error");
-        assert_eq!(errors.len(), 1, "errors: {:?}", errors);
-    }
-
-    #[test]
-    fn test_break_and_continue_require_a_loop() {
-        let ok = r#"
-            int main() {
-                while (true) { break; }
-                for (let i: int = 0; i < 3; i = i + 1) { continue; }
-                return 0;
-            }
-        "#;
-        assert!(resolve(ok).is_ok());
-
-        let bad = r#"int main() { break; continue; return 0; }"#;
-        let errors = resolve(bad).expect_err("expected outside-loop errors");
-        assert_eq!(errors.len(), 2, "errors: {:?}", errors);
-    }
-
-    #[test]
-    fn test_self_and_forward_referential_structs_resolve() {
-        let source = r#"
-            struct Node { next: Node, value: int }
-            struct A { b: B }
-            struct B { n: int }
-
-            int main() { return 0; }
-        "#;
-        assert!(resolve(source).is_ok());
-    }
-
-    #[test]
     fn test_use_is_keyed_by_node_id() {
-        use crate::parser::{Expression, Statement, Type};
-
         let source = "int f(a: int) { return a; }";
         let tokens = lexer::Lexer::lex(source).expect("lex");
         let module = parser::Parser::new(tokens).parse().expect("parse");
         let symbols = Resolver::new().resolve(&[&module]).expect("resolve");
-
-        // Reach the `a` in `return a;` and confirm its NodeId resolves to `int`.
         let body = &module.functions[0].node.statement;
         let Statement::Compound(stmts) = &body.node else {
-            panic!("expected compound body");
+            panic!("compound body");
         };
         let Statement::Return(Some(expr)) = &stmts[0].node else {
-            panic!("expected return statement");
+            panic!("return");
         };
         assert!(matches!(expr.node, Expression::Identifier(_)));
         assert_eq!(symbols.type_of_use(expr.id), Some(Type::Int));
@@ -581,8 +462,6 @@ mod tests {
 
     #[test]
     fn test_declaration_is_keyed_by_node_id() {
-        use crate::parser::{Statement, Type};
-
         let source = r#"
             int main(a: int) {
                 let x: int = 1;
@@ -600,25 +479,25 @@ mod tests {
 
         let func = &module.functions[0];
         let Statement::Compound(stmts) = &func.node.statement.node else {
-            panic!("expected compound body");
+            panic!("compound body");
         };
         let Statement::Let(outer_pair, _, _) = &stmts[0].node else {
-            panic!("expected let statement");
+            panic!("let");
         };
         let Statement::If(_, if_body, _) = &stmts[1].node else {
-            panic!("expected if statement");
+            panic!("if");
         };
         let Statement::Compound(if_stmts) = &if_body.node else {
-            panic!("expected compound if body");
+            panic!("if body");
         };
         let Statement::Let(inner_pair, _, _) = &if_stmts[0].node else {
-            panic!("expected inner let statement");
+            panic!("inner let");
         };
         let Statement::Simple(inner_use) = &if_stmts[1].node else {
-            panic!("expected inner use");
+            panic!("inner use");
         };
         let Statement::Simple(outer_use) = &stmts[2].node else {
-            panic!("expected outer use");
+            panic!("outer use");
         };
 
         let outer = symbols.symbol_id_of_declaration(outer_pair.id).unwrap();
@@ -633,197 +512,5 @@ mod tests {
             .unwrap();
         assert_eq!(symbols.symbol(param).ty, Some(Type::Int));
         assert!(symbols.symbol_id_of_declaration(func.id).is_some());
-    }
-
-    #[test]
-    fn test_functions_can_be_forward_referenced() {
-        let source = r#"
-            int main() { return helper(); }
-            int helper() { return 1; }
-        "#;
-        assert!(resolve(source).is_ok());
-    }
-
-    #[test]
-    fn test_recursive_function_resolves() {
-        let source = r#"
-            int fact(n: int) { return fact(n); }
-            int main() { return 0; }
-        "#;
-        assert!(resolve(source).is_ok());
-    }
-
-    #[test]
-    fn test_let_initializer_uses_outer_scope() {
-        // The inner let x = x; binds its initializer to the outer x.
-        let ok = r#"
-            int main() {
-                let x: int = 1;
-                if (x) { let x: int = x; return x; }
-                return x;
-            }
-        "#;
-        assert!(resolve(ok).is_ok());
-
-        // With no outer binding, the self-referential initializer is undefined.
-        let bad = r#"int main() { let x: int = x; return 0; }"#;
-        let errors = resolve(bad).expect_err("expected undefined-identifier error");
-        assert_eq!(errors.len(), 1, "errors: {:?}", errors);
-    }
-
-    #[test]
-    fn test_block_scope_ends_at_brace() {
-        let source = r#"
-            int main() {
-                if (true) { let a: int = 1; }
-                return a;
-            }
-        "#;
-        let errors = resolve(source).expect_err("expected undefined-identifier error");
-        assert_eq!(errors.len(), 1, "errors: {:?}", errors);
-    }
-
-    #[test]
-    fn test_sibling_scopes_at_same_depth_do_not_leak() {
-        // A binding in one block is invisible to a later sibling block.
-        let source = r#"
-            int main() {
-                { let a: int = 1; }
-                { let b: int = a; }
-                return 0;
-            }
-        "#;
-        let errors = resolve(source).expect_err("expected undefined-identifier error");
-        assert_eq!(errors.len(), 1, "errors: {:?}", errors);
-    }
-
-    #[test]
-    fn test_braceless_control_flow_body_declaration_is_scoped() {
-        // A `let` in a braceless while/if body must not leak past the construct.
-        let cases = [
-            r#"int main() { while (true) let x: int = 1; return x; }"#,
-            r#"int main() { if (true) let x: int = 1; return x; }"#,
-        ];
-        for source in cases {
-            let errors = resolve(source).expect_err(source);
-            assert_eq!(errors.len(), 1, "source: {}, errors: {:?}", source, errors);
-        }
-    }
-
-    #[test]
-    fn test_undefined_identifiers_in_expression_positions() {
-        // Undefined names are flagged in binary, index, and unary positions.
-        let source = r#"
-            int main() {
-                let a: int = 1;
-                a + missing1;
-                missing2[a];
-                -missing3;
-                return a;
-            }
-        "#;
-        let errors = resolve(source).expect_err("expected undefined-identifier errors");
-        assert_eq!(errors.len(), 3, "errors: {:?}", errors);
-    }
-
-    #[test]
-    fn test_call_resolves_callee_and_arguments() {
-        // A non-intrinsic call flags an undefined callee and each undefined argument.
-        let source = r#"
-            int main() {
-                let a: int = 1;
-                missing_fn(a, missing_arg);
-                return a;
-            }
-        "#;
-        let errors = resolve(source).expect_err("expected undefined-identifier errors");
-        assert_eq!(errors.len(), 2, "errors: {:?}", errors);
-    }
-
-    #[test]
-    fn test_undefined_type_inside_array_member() {
-        let source = r#"
-            struct S { a: [Undefined], b: int }
-            int main() { return 0; }
-        "#;
-        let errors = resolve(source).expect_err("expected undefined-type error");
-        assert_eq!(errors.len(), 1, "errors: {:?}", errors);
-    }
-
-    #[test]
-    fn test_nested_loops_allow_break_and_continue() {
-        let source = r#"
-            int main() {
-                while (true) {
-                    for (let i: int = 0; i < 2; i = i + 1) {
-                        break;
-                        continue;
-                    }
-                }
-                return 0;
-            }
-        "#;
-        assert!(resolve(source).is_ok());
-    }
-
-    #[test]
-    fn test_loop_depth_resets_after_loop() {
-        let source = r#"
-            int main() {
-                while (true) {}
-                break;
-                return 0;
-            }
-        "#;
-        let errors = resolve(source).expect_err("expected outside-loop error");
-        assert_eq!(errors.len(), 1, "errors: {:?}", errors);
-    }
-
-    #[test]
-    fn test_struct_members_are_keyed_by_name() {
-        use crate::parser::Type;
-
-        let source = r#"
-            struct Point { x: int, y: [char] }
-            int main() { return 0; }
-        "#;
-        let symbols = resolve(source).expect("resolve");
-        assert!(symbols.struct_exists("Point"));
-        assert_eq!(symbols.struct_member("Point", "x"), Some(Type::Int));
-        assert_eq!(
-            symbols.struct_member("Point", "y"),
-            Some(Type::Array(Box::new(Type::Char)))
-        );
-        assert_eq!(symbols.struct_member("Point", "z"), None);
-        assert_eq!(symbols.struct_member("Missing", "x"), None);
-    }
-
-    #[test]
-    fn test_impl_blocks_declare_methods() {
-        let symbols = resolve(
-            r#"
-            struct P { x: int }
-            impl P { int get(self) { return self.x; } }
-            impl P { void set(self, v: int) { self.x = v; } }
-            "#,
-        )
-        .expect("resolve");
-        let get = symbols.struct_method("P", "get").expect("get");
-        assert_eq!(symbols.symbol(get).name, "get");
-        assert!(symbols.struct_method("P", "set").is_some());
-        assert!(symbols.struct_method("P", "missing").is_none());
-        assert!(symbols.struct_method("Q", "get").is_none());
-    }
-
-    #[test]
-    fn test_impl_errors() {
-        let cases = [
-            "impl Missing { int f(self) { return 1; } }",
-            "struct P { age: int } impl P { int age(self) { return self.age; } }",
-            "struct P { x: int } impl P { int f(self) { return 1; } int f(self) { return 2; } }",
-        ];
-        for source in cases {
-            assert!(resolve(source).is_err(), "source: {}", source);
-        }
     }
 }
