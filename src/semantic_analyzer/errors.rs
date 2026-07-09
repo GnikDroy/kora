@@ -2,7 +2,7 @@ use crate::parser::Span;
 use std::error::Error;
 use std::fmt;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TypeErr {
     pub msg: &'static str,
     pub span: Span,

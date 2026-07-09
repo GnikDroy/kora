@@ -6,6 +6,7 @@ pub use errors::*;
 use std::collections::{HashMap, VecDeque};
 use std::path::{Component, Path, PathBuf};
 
+use crate::CompileErr;
 use crate::lexer::Lexer;
 use crate::parser::{Module, Parser, SourceId, Span};
 
@@ -65,7 +66,7 @@ pub struct Loader<P> {
     sources: Vec<SourceEntry>,
     queue: VecDeque<SourceId>,
     modules: Vec<LoadedModule>,
-    errors: Vec<LoadError>,
+    errors: Vec<CompileErr>,
 }
 
 impl<P: Fn(&Path) -> Option<String>> Loader<P> {
@@ -101,11 +102,10 @@ impl<P: Fn(&Path) -> Option<String>> Loader<P> {
     fn process(&mut self, id: SourceId) {
         let path = self.sources[id.0 as usize].path.clone();
         let Some(text) = (self.provider)(&path) else {
-            self.errors.push(LoadError {
+            self.errors.push(CompileErr::Load(LoadErr {
                 msg: format!("cannot find source `{}`", path.display()),
-                source: id,
                 span: self.requester.get(&id).cloned(),
-            });
+            }));
             return;
         };
         self.sources[id.0 as usize].text = text.clone();
@@ -113,15 +113,7 @@ impl<P: Fn(&Path) -> Option<String>> Loader<P> {
         let tokens = match Lexer::lex(&text) {
             Ok(t) => t,
             Err(e) => {
-                self.errors.push(LoadError {
-                    msg: e.to_string(),
-                    source: id,
-                    span: Some(Span {
-                        source: id,
-                        start: e.position.clone(),
-                        end: e.position,
-                    }),
-                });
+                self.errors.push(CompileErr::Lex(e));
                 return;
             }
         };
@@ -129,16 +121,7 @@ impl<P: Fn(&Path) -> Option<String>> Loader<P> {
         let module = match Parser::with_source(tokens, id).parse() {
             Ok(m) => m,
             Err(e) => {
-                let span = e.token.as_ref().map(|t| Span {
-                    source: id,
-                    start: t.start.clone(),
-                    end: t.end.clone(),
-                });
-                self.errors.push(LoadError {
-                    msg: e.to_string(),
-                    source: id,
-                    span,
-                });
+                self.errors.push(CompileErr::Parse(e));
                 return;
             }
         };
@@ -146,11 +129,10 @@ impl<P: Fn(&Path) -> Option<String>> Loader<P> {
         let mut imports = Vec::new();
         for import in &module.imports {
             let Some(target_path) = resolve_path(&path, &import.node.path) else {
-                self.errors.push(LoadError {
+                self.errors.push(CompileErr::Load(LoadErr {
                     msg: format!("import `{}` climbs above the root", import.node.path),
-                    source: id,
                     span: Some(import.span.clone()),
-                });
+                }));
                 continue;
             };
             let target = self.schedule(&target_path, Some(import.span.clone()));
@@ -174,16 +156,15 @@ impl<P: Fn(&Path) -> Option<String>> Loader<P> {
         });
     }
 
-    pub fn load(mut self, entry: &str) -> Result<LoadedProgram, Vec<LoadError>> {
+    pub fn load(mut self, entry: &str) -> Result<LoadedProgram, Vec<CompileErr>> {
         match resolve_path(Path::new(""), entry) {
             Some(path) => {
                 self.schedule(&path, None);
             }
-            None => self.errors.push(LoadError {
+            None => self.errors.push(CompileErr::Load(LoadErr {
                 msg: format!("entry `{entry}` climbs above the root"),
-                source: SourceId::ANON,
                 span: None,
-            }),
+            })),
         }
         while let Some(id) = self.queue.pop_front() {
             self.process(id);
@@ -311,7 +292,10 @@ mod tests {
             r#"import "../secret.kora"; int main(){return 0;}"#,
         )]);
         let errs = Loader::new(&p).load("main.kora").expect_err("should fail");
-        assert!(errs.iter().any(|e| e.msg.contains("climbs above the root")));
+        assert!(errs.iter().any(|e| matches!(
+            e,
+            CompileErr::Load(LoadErr { msg, .. }) if msg.contains("climbs above the root")
+        )));
     }
 
     #[test]
@@ -322,7 +306,10 @@ mod tests {
         )]);
         let errs = Loader::new(&p).load("main.kora").expect_err("should fail");
         assert_eq!(errs.len(), 1);
-        assert!(errs[0].msg.contains("gone.kora"));
-        assert!(errs[0].span.is_some());
+        let CompileErr::Load(LoadErr { msg, span }) = &errs[0] else {
+            panic!("expected a load error");
+        };
+        assert!(msg.contains("gone.kora"));
+        assert!(span.is_some());
     }
 }
