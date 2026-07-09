@@ -55,6 +55,8 @@ pub fn compile<P>(entry: &str, provider: P) -> Result<CompiledProgram, Vec<Compi
 where
     P: Fn(&Path) -> Option<String>,
 {
+    // prioritize std/ imports from embedded standard library
+    let provider = |path: &Path| crate::stdlib::source(path).or_else(|| provider(path));
     let program = Loader::new(provider).load(entry)?;
 
     let symbols = Resolver::new()
@@ -174,6 +176,78 @@ mod tests {
             panic!("expected a load error");
         };
         assert!(matches!(errors.as_slice(), [CompileErr::Load(_)]));
+    }
+
+    #[test]
+    fn test_std_conv() {
+        let result = compile(
+            "main.kora",
+            provider(vec![(
+                "main.kora",
+                r#"import "std/conv";
+                   int main() {
+                       let s = conv.int_to_string(-42);
+                       let n = conv.string_to_int("100");
+                       if (n == none) { return 1; }
+                       return s.len() + n!;
+                   }"#,
+            )]),
+        );
+        if let Err(errors) = result {
+            panic!("unexpected errors: {errors:?}");
+        }
+    }
+
+    #[test]
+    fn test_std_math() {
+        let result = compile(
+            "main.kora",
+            provider(vec![(
+                "main.kora",
+                r#"import "std/math";
+                   int main() {
+                       let a = math.sqrtf(2.0);
+                       let b = math.sin(1.0) + math.cos(1.0) + math.tan(0.5);
+                       let c = math.exp(1.0) * math.log(2.718281828) + math.log2(8.0);
+                       let d = math.powf(2.0, 10.0);
+                       let e = math.floorf(3.7) + math.ceilf(1.2) + math.roundf(2.5);
+                       let f = math.absf(-1.0) + math.signf(-2.0) + math.minf(1.0, 2.0);
+                       let g = math.atan(1.0) + math.atan2(1.0, 1.0);
+                       if (a > 1.0 && b < 3.0 && c > 0.0 && d > 1000.0 && e > 0.0 && f < 5.0 && g > 0.0) {
+                           return 1;
+                       }
+                       return 0;
+                   }"#,
+            )]),
+        );
+        if let Err(errors) = result {
+            panic!("unexpected errors: {errors:?}");
+        }
+    }
+
+    #[test]
+    fn test_std_str() {
+        let result = compile(
+            "main.kora",
+            provider(vec![(
+                "main.kora",
+                r#"import "std/str";
+                   int main() {
+                       let parts = str.split("a,b,c", ',');
+                       let joined = str.join(parts, "-");
+                       let i = str.index_of(joined, "b");
+                       if (i == none) { return 1; }
+                       if (!str.contains(joined, "a")) { return 2; }
+                       if (!str.starts_with(joined, "a-")) { return 3; }
+                       if (!str.ends_with(joined, "-c")) { return 4; }
+                       let up = str.to_upper(str.trim("  hi  "));
+                       return joined.len() + i! + up.len() + str.reverse("xy").len();
+                   }"#,
+            )]),
+        );
+        if let Err(errors) = result {
+            panic!("unexpected errors: {errors:?}");
+        }
     }
 
     #[test]

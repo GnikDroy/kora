@@ -128,12 +128,18 @@ impl<P: Fn(&Path) -> Option<String>> Loader<P> {
 
         let mut imports = Vec::new();
         for import in &module.imports {
-            let Some(target_path) = resolve_path(&path, &import.node.path) else {
-                self.errors.push(CompileErr::Load(LoadErr {
-                    msg: format!("import `{}` climbs above the root", import.node.path),
-                    span: Some(import.span.clone()),
-                }));
-                continue;
+            // std/ is reserved
+            let target_path = if import.node.path == "std" || import.node.path.starts_with("std/") {
+                PathBuf::from(&import.node.path)
+            } else {
+                let Some(resolved) = resolve_path(&path, &import.node.path) else {
+                    self.errors.push(CompileErr::Load(LoadErr {
+                        msg: format!("import `{}` climbs above the root", import.node.path),
+                        span: Some(import.span.clone()),
+                    }));
+                    continue;
+                };
+                resolved
             };
             let target = self.schedule(&target_path, Some(import.span.clone()));
             let local_name = import.node.alias.clone().unwrap_or_else(|| {
@@ -283,6 +289,30 @@ mod tests {
         ]);
         let program = Loader::new(&p).load("app/main.kora").expect("load");
         assert_eq!(program.modules.len(), 3);
+    }
+
+    #[test]
+    fn test_std_namespace_is_absolute() {
+        // std/* resolves to the same path regardless of the importer's location
+        let p = provider(vec![
+            (
+                "app/main.kora",
+                r#"import "std/conv"; int main() { return 0; }"#,
+            ),
+            ("std/conv", r#"import "std/math"; int f() { return 0; }"#),
+            ("std/math", "int g() { return 0; }"),
+        ]);
+        let program = Loader::new(&p).load("app/main.kora").expect("load");
+        assert_eq!(program.modules.len(), 3);
+        let main = module_of(&program, "app/main.kora");
+        assert_eq!(main.imports[0].local_name, "conv");
+        assert_eq!(
+            program.sources[main.imports[0].target.0 as usize]
+                .path
+                .to_str(),
+            Some("std/conv")
+        );
+        assert!(module_of(&program, "std/math").imports.is_empty());
     }
 
     #[test]

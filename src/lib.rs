@@ -4,6 +4,7 @@ mod lexer;
 mod loader;
 mod parser;
 mod semantic_analyzer;
+mod stdlib;
 
 mod frontend;
 mod javascript_transpiler;
