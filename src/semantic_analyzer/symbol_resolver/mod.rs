@@ -1,5 +1,4 @@
 mod collect;
-pub(crate) mod mangle;
 mod resolve;
 mod scope;
 mod table;

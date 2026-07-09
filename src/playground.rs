@@ -33,19 +33,25 @@ pub fn transpile(source: &str, async_externs: Vec<String>) -> Result<String, Str
             .join("\n")
     })?;
 
+    let module = &compiled.program.modules.first().unwrap().module;
     let method_calls = crate::javascript_transpiler::mangled_method_calls(
         &compiled.symbols,
         &compiled.method_calls,
+    );
+    let async_fns = crate::javascript_transpiler::resolve_async_fns(
+        module,
+        &method_calls,
+        async_externs.into_iter().collect(),
     );
 
     let mut transpiler = JavascriptTranspiler::new(
         compiled.types,
         method_calls,
         compiled.array_method_calls,
-        async_externs.into_iter().collect(),
+        async_fns,
     );
 
-    transpiler.visit_module(&compiled.program.modules.first().unwrap().module);
+    transpiler.visit_module(module);
 
     transpiler.get_source().map(|s| s.to_string()).map_err(|e| {
         e.iter()

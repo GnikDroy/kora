@@ -1,9 +1,6 @@
-//! Emit-name policy, parked for the backend. The resolver stores bare names;
-//! the backend mangles at emit time from each symbol's source.
-
 use std::path::{Component, Path};
 
-pub(crate) fn mangle(prefix: &str, name: &str) -> String {
+pub(super) fn mangle(prefix: &str, name: &str) -> String {
     if prefix.is_empty() {
         name.to_string()
     } else {
@@ -11,7 +8,7 @@ pub(crate) fn mangle(prefix: &str, name: &str) -> String {
     }
 }
 
-pub(crate) fn mangle_prefix(path: &Path) -> String {
+pub(super) fn mangle_prefix(path: &Path) -> String {
     let parts: Vec<String> = path
         .components()
         .filter_map(|c| match c {
