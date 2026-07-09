@@ -27,7 +27,13 @@ in the browser with nothing to install.
 
 Here is a Sudoku solver — arrays, recursion, and backtracking:
 
-```
+```ruby
+# -------------------------------------------------------
+# Please bear with the syntax highlighting ;(
+# I selected ruby as the language for the code blocks.
+# The playground has proper syntax highlighting for kora.
+# -------------------------------------------------------
+
 # Sudoku solver via backtracking. The board is a flat 81-cell int
 # array indexed as row * 9 + col; 0 marks an empty cell.
 
