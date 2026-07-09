@@ -251,10 +251,10 @@ pub enum InfixOperator {
 
 impl TryFrom<Token> for InfixOperator {
     type Error = ();
+    #[rustfmt::skip]
     fn try_from(token: Token) -> Result<Self, Self::Error> {
         use BinaryOp::*;
         use InfixOperator::*;
-        #[rustfmt::skip]
         match token {
             Token::Symbol(Symbol::Equal)              => Ok(Binary(Assign)),
             Token::Symbol(Symbol::Plus)               => Ok(Binary(Add)),

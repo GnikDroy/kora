@@ -31,11 +31,11 @@ pub fn array_method(elem: Type, name: &str) -> Option<(ArrayMethod, Vec<Type>, O
     Some(signature)
 }
 
+#[rustfmt::skip]
 pub fn binary_result(left: &Type, op: &BinaryOp, right: &Type) -> Option<Type> {
     use BinaryOp::*;
     use Type::*;
 
-    #[rustfmt::skip]
     match (left, op, right) {
         (Int, Add, Int)            => Some(Int),
         (Int, Subtract, Int)       => Some(Int),
@@ -83,11 +83,11 @@ pub fn binary_result(left: &Type, op: &BinaryOp, right: &Type) -> Option<Type> {
     }
 }
 
+#[rustfmt::skip]
 pub fn unary_result(op: &UnaryOp, operand: &Type) -> Option<Type> {
     use Type::*;
     use UnaryOp::*;
 
-    #[rustfmt::skip]
     match (op, operand) {
         (Negate, Int)  => Some(Int),
         (Negate, Real) => Some(Real),
@@ -103,9 +103,9 @@ pub fn copy_result(arg: &Type) -> Option<Type> {
     }
 }
 
+#[rustfmt::skip]
 pub fn is_cast_possible(from: &Type, to: &Type) -> bool {
     use Type::*;
-    #[rustfmt::skip]
     matches!((from, to),
         (Int, Real)
         | (Int, Char)

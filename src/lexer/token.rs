@@ -26,8 +26,8 @@ pub enum Keyword {
 
 impl TryFrom<&str> for Keyword {
     type Error = ();
+    #[rustfmt::skip]
     fn try_from(s: &str) -> Result<Self, Self::Error> {
-        #[rustfmt::skip]
         match s {
             "return"    => Ok(Keyword::Return),
             "let"    => Ok(Keyword::Let),
