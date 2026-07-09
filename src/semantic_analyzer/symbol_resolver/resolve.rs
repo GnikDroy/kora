@@ -1,13 +1,17 @@
+use std::collections::HashMap;
+
 use super::super::errors::TypeErr;
+use super::check_typename;
 use super::collect::GlobalsCollector;
+use super::scope::{ImportMap, Scopes};
 use super::table::{SymbolId, SymbolTable, is_intrinsic};
-use super::{Scope, check_typename};
+use crate::loader::LoadedProgram;
 use crate::parser::*;
 
 #[derive(Default)]
 pub struct Resolver {
     table: SymbolTable,
-    scopes: Vec<Scope>,
+    scopes: Scopes,
     errors: Vec<TypeErr>,
     loop_depth: usize,
 }
@@ -17,10 +21,45 @@ impl Resolver {
         Resolver::default()
     }
 
-    pub fn resolve(mut self, modules: &[&Module]) -> Result<SymbolTable, Vec<TypeErr>> {
-        let scopes = GlobalsCollector::new(&mut self.table, &mut self.errors).collect(modules);
-        for (module, scope) in modules.iter().zip(scopes) {
-            self.scopes.push(scope);
+    pub fn resolve(self, modules: &[&Module]) -> Result<SymbolTable, Vec<TypeErr>> {
+        let imports = modules.iter().map(|_| ImportMap::new()).collect();
+        self.run(modules, imports)
+    }
+
+    pub fn resolve_program(self, program: &LoadedProgram) -> Result<SymbolTable, Vec<TypeErr>> {
+        let modules: Vec<&Module> = program.modules.iter().map(|m| &m.module).collect();
+        let index: HashMap<SourceId, usize> = program
+            .modules
+            .iter()
+            .enumerate()
+            .map(|(i, m)| (m.id, i))
+            .collect();
+        let imports = program
+            .modules
+            .iter()
+            .map(|m| {
+                m.imports
+                    .iter()
+                    .filter_map(|import| {
+                        index
+                            .get(&import.target)
+                            .map(|&target| (import.local_name.clone(), target))
+                    })
+                    .collect()
+            })
+            .collect();
+        self.run(&modules, imports)
+    }
+
+    fn run(
+        mut self,
+        modules: &[&Module],
+        imports: Vec<ImportMap>,
+    ) -> Result<SymbolTable, Vec<TypeErr>> {
+        let globals = GlobalsCollector::new(&mut self.table, &mut self.errors).collect(modules);
+        self.scopes = Scopes::new(globals, imports);
+        for (index, module) in modules.iter().enumerate() {
+            self.scopes.enter_source(index);
             for func in module.functions.iter() {
                 self.visit_function(func);
             }
@@ -29,7 +68,6 @@ impl Resolver {
                     self.visit_function(func);
                 }
             }
-            self.scopes.pop();
         }
         if self.errors.is_empty() {
             Ok(self.table)
@@ -39,7 +77,7 @@ impl Resolver {
     }
 
     fn push_scope(&mut self) {
-        self.scopes.push(Scope::new());
+        self.scopes.push();
     }
 
     fn pop_scope(&mut self) {
@@ -59,31 +97,14 @@ impl Resolver {
                 span: span.clone(),
             });
         }
-
-        // Same-scope redeclaration is an error; shadowing an outer scope is fine.
-        let duplicate = self
-            .scopes
-            .last()
-            .is_some_and(|scope| scope.contains_key(&name));
-        if duplicate {
+        let id = self.table.add_symbol(declaration_id, name.clone(), ty);
+        if self.scopes.declare(name, id) {
             self.errors.push(TypeErr {
                 msg: "Redeclaration in the same scope",
                 span: span.clone(),
             });
         }
-
-        let id = self.table.add_symbol(declaration_id, name.clone(), ty);
-        if let Some(scope) = self.scopes.last_mut() {
-            scope.insert(name, id);
-        }
         id
-    }
-
-    fn lookup(&self, name: &str) -> Option<SymbolId> {
-        self.scopes
-            .iter()
-            .rev()
-            .find_map(|scope| scope.get(name).copied())
     }
 }
 
@@ -195,10 +216,8 @@ impl ASTVisitor for Resolver {
     }
 
     fn visit_expression(&mut self, expr: &Spanned<Expression>) {
-        if let Expression::Identifier(name) = &expr.node
-            && !is_intrinsic(name)
-        {
-            match self.lookup(name) {
+        match &expr.node {
+            Expression::Identifier(name) if !is_intrinsic(name) => match self.scopes.lookup(name) {
                 Some(id) => {
                     self.table.uses.insert(expr.id, id);
                 }
@@ -206,9 +225,28 @@ impl ASTVisitor for Resolver {
                     msg: "Undefined identifier",
                     span: expr.span.clone(),
                 }),
+            },
+            Expression::Access(left, member) => {
+                // x.y where x is an import
+                if let Expression::Identifier(m) = &left.node
+                    && self.scopes.lookup(m).is_none()
+                    && self.scopes.is_module(m)
+                {
+                    match self.scopes.lookup_qualified(m, member) {
+                        Some(id) => {
+                            self.table.uses.insert(expr.id, id);
+                        }
+                        None => self.errors.push(TypeErr {
+                            msg: "unknown member of imported source",
+                            span: expr.span.clone(),
+                        }),
+                    }
+                } else {
+                    walk_expression(self, expr);
+                }
             }
+            _ => walk_expression(self, expr),
         }
-        walk_expression(self, expr);
     }
 }
 
@@ -227,8 +265,7 @@ mod tests {
     fn resolve_program(
         program: &crate::loader::LoadedProgram,
     ) -> Result<super::SymbolTable, Vec<super::TypeErr>> {
-        let modules: Vec<&parser::Module> = program.modules.iter().map(|m| &m.module).collect();
-        Resolver::new().resolve(&modules)
+        Resolver::new().resolve_program(program)
     }
 
     fn load_program(
@@ -330,6 +367,48 @@ mod tests {
         assert_eq!(symbols.symbol(a_id).name, "helper");
         assert_eq!(symbols.symbol(b_id).name, "helper");
         assert_ne!(a_id, b_id);
+    }
+
+    #[test]
+    fn test_qualified_access_resolves_imported_member() {
+        let program = load_program(
+            "main.kora",
+            vec![
+                (
+                    "main.kora",
+                    r#"import "util.kora"; int main() { return util.helper(); }"#,
+                ),
+                ("util.kora", "int helper() { return 1; }"),
+            ],
+        );
+        let symbols = resolve_program(&program).expect("resolve");
+        let helper = source_module(&program, "util.kora").module.functions[0].id;
+        let helper_id = symbols.symbol_id_of_declaration(helper).unwrap();
+        assert!(symbols.uses.values().any(|&id| id == helper_id));
+    }
+
+    #[test]
+    fn test_qualified_access_requires_import() {
+        let program = load_program(
+            "main.kora",
+            vec![("main.kora", r#"int main() { return util.helper(); }"#)],
+        );
+        assert!(resolve_program(&program).is_err());
+    }
+
+    #[test]
+    fn test_unknown_imported_member_errors() {
+        let program = load_program(
+            "main.kora",
+            vec![
+                (
+                    "main.kora",
+                    r#"import "util.kora"; int main() { return util.missing(); }"#,
+                ),
+                ("util.kora", "int helper() { return 1; }"),
+            ],
+        );
+        assert!(resolve_program(&program).is_err());
     }
 
     #[test]

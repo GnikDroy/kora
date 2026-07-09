@@ -1,6 +1,7 @@
 use super::super::errors::TypeErr;
+use super::check_typename;
+use super::scope::Scope;
 use super::table::{StructDef, SymbolId, SymbolTable, is_intrinsic};
-use super::{Scope, check_typename};
 use crate::parser::*;
 
 pub(super) struct GlobalsCollector<'a> {

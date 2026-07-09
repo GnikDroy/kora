@@ -1,18 +1,14 @@
 mod collect;
 pub(crate) mod mangle;
 mod resolve;
+mod scope;
 mod table;
 
 pub use resolve::Resolver;
 pub use table::*;
 
-use std::collections::HashMap;
-
 use super::errors::TypeErr;
 use crate::parser::Type;
-
-/// A lexical scope: names visible at one point, each bound to its symbol.
-pub(super) type Scope = HashMap<String, SymbolId>;
 
 /// Report any undefined struct type reached inside a typename. Shared by the
 /// collection and resolution passes.
