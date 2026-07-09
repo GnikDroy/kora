@@ -15,9 +15,14 @@ use crate::semantic_analyzer::{ArrayMethod, SymbolId, SymbolTable};
 
 pub(crate) use coloring::resolve_async_fns;
 
-/// Map each recorded method call to the mangled `Struct$method` name the
-/// transpiler emits, resolving the owning struct from the symbol table. The
-/// resolver stores bare method names, so mangling happens here in the backend.
+pub(crate) fn struct_member_map(symbols: &SymbolTable) -> HashMap<String, Vec<(String, Type)>> {
+    symbols
+        .structs
+        .iter()
+        .map(|(name, def)| (name.clone(), def.members.clone()))
+        .collect()
+}
+
 pub(crate) fn mangled_method_calls(
     symbols: &SymbolTable,
     method_calls: &HashMap<NodeId, SymbolId>,
@@ -44,6 +49,7 @@ pub struct JavascriptTranspiler {
     types: HashMap<NodeId, Type>,
     method_calls: HashMap<NodeId, String>,
     array_method_calls: HashMap<NodeId, ArrayMethod>,
+    struct_members: HashMap<String, Vec<(String, Type)>>,
     current_impl: Option<String>,
     /// What color is your function?
     /// https://journal.stuffwithstuff.com/2015/02/01/what-color-is-your-function/
@@ -56,6 +62,7 @@ impl JavascriptTranspiler {
         types: HashMap<NodeId, Type>,
         method_calls: HashMap<NodeId, String>,
         array_method_calls: HashMap<NodeId, ArrayMethod>,
+        struct_members: HashMap<String, Vec<(String, Type)>>,
         async_fns: HashSet<String>,
     ) -> JavascriptTranspiler {
         JavascriptTranspiler {
@@ -64,6 +71,7 @@ impl JavascriptTranspiler {
             types,
             method_calls,
             array_method_calls,
+            struct_members,
             current_impl: None,
             async_fns,
         }

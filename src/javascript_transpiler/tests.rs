@@ -65,10 +65,12 @@ fn transpile(source: &str) -> String {
     let method_calls = super::mangled_method_calls(&symbols, &checker.method_calls);
     let async_fns =
         super::resolve_async_fns(&module, &method_calls, HashSet::from(["input".to_string()]));
+    let struct_members = super::struct_member_map(&symbols);
     let mut transpiler = JavascriptTranspiler::new(
         checker.types,
         method_calls,
         checker.array_method_calls,
+        struct_members,
         async_fns,
     );
     transpiler.visit_module(&module);
@@ -119,8 +121,13 @@ fn valid() {
     let method_calls = HashMap::new();
     let async_fns =
         super::resolve_async_fns(&module, &method_calls, HashSet::from(["input".to_string()]));
-    let mut transpiler =
-        JavascriptTranspiler::new(checker.types, method_calls, HashMap::new(), async_fns);
+    let mut transpiler = JavascriptTranspiler::new(
+        checker.types,
+        method_calls,
+        HashMap::new(),
+        HashMap::new(),
+        async_fns,
+    );
     transpiler.visit_module(&module);
     if let Ok(source) = transpiler.get_source() {
         println!("{}", source);
@@ -320,6 +327,28 @@ fn test_optionals_emit() {
     assert!(js.contains("n.next!=null"), "{js}");
     // The unwrap helper is appended to the prelude.
     assert!(js.contains("function __kora_runtime_unwrap("), "{js}");
+}
+
+#[test]
+fn test_bare_new_struct_is_zero_filled() {
+    let js = transpile(
+        r#"
+            struct Node { value: int, flag: bool, tags: [int], next: Node? }
+            int main() {
+                let n = new Node;
+                let a = new Node[2];
+                return n.value + a.len();
+            }
+        "#,
+    );
+    assert!(
+        js.contains("({value:0,flag:false,tags:[],next:null})"),
+        "{js}"
+    );
+    assert!(
+        js.contains("Array.from({length:2},()=>({value:0,flag:false,tags:[],next:null}))"),
+        "{js}"
+    );
 }
 
 #[test]

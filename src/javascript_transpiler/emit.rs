@@ -67,6 +67,37 @@ impl JavascriptTranspiler {
             self.visit_expression(e);
         }
     }
+
+    fn emit_struct_zero(&mut self, name: &str) {
+        let members = self.struct_members.get(name).cloned().unwrap_or_default();
+        self.source.push_str("({");
+        for (i, (field, ty)) in members.iter().enumerate() {
+            if i > 0 {
+                self.source.push(',');
+            }
+            self.source.push_str(field);
+            self.source.push(':');
+            self.source.push_str(default_value(ty));
+        }
+        self.source.push_str("})");
+    }
+}
+
+fn scalar_zero(ty: &Type) -> &'static str {
+    match ty {
+        Type::Real => "0.0",
+        Type::Bool => "false",
+        Type::Char => "\"\\0\"",
+        _ => "0",
+    }
+}
+
+fn default_value(ty: &Type) -> &'static str {
+    match ty {
+        Type::Array(_) => "[]",
+        Type::Optional(_) => "null",
+        _ => scalar_zero(ty),
+    }
 }
 
 impl ASTVisitor for JavascriptTranspiler {
@@ -500,22 +531,25 @@ impl ASTVisitor for JavascriptTranspiler {
         size: &Option<Box<Spanned<Expression>>>,
     ) {
         match size {
-            // `new T[n]` is scalar-only (the checker rejects reference T), so
-            // the element always has a zero fill.
-            Some(expr) => {
-                let zero = match typename {
-                    Type::Real => "0.0",
-                    Type::Bool => "false",
-                    Type::Char => "\"\\0\"",
-                    _ => "0",
-                };
-                self.source.push_str("new Array(");
-                self.visit_expression(expr);
-                self.source.push_str(&format!(").fill({})", zero));
-            }
-            None => {
-                self.source.push_str("({})");
-            }
+            Some(expr) => match typename {
+                Type::Struct(name) => {
+                    self.source.push_str("Array.from({length:");
+                    self.visit_expression(expr);
+                    self.source.push_str("},()=>");
+                    self.emit_struct_zero(&name.node);
+                    self.source.push(')');
+                }
+                _ => {
+                    self.source.push_str("new Array(");
+                    self.visit_expression(expr);
+                    self.source
+                        .push_str(&format!(").fill({})", scalar_zero(typename)));
+                }
+            },
+            None => match typename {
+                Type::Struct(name) => self.emit_struct_zero(&name.node),
+                _ => self.source.push_str("({})"),
+            },
         }
     }
 

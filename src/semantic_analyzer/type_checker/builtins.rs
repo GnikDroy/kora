@@ -127,6 +127,10 @@ pub fn is_scalar(ty: &Type) -> bool {
     matches!(ty, Type::Int | Type::Real | Type::Bool | Type::Char)
 }
 
+pub fn member_has_default(ty: &Type) -> bool {
+    is_scalar(ty) || matches!(ty, Type::Optional(_) | Type::Array(_))
+}
+
 pub fn is_optional(ty: &Type) -> bool {
     matches!(ty, Type::Optional(_))
 }

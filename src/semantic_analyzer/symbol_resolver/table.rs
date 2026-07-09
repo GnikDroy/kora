@@ -66,6 +66,10 @@ impl SymbolTable {
         self.structs.get(name).map(|s| s.members.len())
     }
 
+    pub fn struct_members(&self, name: &str) -> Option<&[(String, Type)]> {
+        self.structs.get(name).map(|s| s.members.as_slice())
+    }
+
     pub fn struct_method(&self, name: &str, method: &str) -> Option<SymbolId> {
         self.structs.get(name)?.methods.get(method).copied()
     }

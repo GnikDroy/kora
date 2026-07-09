@@ -44,10 +44,12 @@ pub fn transpile(source: &str, async_externs: Vec<String>) -> Result<String, Str
         async_externs.into_iter().collect(),
     );
 
+    let struct_members = crate::javascript_transpiler::struct_member_map(&compiled.symbols);
     let mut transpiler = JavascriptTranspiler::new(
         compiled.types,
         method_calls,
         compiled.array_method_calls,
+        struct_members,
         async_fns,
     );
 

@@ -311,6 +311,14 @@ impl TypeChecker<'_> {
         }
     }
 
+    fn struct_is_default_constructible(&self, name: &str) -> bool {
+        self.symbols.struct_members(name).is_some_and(|members| {
+            members
+                .iter()
+                .all(|(_, ty)| builtins::member_has_default(ty))
+        })
+    }
+
     fn get_construct_expression_type(
         &mut self,
         typename: &Type,
@@ -321,22 +329,31 @@ impl TypeChecker<'_> {
             Some(size) => {
                 let expr_type = self.get_expression_type(size)?;
                 if expr_type != Type::Int {
-                    Err(TypeErr {
+                    return Err(TypeErr {
                         msg: "Array constructor must be passed an integer inside []",
                         span: span.clone(),
-                    })
-                } else if !builtins::is_scalar(typename) {
-                    // Only scalars have a zero fill so they can be constructed with a given size
-                    Err(TypeErr {
-                        msg: "new T[n] requires a scalar element type (int, real, char, bool); build reference arrays with [] then push()",
-                        span: span.clone(),
-                    })
-                } else {
-                    Ok(Type::Array(Box::new(typename.clone())))
+                    });
                 }
+                let ok = match typename {
+                    Type::Struct(name) => self.struct_is_default_constructible(&name.node),
+                    other => builtins::is_scalar(other),
+                };
+                if !ok {
+                    return Err(TypeErr {
+                        msg: "new T[n] needs a scalar element or a default-constructible struct (members all scalar, optional, or list); build others with [] then push()",
+                        span: span.clone(),
+                    });
+                }
+                Ok(Type::Array(Box::new(typename.clone())))
             }
             _ => match typename {
-                Type::Struct(_) => Ok(typename.clone()),
+                Type::Struct(name) if self.struct_is_default_constructible(&name.node) => {
+                    Ok(typename.clone())
+                }
+                Type::Struct(_) => Err(TypeErr {
+                    msg: "new S needs every member to have a default (scalar, optional, or list); use a struct literal new S { ... } instead",
+                    span: span.clone(),
+                }),
                 _ => Err(TypeErr {
                     msg: "Only structs can be constructed without a size: new <struct>",
                     span: span.clone(),
@@ -914,10 +931,18 @@ mod tests {
     }
 
     #[test]
-    fn test_sizeless_new_is_structs_only() {
+    fn test_sizeless_new_is_default_constructible_structs_only() {
         check_cases(&[
             (
                 r#"struct P { x: int } int main() { let p: P = new P; return 0; }"#,
+                true,
+            ),
+            (
+                r#"struct P { name: [char], age: int } int main() { let p = new P; return 0; }"#,
+                true,
+            ),
+            (
+                r#"struct Node { value: int, next: Node? } int main() { let n = new Node; return 0; }"#,
                 true,
             ),
             (
@@ -929,18 +954,34 @@ mod tests {
                 r#"int main() { let a: [int] = new [int]; return 0; }"#,
                 false,
             ),
+            (
+                r#"struct P { x: int } struct Line { a: P, b: P } int main() { let l = new Line; return 0; }"#,
+                false,
+            ),
+            (
+                r#"struct N { next: N } int main() { let n = new N; return 0; }"#,
+                false,
+            ),
         ]);
     }
 
     #[test]
-    fn test_sized_new_is_scalar_only() {
+    fn test_sized_new_allows_scalars_and_default_constructible_structs() {
         check_cases(&[
             (r#"int main() { let a = new int[3]; return a[0]; }"#, true),
             (r#"int main() { let a = new char[8]; return 0; }"#, true),
             (r#"int main() { let a = new real[2]; return 0; }"#, true),
             (r#"int main() { let a = new bool[2]; return 0; }"#, true),
             (
-                r#"struct P { x: int } int main() { let a = new P[3]; return 0; }"#,
+                r#"struct P { x: int } int main() { let a = new P[3]; return a[0].x; }"#,
+                true,
+            ),
+            (
+                r#"struct P { tags: [int], k: int } int main() { let a = new P[2]; return a[0].k; }"#,
+                true,
+            ),
+            (
+                r#"struct P { x: int } struct Line { a: P } int main() { let a = new Line[2]; return 0; }"#,
                 false,
             ),
             (r#"int main() { let a = new [int][3]; return 0; }"#, false),
