@@ -94,13 +94,19 @@ impl JavascriptTranspiler {
         }
         self.source.push_str("})");
     }
+
+    pub fn emit_program(&mut self, modules: &[&Module]) {
+        for module in modules {
+            walk_module(self, module);
+        }
+        self.source.push('\n');
+        self.source.push_str(INTRINSICS);
+    }
 }
 
 impl ASTVisitor for JavascriptTranspiler {
     fn visit_module(&mut self, module: &Module) {
-        walk_module(self, module);
-        self.source.push('\n');
-        self.source.push_str(INTRINSICS);
+        self.emit_program(&[module]);
     }
 
     fn visit_extern_function(&mut self, _: &Spanned<ExternFunction>) {}
@@ -116,7 +122,11 @@ impl ASTVisitor for JavascriptTranspiler {
     fn visit_function(&mut self, func: &Spanned<Function>) {
         let name = match &self.current_impl {
             Some(struct_name) => mangle(struct_name, &func.node.name),
-            None => func.node.name.clone(),
+            None => self
+                .function_names
+                .get(&func.id)
+                .cloned()
+                .unwrap_or_else(|| func.node.name.clone()),
         };
         let arg_list: String = func
             .node
@@ -459,6 +469,27 @@ impl ASTVisitor for JavascriptTranspiler {
             self.visit_expression(obj);
             for expr in exprs.iter() {
                 self.source.push(',');
+                self.visit_expression(expr);
+            }
+            self.source.push(')');
+            if is_async {
+                self.source.push(')');
+            }
+            return;
+        }
+
+        if let Some(name) = self.function_names.get(&expr.id) {
+            let name = name.clone();
+            let is_async = self.async_fns.contains(&name);
+            if is_async {
+                self.source.push_str("(await ");
+            }
+            self.source.push_str(&name);
+            self.source.push('(');
+            for (i, expr) in exprs.iter().enumerate() {
+                if i > 0 {
+                    self.source.push(',');
+                }
                 self.visit_expression(expr);
             }
             self.source.push(')');
