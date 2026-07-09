@@ -4,10 +4,32 @@ use std::collections::{HashMap, HashSet};
 
 use self::error::TranspilerErr;
 use crate::parser::*;
-use crate::semantic_analyzer::ArrayMethod;
+use crate::semantic_analyzer::{ArrayMethod, SymbolId, SymbolTable};
+
+/// Map each recorded method call to the mangled `Struct$method` name the
+/// transpiler emits, resolving the owning struct from the symbol table. The
+/// resolver stores bare method names, so mangling happens here in the backend.
+pub(crate) fn mangled_method_calls(
+    symbols: &SymbolTable,
+    method_calls: &HashMap<NodeId, SymbolId>,
+) -> HashMap<NodeId, String> {
+    method_calls
+        .iter()
+        .map(|(id, sym)| {
+            let method = &symbols.symbol(*sym).name;
+            let name = symbols
+                .structs
+                .iter()
+                .find(|(_, def)| def.methods.values().any(|m| m == sym))
+                .map(|(struct_name, _)| JavascriptTranspiler::mangle(struct_name, method))
+                .unwrap_or_else(|| method.clone());
+            (*id, name)
+        })
+        .collect()
+}
 
 #[derive(Default, Debug)]
-pub struct JsTranspiler {
+pub struct JavascriptTranspiler {
     source: String,
     errors: Vec<TranspilerErr>,
     types: HashMap<NodeId, Type>,
@@ -32,14 +54,14 @@ function __kora_runtime_equality_intrinsic(a, b) {
 }
 ";
 
-impl JsTranspiler {
+impl JavascriptTranspiler {
     pub fn new(
         types: HashMap<NodeId, Type>,
         method_calls: HashMap<NodeId, String>,
         array_method_calls: HashMap<NodeId, ArrayMethod>,
         async_externs: HashSet<String>,
-    ) -> JsTranspiler {
-        JsTranspiler {
+    ) -> JavascriptTranspiler {
+        JavascriptTranspiler {
             source: String::new(),
             errors: Vec::new(),
             types,
@@ -50,7 +72,7 @@ impl JsTranspiler {
         }
     }
 
-    fn mangle(struct_name: &str, method: &str) -> String {
+    pub(crate) fn mangle(struct_name: &str, method: &str) -> String {
         format!("{struct_name}${method}")
     }
 
@@ -70,7 +92,7 @@ impl JsTranspiler {
             .chain(module.impls.iter().flat_map(|impl_| {
                 impl_.node.functions.iter().map(|f| {
                     (
-                        JsTranspiler::mangle(&impl_.node.struct_name.node, &f.node.name),
+                        JavascriptTranspiler::mangle(&impl_.node.struct_name.node, &f.node.name),
                         collect_called_names(&f.node.statement.node, method_calls),
                     )
                 })
@@ -105,18 +127,18 @@ impl JsTranspiler {
         }
     }
 
+    #[rustfmt::skip]
     fn repr_unary_operator(op: &UnaryOp) -> &'static str {
         use UnaryOp::*;
-        #[rustfmt::skip]
         match op {
             Negate => "-",
             Not    => "!",
         }
     }
 
+    #[rustfmt::skip]
     fn repr_binary_operator(op: &BinaryOp) -> &'static str {
         use BinaryOp::*;
-        #[rustfmt::skip]
         match op {
             Assign       => "=",
             Add          => "+",
@@ -141,7 +163,7 @@ impl JsTranspiler {
         }
     }
 }
-impl ASTVisitor for JsTranspiler {
+impl ASTVisitor for JavascriptTranspiler {
     fn visit_module(&mut self, module: &Module) {
         self.compute_async_set(module);
         walk_module(self, module);
@@ -161,7 +183,7 @@ impl ASTVisitor for JsTranspiler {
 
     fn visit_function(&mut self, func: &Spanned<Function>) {
         let name = match &self.current_impl {
-            Some(struct_name) => JsTranspiler::mangle(struct_name, &func.node.name),
+            Some(struct_name) => JavascriptTranspiler::mangle(struct_name, &func.node.name),
             None => func.node.name.clone(),
         };
         let arg_list: String = func
@@ -177,7 +199,7 @@ impl ASTVisitor for JsTranspiler {
             ""
         };
         self.source
-            .push_str(&format!("{}function {}({})", async_prefix, name, &arg_list));
+            .push_str(&format!("{}function {}({})", async_prefix, name, arg_list));
 
         match &func.node.statement.node {
             Statement::Compound(_) => {
@@ -390,7 +412,8 @@ impl ASTVisitor for JsTranspiler {
         self.visit_expression(left);
         self.source.push(')');
         if !matches!(op, BinaryOp::Cast) {
-            self.source.push_str(JsTranspiler::repr_binary_operator(op));
+            self.source
+                .push_str(JavascriptTranspiler::repr_binary_operator(op));
         }
         if bitwise {
             self.source.push_str("BigInt(");
@@ -408,7 +431,8 @@ impl ASTVisitor for JsTranspiler {
     }
 
     fn visit_unary_expression(&mut self, op: &UnaryOp, expr: &Spanned<Expression>) {
-        self.source.push_str(JsTranspiler::repr_unary_operator(op));
+        self.source
+            .push_str(JavascriptTranspiler::repr_unary_operator(op));
         self.source.push('(');
         self.visit_expression(expr);
         self.source.push(')');
@@ -699,7 +723,7 @@ mod tests {
     use std::collections::{HashMap, HashSet};
 
     use crate::{
-        js_transpiler::JsTranspiler,
+        javascript_transpiler::JavascriptTranspiler,
         lexer,
         parser::{self, ASTVisitor},
         semantic_analyzer::{Resolver, ReturnChecker, TypeChecker},
@@ -760,12 +784,8 @@ mod tests {
             .check()
             .unwrap_or_else(|errs| panic!("return check: {errs:?}"));
 
-        let method_calls = checker
-            .method_calls
-            .iter()
-            .map(|(id, sym)| (*id, symbols.symbol(*sym).name.clone()))
-            .collect();
-        let mut transpiler = JsTranspiler::new(
+        let method_calls = super::mangled_method_calls(&symbols, &checker.method_calls);
+        let mut transpiler = JavascriptTranspiler::new(
             checker.types,
             method_calls,
             checker.array_method_calls,
@@ -816,7 +836,7 @@ mod tests {
         checker.visit_module(&module);
         assert_eq!(checker.check().is_ok(), true);
 
-        let mut transpiler = JsTranspiler::new(
+        let mut transpiler = JavascriptTranspiler::new(
             checker.types,
             HashMap::new(),
             HashMap::new(),
