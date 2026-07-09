@@ -126,3 +126,53 @@ pub fn is_comparable(ty: &Type) -> bool {
 pub fn is_scalar(ty: &Type) -> bool {
     matches!(ty, Type::Int | Type::Real | Type::Bool | Type::Char)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parser::{NodeId, Span, Spanned};
+
+    fn struct_ty(name: &str) -> Type {
+        Type::Struct(Spanned::new(
+            name.to_string(),
+            Span::default(),
+            NodeId::default(),
+        ))
+    }
+
+    fn array(inner: Type) -> Type {
+        Type::Array(Box::new(inner))
+    }
+
+    #[test]
+    fn test_binary_result_on_arrays() {
+        use BinaryOp::*;
+        use Type::*;
+
+        let ints = array(Int);
+        assert_eq!(binary_result(&ints, &Equality, &array(Int)), Some(Bool));
+        assert_eq!(binary_result(&ints, &NotEquality, &array(Int)), Some(Bool));
+        assert_eq!(
+            binary_result(&array(array(Int)), &Equality, &array(array(Int))),
+            Some(Bool)
+        );
+        assert_eq!(binary_result(&ints, &Add, &array(Int)), Some(array(Int)));
+        assert_eq!(binary_result(&ints, &Equality, &array(Real)), None);
+        assert_eq!(binary_result(&ints, &Add, &array(Real)), None);
+        assert_eq!(binary_result(&ints, &Less, &array(Int)), None);
+        assert_eq!(
+            binary_result(&array(struct_ty("P")), &Equality, &array(struct_ty("P"))),
+            None
+        );
+    }
+
+    #[test]
+    fn test_is_comparable_recurses_through_arrays() {
+        use Type::*;
+
+        assert!(is_comparable(&array(array(Int))));
+        assert!(is_comparable(&array(array(Char))));
+        assert!(!is_comparable(&array(struct_ty("P"))));
+        assert!(!is_comparable(&array(Function(None, vec![]))));
+    }
+}
