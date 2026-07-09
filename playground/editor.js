@@ -4,7 +4,6 @@
 const FILES = [
   "mandelbrot.kora",
   "sudoku.kora",
-  "chess.kora",
   "snake.kora",
   "tetris.kora",
   "pong.kora",

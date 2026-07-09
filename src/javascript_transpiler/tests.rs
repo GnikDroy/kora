@@ -446,7 +446,6 @@ fn transpiles_ui_examples() {
     let examples: &[(&str, &str)] = &[
         ("mandelbrot", include_str!("../../res/mandelbrot.kora")),
         ("sudoku", include_str!("../../res/sudoku.kora")),
-        ("chess", include_str!("../../res/chess.kora")),
         ("snake", include_str!("../../res/snake.kora")),
         ("tetris", include_str!("../../res/tetris.kora")),
         ("pong", include_str!("../../res/pong.kora")),

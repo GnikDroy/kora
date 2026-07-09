@@ -121,22 +121,6 @@ function rotate(a) {
   if (ctx) ctx.rotate(a);
 }
 
-function sqrt(x) {
-  return Math.sqrt(x);
-}
-
-function sin(x) {
-  return Math.sin(x);
-}
-
-function cos(x) {
-  return Math.cos(x);
-}
-
-function atan2(y, x) {
-  return Math.atan2(y, x);
-}
-
 function fill_rect(x, y, w, h) {
   if (!ctx) return;
   useCanvas();
@@ -196,7 +180,6 @@ onmessage = async (e) => {
         "canvas_width", "canvas_height", "text_width",
         "mouse_x", "mouse_y", "is_mouse_down",
         "save", "restore", "translate", "rotate",
-        "sqrt", "sin", "cos", "atan2",
         msg.code + "\nreturn main();",
       );
       await fn(
@@ -207,7 +190,6 @@ onmessage = async (e) => {
         canvas_width, canvas_height, text_width,
         mouse_x, mouse_y, is_mouse_down,
         save, restore, translate, rotate,
-        sqrt, sin, cos, atan2,
       );
       postMessage({ type: "done" });
     } catch (err) {

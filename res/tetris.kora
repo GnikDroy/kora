@@ -1,3 +1,5 @@
+import "std/conv";
+
 # Tetris. Arrows move and rotate, ArrowDown soft-drops, space hard-drops,
 # q quits. Rendered to the canvas.
 #
@@ -78,16 +80,6 @@ string piece_color(kind: int) {
     if (kind == 4) { return "#facc15"; }
     if (kind == 5) { return "#22c55e"; }
     return "#ef4444";
-}
-
-string int_to_string(n: int) {
-    if (n == 0) { return "0"; }
-    let digits: [char] = [];
-    while (n > 0) {
-        digits.insert(0, ((n % 10) + 48) as char);
-        n = n / 10;
-    }
-    return digits;
 }
 
 void fill_cell(col: int, row: int) {
@@ -300,7 +292,7 @@ impl Game {
         set_font_size(14);
         draw_text("SCORE", panel, origin_y() + 20);
         set_font_size(28);
-        draw_text(int_to_string(self.score), panel, origin_y() + 50);
+        draw_text(conv.int_to_string(self.score), panel, origin_y() + 50);
         set_font_size(13);
         draw_text("Arrows: move / rotate", panel, origin_y() + 110);
         draw_text("Down: soft drop", panel, origin_y() + 132);
@@ -317,7 +309,7 @@ void game_over(score: int) {
     draw_text("GAME OVER", origin_x() + 30, origin_y() + 200);
     set_color("#e2e8f0");
     set_font_size(18);
-    draw_text("Score: " + int_to_string(score), origin_x() + 30, origin_y() + 232);
+    draw_text("Score: " + conv.int_to_string(score), origin_x() + 30, origin_y() + 232);
 }
 
 int main() {

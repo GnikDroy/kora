@@ -1,3 +1,5 @@
+import "std/conv";
+
 # Pong. Your paddle is on the left: ArrowUp / ArrowDown to move. The right
 # paddle is a simple tracking AI. First to 11 wins. q quits. Canvas-rendered.
 
@@ -10,16 +12,6 @@ int ball_radius() { return 8; }
 struct Ball { x: real, y: real, vx: real, vy: real }
 
 struct Paddle { x: int, y: real, score: int }
-
-string int_to_string(n: int) {
-    if (n == 0) { return "0"; }
-    let digits: [char] = [];
-    while (n > 0) {
-        digits.insert(0, ((n % 10) + 48) as char);
-        n = n / 10;
-    }
-    return digits;
-}
 
 impl Ball {
     void serve(self, toward_left: bool) {
@@ -110,8 +102,8 @@ void render(ball: Ball, player: Paddle, ai: Paddle) {
 
     set_color("#94a3b8");
     set_font_size(36);
-    draw_text(int_to_string(player.score), screen_width() / 2 - 60, 56);
-    draw_text(int_to_string(ai.score), screen_width() / 2 + 36, 56);
+    draw_text(conv.int_to_string(player.score), screen_width() / 2 - 60, 56);
+    draw_text(conv.int_to_string(ai.score), screen_width() / 2 + 36, 56);
 }
 
 void render_result(player: Paddle, ai: Paddle) {
@@ -126,7 +118,7 @@ void render_result(player: Paddle, ai: Paddle) {
     }
     set_color("#e2e8f0");
     set_font_size(20);
-    let line = int_to_string(player.score) + " - " + int_to_string(ai.score);
+    let line = conv.int_to_string(player.score) + " - " + conv.int_to_string(ai.score);
     draw_text(line, screen_width() / 2 - 30, screen_height() / 2 + 40);
 }
 

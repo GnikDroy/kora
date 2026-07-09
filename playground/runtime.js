@@ -27,10 +27,6 @@ extern void save();
 extern void restore();
 extern void translate(x: int, y: int);
 extern void rotate(a: real);
-extern real sqrt(x: real);
-extern real sin(x: real);
-extern real cos(x: real);
-extern real atan2(y: real, x: real);
 `;
 
 // The subset of EXTERNS that blocks on a Promise.

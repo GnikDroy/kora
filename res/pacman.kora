@@ -1,3 +1,6 @@
+import "std/conv";
+import "std/math";
+
 # Pac-Man. Arrow keys steer, q quits. Eat every pellet to win; the four ghosts
 # each hunt you differently. Grab a power pellet (the big dots in the corners)
 # to turn them blue and eat them for bonus points. Three lives.
@@ -11,21 +14,6 @@ int view_height() { return canvas_height(); }
 struct Pac { x: real, y: real, dx: int, dy: int, want_dx: int, want_dy: int, mouth: int, face: real, sx: real, sy: real }
 struct Ghost { x: real, y: real, dx: int, dy: int, kind: int, frightened: int, home_x: int, home_y: int, sx: real, sy: real }
 struct Game { map: [string], pac: Pac, ghosts: [Ghost], score: int, lives: int, pellets: int, mode_timer: int }
-
-string int_to_string(n: int) {
-    if (n == 0) { return "0"; }
-    let digits: [char] = [];
-    while (n > 0) {
-        digits.insert(0, ((n % 10) + 48) as char);
-        n = n / 10;
-    }
-    return digits;
-}
-
-real absf(v: real) {
-    if (v < 0.0) { return -v; }
-    return v;
-}
 
 # Cell index of a continuous coordinate (coords are always non-negative here).
 int nearest(v: real) {
@@ -49,7 +37,7 @@ impl Pac {
     void update(self, map: [string]) {
         let cx = nearest(self.x);
         let cy = nearest(self.y);
-        if (absf(self.x - (cx as real)) < 0.05 && absf(self.y - (cy as real)) < 0.05) {
+        if (math.absf(self.x - (cx as real)) < 0.05 && math.absf(self.y - (cy as real)) < 0.05) {
             self.x = cx as real;
             self.y = cy as real;
             if ((self.want_dx != 0 || self.want_dy != 0)
@@ -63,7 +51,7 @@ impl Pac {
             }
         }
         if (self.dx != 0 || self.dy != 0) {
-            self.face = atan2(self.dy as real, self.dx as real);
+            self.face = math.atan2(self.dy as real, self.dx as real);
         }
         self.x = self.x + (self.dx as real) * 0.2;
         self.y = self.y + (self.dy as real) * 0.2;
@@ -92,7 +80,7 @@ impl Ghost {
 
         let cx = nearest(self.x);
         let cy = nearest(self.y);
-        if (absf(self.x - (cx as real)) < 0.05 && absf(self.y - (cy as real)) < 0.05) {
+        if (math.absf(self.x - (cx as real)) < 0.05 && math.absf(self.y - (cy as real)) < 0.05) {
             self.x = cx as real;
             self.y = cy as real;
 
@@ -185,7 +173,7 @@ impl Game {
         for (let i = 0; i < self.ghosts.len(); i = i + 1) {
             let dx = self.ghosts[i].x - self.pac.x;
             let dy = self.ghosts[i].y - self.pac.y;
-            if (sqrt(dx * dx + dy * dy) < 0.5) {
+            if (math.sqrtf(dx * dx + dy * dy) < 0.5) {
                 if (self.ghosts[i].frightened > 0) {
                     self.score = self.score + 200;
                     self.ghosts[i].reset();
@@ -203,7 +191,7 @@ impl Game {
 
         let cx = nearest(self.pac.x);
         let cy = nearest(self.pac.y);
-        if (absf(self.pac.x - (cx as real)) < 0.05 && absf(self.pac.y - (cy as real)) < 0.05) {
+        if (math.absf(self.pac.x - (cx as real)) < 0.05 && math.absf(self.pac.y - (cy as real)) < 0.05) {
             let ch = self.map[cy][cx];
             if (ch == '.') {
                 self.map[cy][cx] = ' ';
@@ -243,8 +231,8 @@ impl Game {
         let reach = (r + 2) as real;
         set_color("#000000");
         fill_triangle(px, py,
-            px + (cos(fa - ha) * reach) as int, py + (sin(fa - ha) * reach) as int,
-            px + (cos(fa + ha) * reach) as int, py + (sin(fa + ha) * reach) as int);
+            px + (math.cos(fa - ha) * reach) as int, py + (math.sin(fa - ha) * reach) as int,
+            px + (math.cos(fa + ha) * reach) as int, py + (math.sin(fa + ha) * reach) as int);
     }
 
     void draw_ghost(self, i: int, ox: int, oy: int, cs: int) {
@@ -300,8 +288,8 @@ impl Game {
 
         set_font_size(18);
         set_color("#facc15");
-        draw_text("SCORE " + int_to_string(self.score), 16, 22);
-        draw_text("LIVES " + int_to_string(self.lives), view_width() - 120, 22);
+        draw_text("SCORE " + conv.int_to_string(self.score), 16, 22);
+        draw_text("LIVES " + conv.int_to_string(self.lives), view_width() - 120, 22);
     }
 
     void render_message(self, text: string, color: string) {
@@ -310,7 +298,7 @@ impl Game {
         draw_text(text, view_width() / 2 - 150, view_height() / 2);
         set_color("#e2e8f0");
         set_font_size(20);
-        draw_text("Score: " + int_to_string(self.score), view_width() / 2 - 50, view_height() / 2 + 44);
+        draw_text("Score: " + conv.int_to_string(self.score), view_width() / 2 - 50, view_height() / 2 + 44);
     }
 }
 

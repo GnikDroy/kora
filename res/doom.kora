@@ -1,3 +1,6 @@
+import "std/conv";
+import "std/math";
+
 # A DOOM-flavored first-person shooter, raycast to the canvas.
 #
 # Arrows: Up/Down walk, Left/Right turn. a/d strafe. Space or mouse: shoot.
@@ -27,21 +30,6 @@ struct World {
     fire_held: bool,
 }
 
-string int_to_string(n: int) {
-    if (n == 0) { return "0"; }
-    let digits: [char] = [];
-    while (n > 0) {
-        digits.insert(0, ((n % 10) + 48) as char);
-        n = n / 10;
-    }
-    return digits;
-}
-
-real absf(v: real) {
-    if (v < 0.0) { return -v; }
-    return v;
-}
-
 real normalize(a: real) {
     while (a > pi()) { a = a - 2.0 * pi(); }
     while (a < -pi()) { a = a + 2.0 * pi(); }
@@ -61,8 +49,8 @@ bool is_wall(map: [string], x: real, y: real) {
 # and the position along that face (for seam shading).
 Hit cast_ray(map: [string], ox: real, oy: real, angle: real) {
     let step = 0.03;
-    let dx = cos(angle) * step;
-    let dy = sin(angle) * step;
+    let dx = math.cos(angle) * step;
+    let dy = math.sin(angle) * step;
     let x = ox;
     let y = oy;
     let distance = 0.0;
@@ -93,7 +81,7 @@ string wall_shade(distance: real, side: int, tex: real) {
     if (tex < 0.06 || tex > 0.94) { light = light - 16; }
     if (light < 8) { light = 8; }
     if (light > 70) { light = 70; }
-    return "hsl(210, 35%, " + int_to_string(light) + "%)";
+    return "hsl(210, 35%, " + conv.int_to_string(light) + "%)";
 }
 
 # A floating demon head, centered at screen column cx, scaled by size.
@@ -104,7 +92,7 @@ void draw_enemy(cx: int, size: int, distance: real) {
 
     let light = 55 - (distance * 4.0) as int;
     if (light < 15) { light = 15; }
-    set_color("hsl(0, 60%, " + int_to_string(light) + "%)");
+    set_color("hsl(0, 60%, " + conv.int_to_string(light) + "%)");
     fill_circle(cx, cy, r);
 
     let eye = r / 4;
@@ -126,16 +114,16 @@ impl Player {
     }
 
     void walk(self, amount: real, map: [string]) {
-        let nx = self.x + cos(self.angle) * amount;
-        let ny = self.y + sin(self.angle) * amount;
+        let nx = self.x + math.cos(self.angle) * amount;
+        let ny = self.y + math.sin(self.angle) * amount;
         if (!is_wall(map, nx, self.y)) { self.x = nx; }
         if (!is_wall(map, self.x, ny)) { self.y = ny; }
     }
 
     void strafe(self, amount: real, map: [string]) {
         let side = self.angle + pi() / 2.0;
-        let nx = self.x + cos(side) * amount;
-        let ny = self.y + sin(side) * amount;
+        let nx = self.x + math.cos(side) * amount;
+        let ny = self.y + math.sin(side) * amount;
         if (!is_wall(map, nx, self.y)) { self.x = nx; }
         if (!is_wall(map, self.x, ny)) { self.y = ny; }
     }
@@ -152,7 +140,7 @@ impl Enemy {
         if (self.alive) {
             let dx = player.x - self.x;
             let dy = player.y - self.y;
-            let dist = sqrt(dx * dx + dy * dy);
+            let dist = math.sqrtf(dx * dx + dy * dy);
             if (dist < 8.0 && dist > 0.6) {
                 let speed = 0.03;
                 let nx = self.x + (dx / dist) * speed;
@@ -199,10 +187,10 @@ impl World {
                 if (self.enemies[i].alive) {
                     let dx = self.enemies[i].x - self.player.x;
                     let dy = self.enemies[i].y - self.player.y;
-                    let dist = sqrt(dx * dx + dy * dy);
-                    let aim = normalize(atan2(dy, dx) - self.player.angle);
-                    let shot = cast_ray(self.map, self.player.x, self.player.y, atan2(dy, dx));
-                    if (absf(aim) < 0.12 && dist < best_dist && shot.distance > dist) {
+                    let dist = math.sqrtf(dx * dx + dy * dy);
+                    let aim = normalize(math.atan2(dy, dx) - self.player.angle);
+                    let shot = cast_ray(self.map, self.player.x, self.player.y, math.atan2(dy, dx));
+                    if (math.absf(aim) < 0.12 && dist < best_dist && shot.distance > dist) {
                         best = i;
                         best_dist = dist;
                     }
@@ -225,7 +213,7 @@ impl World {
             if (self.enemies[i].alive) {
                 let dx = self.enemies[i].x - self.player.x;
                 let dy = self.enemies[i].y - self.player.y;
-                if (sqrt(dx * dx + dy * dy) < 0.8) { self.player.take_damage(1); }
+                if (math.sqrtf(dx * dx + dy * dy) < 0.8) { self.player.take_damage(1); }
             }
         }
         if (self.flash > 0) { self.flash = self.flash - 1; }
@@ -243,7 +231,7 @@ impl World {
             let ray = self.player.angle - half_fov + offset;
 
             let hit = cast_ray(self.map, self.player.x, self.player.y, ray);
-            let corrected = hit.distance * cos(ray - self.player.angle);
+            let corrected = hit.distance * math.cos(ray - self.player.angle);
             if (corrected < 0.05) { corrected = 0.05; }
             self.depth[col / column_width()] = corrected;
 
@@ -259,10 +247,10 @@ impl World {
             if (self.enemies[i].alive) {
                 let dx = self.enemies[i].x - self.player.x;
                 let dy = self.enemies[i].y - self.player.y;
-                let dist = sqrt(dx * dx + dy * dy);
-                let angle = normalize(atan2(dy, dx) - self.player.angle);
-                let perp = dist * cos(angle);
-                if (absf(angle) < field_of_view() / 2.0 + 0.4 && perp > 0.3) {
+                let dist = math.sqrtf(dx * dx + dy * dy);
+                let angle = normalize(math.atan2(dy, dx) - self.player.angle);
+                let perp = dist * math.cos(angle);
+                if (math.absf(angle) < field_of_view() / 2.0 + 0.4 && perp > 0.3) {
                     let screen_x = ((0.5 + angle / field_of_view()) * (view_width() as real)) as int;
                     let idx = screen_x / column_width();
                     if (idx >= 0 && idx < column_count() && perp < self.depth[idx]) {
@@ -294,13 +282,13 @@ impl World {
 
         set_font_size(18);
         set_color("#f87171");
-        draw_text("HP " + int_to_string(self.player.health), 16, base - 16);
+        draw_text("HP " + conv.int_to_string(self.player.health), 16, base - 16);
         set_color("#fbbf24");
-        draw_text("AMMO " + int_to_string(self.player.ammo), 130, base - 16);
+        draw_text("AMMO " + conv.int_to_string(self.player.ammo), 130, base - 16);
         set_color("#a3e635");
-        draw_text("SCORE " + int_to_string(self.player.score), 280, base - 16);
+        draw_text("SCORE " + conv.int_to_string(self.player.score), 280, base - 16);
         set_color("#e2e8f0");
-        draw_text("LEFT " + int_to_string(self.alive_count()), 470, base - 16);
+        draw_text("LEFT " + conv.int_to_string(self.alive_count()), 470, base - 16);
     }
 
     void render_minimap(self) {
@@ -338,7 +326,7 @@ impl World {
         draw_text(text, view_width() / 2 - 150, view_height() / 2);
         set_color("#e2e8f0");
         set_font_size(20);
-        draw_text("Score: " + int_to_string(self.player.score), view_width() / 2 - 50, view_height() / 2 + 44);
+        draw_text("Score: " + conv.int_to_string(self.player.score), view_width() / 2 - 50, view_height() / 2 + 44);
     }
 }
 
