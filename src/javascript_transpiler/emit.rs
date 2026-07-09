@@ -68,6 +68,19 @@ impl JavascriptTranspiler {
         }
     }
 
+    /// NOTE: Type checker rejects struct cycles, so we terminate.
+    fn emit_default(&mut self, ty: &Type) {
+        match ty {
+            Type::Struct(name) => self.emit_struct_zero(&name.node),
+            Type::Array(_) => self.source.push_str("[]"),
+            Type::Optional(_) => self.source.push_str("null"),
+            Type::Real => self.source.push_str("0.0"),
+            Type::Bool => self.source.push_str("false"),
+            Type::Char => self.source.push_str("\"\\0\""),
+            _ => self.source.push('0'),
+        }
+    }
+
     fn emit_struct_zero(&mut self, name: &str) {
         let members = self.struct_members.get(name).cloned().unwrap_or_default();
         self.source.push_str("({");
@@ -77,26 +90,9 @@ impl JavascriptTranspiler {
             }
             self.source.push_str(field);
             self.source.push(':');
-            self.source.push_str(default_value(ty));
+            self.emit_default(ty);
         }
         self.source.push_str("})");
-    }
-}
-
-fn scalar_zero(ty: &Type) -> &'static str {
-    match ty {
-        Type::Real => "0.0",
-        Type::Bool => "false",
-        Type::Char => "\"\\0\"",
-        _ => "0",
-    }
-}
-
-fn default_value(ty: &Type) -> &'static str {
-    match ty {
-        Type::Array(_) => "[]",
-        Type::Optional(_) => "null",
-        _ => scalar_zero(ty),
     }
 }
 
@@ -542,8 +538,9 @@ impl ASTVisitor for JavascriptTranspiler {
                 _ => {
                     self.source.push_str("new Array(");
                     self.visit_expression(expr);
-                    self.source
-                        .push_str(&format!(").fill({})", scalar_zero(typename)));
+                    self.source.push_str(").fill(");
+                    self.emit_default(typename);
+                    self.source.push(')');
                 }
             },
             None => match typename {

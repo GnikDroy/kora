@@ -312,11 +312,30 @@ impl TypeChecker<'_> {
     }
 
     fn struct_is_default_constructible(&self, name: &str) -> bool {
-        self.symbols.struct_members(name).is_some_and(|members| {
-            members
-                .iter()
-                .all(|(_, ty)| builtins::member_has_default(ty))
-        })
+        self.struct_has_default(name, &mut Vec::new())
+    }
+
+    /// A struct has a default when every member
+    /// - is a scalar
+    /// - is an optional
+    /// - is a list
+    /// - default constructible struct (requires cycle detection)
+    fn struct_has_default(&self, name: &str, visiting: &mut Vec<String>) -> bool {
+        if visiting.iter().any(|n| n == name) {
+            return false;
+        }
+        let Some(members) = self.symbols.struct_members(name) else {
+            return false;
+        };
+        let members: Vec<Type> = members.iter().map(|(_, ty)| ty.clone()).collect();
+        visiting.push(name.to_string());
+        let ok = members.iter().all(|ty| match ty {
+            Type::Struct(inner) => self.struct_has_default(&inner.node, visiting),
+            Type::Function(_, _) => false,
+            _ => true,
+        });
+        visiting.pop();
+        ok
     }
 
     fn get_construct_expression_type(
@@ -871,6 +890,40 @@ mod tests {
     }
 
     #[test]
+    fn test_struct_literals_build_recursive_structures() {
+        check_cases(&[
+            (
+                r#"struct Node { value: int, next: Node? }
+                   int main() {
+                       let leaf = new Node { value: 3, next: none };
+                       let head = new Node { value: 1, next: new Node { value: 2, next: leaf } };
+                       return head.next!.value;
+                   }"#,
+                true,
+            ),
+            (
+                r#"struct Node { value: int, next: Node? }
+                   int main() {
+                       let a = new Node { value: 1, next: none };
+                       a.next = a;
+                       return a.next!.value;
+                   }"#,
+                true,
+            ),
+            (
+                r#"struct Point { x: int, y: int }
+                   struct Segment { start: Point, end: Point }
+                   int main() {
+                       let p = new Point { x: 0, y: 0 };
+                       let s = new Segment { start: p, end: new Point { x: 1, y: 1 } };
+                       return s.start.x + s.end.x;
+                   }"#,
+                true,
+            ),
+        ]);
+    }
+
+    #[test]
     fn test_method_calls() {
         let prelude = r#"
             struct P { x: int }
@@ -956,10 +1009,22 @@ mod tests {
             ),
             (
                 r#"struct P { x: int } struct Line { a: P, b: P } int main() { let l = new Line; return 0; }"#,
-                false,
+                true,
+            ),
+            (
+                r#"struct A { b: B? } struct B { a: A } int main() { let a = new A; let b = new B; return 0; }"#,
+                true,
             ),
             (
                 r#"struct N { next: N } int main() { let n = new N; return 0; }"#,
+                false,
+            ),
+            (
+                r#"struct A { b: B } struct B { a: A } int main() { let a = new A; return 0; }"#,
+                false,
+            ),
+            (
+                r#"struct N { p: P } struct P { q: Q } struct Q { n: N } int main() { let n = new N; return 0; }"#,
                 false,
             ),
         ]);
@@ -981,7 +1046,11 @@ mod tests {
                 true,
             ),
             (
-                r#"struct P { x: int } struct Line { a: P } int main() { let a = new Line[2]; return 0; }"#,
+                r#"struct P { x: int } struct Line { a: P } int main() { let a = new Line[2]; return a[0].a.x; }"#,
+                true,
+            ),
+            (
+                r#"struct N { next: N } int main() { let a = new N[2]; return 0; }"#,
                 false,
             ),
             (r#"int main() { let a = new [int][3]; return 0; }"#, false),
@@ -1108,29 +1177,24 @@ mod tests {
     #[test]
     fn test_optionals() {
         check_cases(&[
-            // A T or `none` implicitly satisfies a T? slot.
             (r#"int main() { let x: int? = 5; return 0; }"#, true),
             (r#"int main() { let x: int? = none; return 0; }"#, true),
             (
                 r#"int main() { let x: int? = 5; x = none; x = 7; return 0; }"#,
                 true,
             ),
-            // Force-unwrap yields the inner type.
             (
                 r#"int main() { let x: int? = 5; let y: int = x!; return y; }"#,
                 true,
             ),
-            // `== none` / `!= none` on an optional.
             (
                 r#"int main() { let x: int? = none; if (x == none) { return 1; } if (x != none) { return 2; } return 0; }"#,
                 true,
             ),
-            // Same-typed optional comparison, and T? vs T.
             (
                 r#"int main() { let a: int? = 1; let b: int? = 2; if (a == b) { return 1; } if (a == 3) { return 2; } return 0; }"#,
                 true,
             ),
-            // Optional struct fields, including a recursive linked list.
             (
                 r#"struct Node { value: int, next: Node? }
                    int main() { let n = new Node { value: 1, next: none }; return n.value; }"#,
@@ -1142,40 +1206,31 @@ mod tests {
                    int main() { return 0; }"#,
                 true,
             ),
-            // Optional return type accepts a value or none.
             (
                 r#"int? find(k: int) { if (k > 0) { return k; } return none; }
                    int main() { let r = find(2); if (r != none) { return r!; } return 0; }"#,
                 true,
             ),
-            // Optional array element and optional-of-array.
             (
                 r#"int main() { let xs: [int?] = [1, none, 3]; return 0; }"#,
                 true,
             ),
             (r#"int main() { let a: [int]? = none; return 0; }"#, true),
             (r#"int main() { let a: [int]? = []; return 0; }"#, true),
-            // `none` needs an expected optional type.
             (r#"int main() { let x = none; return 0; }"#, false),
             (r#"int main() { let x: int = none; return 0; }"#, false),
-            // Unwrapping a non-optional is an error.
             (r#"int main() { let x: int = 5; return x!; }"#, false),
-            // T? does not implicitly narrow to T.
             (
                 r#"int main() { let x: int? = 5; let y: int = x; return y; }"#,
                 false,
             ),
-            // `none` only compares against optionals; not two nones.
             (
                 r#"int main() { let x: int = 5; if (x == none) { return 1; } return 0; }"#,
                 false,
             ),
             (r#"int main() { if (none == none) { } return 0; }"#, false),
-            // `if (none)` — none is not a bool.
             (r#"int main() { if (none) { } return 0; }"#, false),
-            // Wrong inner type against a T? slot.
             (r#"int main() { let x: int? = true; return 0; }"#, false),
-            // Comparing optionals of different inner types.
             (
                 r#"int main() { let a: int? = 1; let b: real? = 2.0; if (a == b) { } return 0; }"#,
                 false,

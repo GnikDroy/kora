@@ -352,6 +352,27 @@ fn test_bare_new_struct_is_zero_filled() {
 }
 
 #[test]
+fn test_bare_new_struct_zero_fill_is_recursive() {
+    let js = transpile(
+        r#"
+            struct Point { x: int, y: int }
+            struct Line { a: Point, b: Point }
+            int main() {
+                let l = new Line;
+                let g = new Line[2];
+                return l.a.x + g.len();
+            }
+        "#,
+    );
+    // A default-constructible struct member is "zero".
+    assert!(js.contains("({a:({x:0,y:0}),b:({x:0,y:0})})"), "{js}");
+    assert!(
+        js.contains("Array.from({length:2},()=>({a:({x:0,y:0}),b:({x:0,y:0})}))"),
+        "{js}"
+    );
+}
+
+#[test]
 fn transpiles_ui_examples() {
     let examples: &[(&str, &str)] = &[
         ("mandelbrot", include_str!("../../res/mandelbrot.kora")),
