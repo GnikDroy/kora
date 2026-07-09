@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use super::{errors::TypeErr, symbol_table::*};
+use super::{errors::TypeErr, symbol_resolver::*};
 use crate::parser::*;
 
 /// Built-in methods on `[T]`, dispatched by receiver type like struct
@@ -294,7 +294,7 @@ impl<'a> TypeChecker<'a> {
         if let Expression::Access(obj, member) = &f.node {
             match self.get_expression_type(obj)? {
                 Type::Struct(struct_name) => {
-                    if let Some(method) = self.symbols.resolve_method(&struct_name.node, member) {
+                    if let Some(method) = self.symbols.struct_method(&struct_name.node, member) {
                         return self.get_method_call_return_type(f, method, args, span);
                     }
                 }
@@ -358,7 +358,7 @@ impl<'a> TypeChecker<'a> {
         match left_type {
             Type::Struct(name) => self
                 .symbols
-                .resolve_struct_member(&name.node, member)
+                .struct_member(&name.node, member)
                 .ok_or(TypeErr {
                     msg: "Invalid member for struct",
                     span: span.clone(),
@@ -485,8 +485,7 @@ impl<'a> TypeChecker<'a> {
                     span: field.span.clone(),
                 });
             }
-            let Some(field_type) = self.symbols.resolve_struct_member(&name.node, &field.node)
-            else {
+            let Some(field_type) = self.symbols.struct_member(&name.node, &field.node) else {
                 return Err(TypeErr {
                     msg: "Invalid member for struct",
                     span: field.span.clone(),
@@ -687,7 +686,7 @@ mod tests {
     use crate::{
         lexer,
         parser::{self, ASTVisitor},
-        semantic_analyzer::symbol_table::Resolver,
+        semantic_analyzer::symbol_resolver::Resolver,
     };
 
     use super::TypeChecker;
@@ -734,7 +733,7 @@ mod tests {
         let tokens = lexer::Lexer::lex(source).expect("lex");
         let mut parser = parser::Parser::new(tokens);
         let module = parser.parse().expect("parse");
-        let symbols = Resolver::new().resolve(&module).expect("resolve");
+        let symbols = Resolver::new().resolve(&[&module]).expect("resolve");
 
         let mut checker = TypeChecker::new(&symbols);
         checker.visit_module(&module);
@@ -779,7 +778,7 @@ mod tests {
         let tokens = lexer::Lexer::lex(source).expect("lex");
         let mut parser = parser::Parser::new(tokens);
         let module = parser.parse().expect("parse");
-        let symbols = Resolver::new().resolve(&module).expect("resolve");
+        let symbols = Resolver::new().resolve(&[&module]).expect("resolve");
 
         let mut checker = TypeChecker::new(&symbols);
         checker.visit_module(&module);
@@ -801,7 +800,7 @@ mod tests {
         let tokens = lexer::Lexer::lex(source).expect("lex");
         let mut parser = parser::Parser::new(tokens);
         let module = parser.parse().expect("parse");
-        let symbols = Resolver::new().resolve(&module).expect("resolve");
+        let symbols = Resolver::new().resolve(&[&module]).expect("resolve");
 
         let mut checker = TypeChecker::new(&symbols);
         checker.visit_module(&module);
@@ -820,7 +819,7 @@ mod tests {
         for (source, expect_ok) in [(ok, true), (bad, false)] {
             let tokens = lexer::Lexer::lex(source).expect("lex");
             let module = parser::Parser::new(tokens).parse().expect("parse");
-            let symbols = Resolver::new().resolve(&module).expect("resolve");
+            let symbols = Resolver::new().resolve(&[&module]).expect("resolve");
             let mut checker = TypeChecker::new(&symbols);
             checker.visit_module(&module);
             assert_eq!(checker.check().is_ok(), expect_ok, "source: {}", source);
@@ -918,7 +917,7 @@ mod tests {
         for (source, expect_ok) in cases {
             let tokens = lexer::Lexer::lex(source).expect("lex");
             let module = parser::Parser::new(tokens).parse().expect("parse");
-            let symbols = Resolver::new().resolve(&module).expect("resolve");
+            let symbols = Resolver::new().resolve(&[&module]).expect("resolve");
             let mut checker = TypeChecker::new(&symbols);
             checker.visit_module(&module);
             assert_eq!(checker.check().is_ok(), expect_ok, "source: {}", source);
@@ -944,7 +943,7 @@ mod tests {
         for (source, expect_ok) in cases {
             let tokens = lexer::Lexer::lex(source).expect("lex");
             let module = parser::Parser::new(tokens).parse().expect("parse");
-            let symbols = Resolver::new().resolve(&module).expect("resolve");
+            let symbols = Resolver::new().resolve(&[&module]).expect("resolve");
             let mut checker = TypeChecker::new(&symbols);
             checker.visit_module(&module);
             assert_eq!(checker.check().is_ok(), expect_ok, "source: {}", source);
@@ -965,7 +964,7 @@ mod tests {
         let tokens = lexer::Lexer::lex(source).expect("lex");
         let mut parser = parser::Parser::new(tokens);
         let module = parser.parse().expect("parse");
-        let symbols = Resolver::new().resolve(&module).expect("resolve");
+        let symbols = Resolver::new().resolve(&[&module]).expect("resolve");
 
         let mut checker = TypeChecker::new(&symbols);
         checker.visit_module(&module);
@@ -980,7 +979,7 @@ mod tests {
         for (source, expect_ok) in cases {
             let tokens = lexer::Lexer::lex(source).expect("lex");
             let module = parser::Parser::new(tokens).parse().expect("parse");
-            let symbols = Resolver::new().resolve(&module).expect("resolve");
+            let symbols = Resolver::new().resolve(&[&module]).expect("resolve");
             let mut checker = TypeChecker::new(&symbols);
             checker.visit_module(&module);
             assert_eq!(checker.check().is_ok(), *expect_ok, "source: {}", source);
@@ -1130,12 +1129,12 @@ mod tests {
         "#;
         let tokens = lexer::Lexer::lex(source).expect("lex");
         let module = parser::Parser::new(tokens).parse().expect("parse");
-        let symbols = Resolver::new().resolve(&module).expect("resolve");
+        let symbols = Resolver::new().resolve(&[&module]).expect("resolve");
         let mut checker = TypeChecker::new(&symbols);
         checker.visit_module(&module);
         checker.check().expect("check");
         let (_, method) = checker.method_calls.iter().next().expect("one method call");
-        assert_eq!(symbols.symbol(*method).name, "P$get");
+        assert_eq!(symbols.symbol(*method).name, "get");
     }
 
     #[test]
@@ -1588,7 +1587,7 @@ mod tests {
         "#;
         let tokens = lexer::Lexer::lex(source).expect("lex");
         let module = parser::Parser::new(tokens).parse().expect("parse");
-        let symbols = Resolver::new().resolve(&module).expect("resolve");
+        let symbols = Resolver::new().resolve(&[&module]).expect("resolve");
         let mut checker = TypeChecker::new(&symbols);
         checker.visit_module(&module);
         checker.check().expect("check");

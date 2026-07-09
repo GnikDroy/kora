@@ -1,90 +1,13 @@
-use std::collections::HashMap;
-
-use super::errors::TypeErr;
+use super::super::errors::TypeErr;
+use super::collect::GlobalsCollector;
+use super::table::{SymbolId, SymbolTable, is_intrinsic};
+use super::{Scope, check_typename};
 use crate::parser::*;
 
-/// Reserved intrinsic names, handled by the type checker and undeclarable by user code.
-pub const INTRINSICS: &[&str] = &["copy"];
-
-pub fn is_intrinsic(name: &str) -> bool {
-    INTRINSICS.contains(&name)
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct SymbolId(usize);
-
-#[derive(Debug, Clone)]
-pub struct Symbol {
-    pub name: String,
-    pub ty: Option<Type>,
-}
-
-#[derive(Debug, Default)]
-pub struct StructDef {
-    pub members: Vec<(String, Type)>, // Order matters, so members are a `Vec`, not a map.
-}
-
-#[derive(Debug, Default)]
-pub struct SymbolTable {
-    symbols: Vec<Symbol>,
-    uses: HashMap<NodeId, SymbolId>,
-    declarations: HashMap<NodeId, SymbolId>,
-    structs: HashMap<String, StructDef>,
-    methods: HashMap<(String, String), SymbolId>, // (struct, method)
-}
-
-impl SymbolTable {
-    pub fn symbol(&self, id: SymbolId) -> &Symbol {
-        &self.symbols[id.0]
-    }
-
-    pub fn symbol_of_use(&self, use_id: NodeId) -> Option<&Symbol> {
-        self.symbol_id_of_use(use_id).map(|id| self.symbol(id))
-    }
-
-    pub fn symbol_id_of_use(&self, use_id: NodeId) -> Option<SymbolId> {
-        self.uses.get(&use_id).copied()
-    }
-
-    pub fn symbol_id_of_declaration(&self, declaration_id: NodeId) -> Option<SymbolId> {
-        self.declarations.get(&declaration_id).copied()
-    }
-
-    /// `None` also covers types that are later inferred.
-    pub fn type_of_use(&self, use_id: NodeId) -> Option<Type> {
-        self.symbol_of_use(use_id).and_then(|s| s.ty.clone())
-    }
-
-    pub fn struct_exists(&self, name: &str) -> bool {
-        self.structs.contains_key(name)
-    }
-
-    pub fn resolve_struct_member(&self, name: &str, member: &str) -> Option<Type> {
-        self.structs
-            .get(name)?
-            .members
-            .iter()
-            .find(|(field, _)| field == member)
-            .map(|(_, ty)| ty.clone())
-    }
-
-    pub fn struct_member_count(&self, name: &str) -> Option<usize> {
-        self.structs.get(name).map(|def| def.members.len())
-    }
-
-    pub fn resolve_method(&self, struct_name: &str, method: &str) -> Option<SymbolId> {
-        self.methods
-            .get(&(struct_name.to_string(), method.to_string()))
-            .copied()
-    }
-}
-
-/// Walks the AST with a live scope stack, builds a `SymbolTable`, and records
-/// each identifier use by its `NodeId`. Reports undefined identifiers.
 #[derive(Default)]
 pub struct Resolver {
     table: SymbolTable,
-    scopes: Vec<HashMap<String, SymbolId>>,
+    scopes: Vec<Scope>,
     errors: Vec<TypeErr>,
     loop_depth: usize,
 }
@@ -94,10 +17,20 @@ impl Resolver {
         Resolver::default()
     }
 
-    /// Resolve a whole module. Returns the populated table, or the collected
-    /// diagnostics if any name failed to resolve.
-    pub fn resolve(mut self, module: &Module) -> Result<SymbolTable, Vec<TypeErr>> {
-        self.visit_module(module);
+    pub fn resolve(mut self, modules: &[&Module]) -> Result<SymbolTable, Vec<TypeErr>> {
+        let scopes = GlobalsCollector::new(&mut self.table, &mut self.errors).collect(modules);
+        for (module, scope) in modules.iter().zip(scopes) {
+            self.scopes.push(scope);
+            for func in module.functions.iter() {
+                self.visit_function(func);
+            }
+            for impl_ in module.impls.iter() {
+                for func in impl_.node.functions.iter() {
+                    self.visit_function(func);
+                }
+            }
+            self.scopes.pop();
+        }
         if self.errors.is_empty() {
             Ok(self.table)
         } else {
@@ -106,7 +39,7 @@ impl Resolver {
     }
 
     fn push_scope(&mut self) {
-        self.scopes.push(HashMap::new());
+        self.scopes.push(Scope::new());
     }
 
     fn pop_scope(&mut self) {
@@ -139,12 +72,7 @@ impl Resolver {
             });
         }
 
-        let id = SymbolId(self.table.symbols.len());
-        self.table.symbols.push(Symbol {
-            name: name.clone(),
-            ty,
-        });
-        self.table.declarations.insert(declaration_id, id);
+        let id = self.table.add_symbol(declaration_id, name.clone(), ty);
         if let Some(scope) = self.scopes.last_mut() {
             scope.insert(name, id);
         }
@@ -160,119 +88,6 @@ impl Resolver {
 }
 
 impl ASTVisitor for Resolver {
-    fn visit_module(&mut self, module: &Module) {
-        self.push_scope(); // global scope
-
-        // Register every struct name first (empty) so member types and
-        // forward/self references resolve regardless of declaration order.
-        for struct_ in module.structs.iter() {
-            if self.table.struct_exists(&struct_.node.name) {
-                self.errors.push(TypeErr {
-                    msg: "Redeclaration of struct",
-                    span: struct_.span.clone(),
-                });
-            } else {
-                self.table
-                    .structs
-                    .insert(struct_.node.name.clone(), StructDef::default());
-            }
-        }
-
-        // Fill in members now that all struct names are known.
-        for struct_ in module.structs.iter() {
-            for member in struct_.node.members.iter() {
-                self.visit_typename(&member.node.typename);
-
-                let already = self.table.structs[&struct_.node.name]
-                    .members
-                    .iter()
-                    .any(|(field, _)| field == &member.node.name);
-                if already {
-                    self.errors.push(TypeErr {
-                        msg: "Redeclaration of struct member",
-                        span: member.span.clone(),
-                    });
-                } else {
-                    self.table
-                        .structs
-                        .get_mut(&struct_.node.name)
-                        .unwrap()
-                        .members
-                        .push((member.node.name.clone(), member.node.typename.clone()));
-                }
-            }
-        }
-
-        // Top-level functions are visible everywhere (forward refs), so declare
-        // them all before walking any body.
-        for func in module.extern_functions.iter() {
-            if let Some(return_type) = &func.node.return_type {
-                self.visit_typename(return_type);
-            }
-            for arg in func.node.arguments.iter() {
-                self.visit_typename(&arg.node.typename);
-            }
-            self.declare(
-                func.id,
-                func.node.name.clone(),
-                Some(func.node.get_type()),
-                &func.span,
-            );
-        }
-        for func in module.functions.iter() {
-            self.declare(
-                func.id,
-                func.node.name.clone(),
-                Some(func.node.get_type()),
-                &func.span,
-            );
-        }
-
-        // Methods are global functions under mangled names.
-        for impl_ in module.impls.iter() {
-            let struct_name = &impl_.node.struct_name;
-            if !self.table.struct_exists(&struct_name.node) {
-                self.errors.push(TypeErr {
-                    msg: "impl block for an undefined struct",
-                    span: struct_name.span.clone(),
-                });
-                continue;
-            }
-            for func in impl_.node.functions.iter() {
-                let is_field = self.table.structs[&struct_name.node]
-                    .members
-                    .iter()
-                    .any(|(field, _)| field == &func.node.name);
-                if is_field {
-                    self.errors.push(TypeErr {
-                        msg: "A method cannot have the same name as a struct member",
-                        span: func.span.clone(),
-                    });
-                }
-                let id = self.declare(
-                    func.id,
-                    format!("{}${}", struct_name.node, func.node.name),
-                    Some(func.node.get_type()),
-                    &func.span,
-                );
-                self.table
-                    .methods
-                    .insert((struct_name.node.clone(), func.node.name.clone()), id);
-            }
-        }
-
-        for func in module.functions.iter() {
-            self.visit_function(func);
-        }
-        for impl_ in module.impls.iter() {
-            for func in impl_.node.functions.iter() {
-                self.visit_function(func);
-            }
-        }
-
-        self.pop_scope();
-    }
-
     fn visit_function(&mut self, func: &Spanned<Function>) {
         self.push_scope();
         if let Some(return_type) = &func.node.return_type {
@@ -292,26 +107,7 @@ impl ASTVisitor for Resolver {
     }
 
     fn visit_typename(&mut self, ty: &Type) {
-        match ty {
-            Type::Struct(name) => {
-                if !self.table.struct_exists(&name.node) {
-                    self.errors.push(TypeErr {
-                        msg: "Undefined type",
-                        span: name.span.clone(),
-                    });
-                }
-            }
-            Type::Array(inner) => self.visit_typename(inner),
-            Type::Function(return_type, args) => {
-                if let Some(return_type) = return_type {
-                    self.visit_typename(return_type);
-                }
-                for arg in args.iter() {
-                    self.visit_typename(arg);
-                }
-            }
-            _ => {}
-        }
+        check_typename(&self.table, &mut self.errors, ty);
     }
 
     fn visit_compound_statement(&mut self, stmts: &[Spanned<Statement>]) {
@@ -340,8 +136,27 @@ impl ASTVisitor for Resolver {
     fn visit_while_statement(&mut self, cond: &Spanned<Expression>, stmt: &Spanned<Statement>) {
         self.visit_expression(cond);
         self.loop_depth += 1;
+        self.push_scope();
         self.visit_statement(stmt);
+        self.pop_scope();
         self.loop_depth -= 1;
+    }
+
+    fn visit_if_statement(
+        &mut self,
+        cond: &Spanned<Expression>,
+        if_case: &Spanned<Statement>,
+        else_case: Option<&Spanned<Statement>>,
+    ) {
+        self.visit_expression(cond);
+        self.push_scope();
+        self.visit_statement(if_case);
+        self.pop_scope();
+        if let Some(else_case) = else_case {
+            self.push_scope();
+            self.visit_statement(else_case);
+            self.pop_scope();
+        }
     }
 
     fn visit_for_statement(
@@ -406,7 +221,115 @@ mod tests {
     fn resolve(source: &str) -> Result<super::SymbolTable, Vec<super::TypeErr>> {
         let tokens = lexer::Lexer::lex(source).expect("lex");
         let module = parser::Parser::new(tokens).parse().expect("parse");
-        Resolver::new().resolve(&module)
+        Resolver::new().resolve(&[&module])
+    }
+
+    fn resolve_program(
+        program: &crate::loader::LoadedProgram,
+    ) -> Result<super::SymbolTable, Vec<super::TypeErr>> {
+        let modules: Vec<&parser::Module> = program.modules.iter().map(|m| &m.module).collect();
+        Resolver::new().resolve(&modules)
+    }
+
+    fn load_program(
+        entry: &str,
+        files: Vec<(&'static str, &'static str)>,
+    ) -> crate::loader::LoadedProgram {
+        let map: std::collections::HashMap<String, String> = files
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        let provider = move |p: &std::path::Path| p.to_str().and_then(|s| map.get(s)).cloned();
+        crate::loader::Loader::new(&provider)
+            .load(entry)
+            .expect("load")
+    }
+
+    fn source_module<'a>(
+        program: &'a crate::loader::LoadedProgram,
+        path: &str,
+    ) -> &'a crate::loader::LoadedModule {
+        program
+            .modules
+            .iter()
+            .find(|m| program.sources[m.id.0 as usize].path.to_str() == Some(path))
+            .expect("module present")
+    }
+
+    fn fn_symbol_name(
+        symbols: &super::SymbolTable,
+        module: &crate::loader::LoadedModule,
+        i: usize,
+    ) -> String {
+        let id = symbols
+            .symbol_id_of_declaration(module.module.functions[i].id)
+            .expect("function declared");
+        symbols.symbol(id).name.clone()
+    }
+
+    #[test]
+    fn test_program_stores_bare_names() {
+        // Names are stored bare regardless of source; the backend mangles later.
+        let program = load_program(
+            "main.kora",
+            vec![
+                (
+                    "main.kora",
+                    r#"import "util.kora"; int main() { return 0; }"#,
+                ),
+                ("util.kora", "int helper() { return 1; }"),
+            ],
+        );
+        let symbols = resolve_program(&program).expect("resolve");
+        assert_eq!(
+            fn_symbol_name(&symbols, source_module(&program, "util.kora"), 0),
+            "helper"
+        );
+        assert_eq!(
+            fn_symbol_name(&symbols, source_module(&program, "main.kora"), 0),
+            "main"
+        );
+    }
+
+    #[test]
+    fn test_program_hides_other_sources_from_bare_names() {
+        // `main` imports `util` but calls its `helper` unqualified — invisible
+        // without qualification, so resolution fails.
+        let program = load_program(
+            "main.kora",
+            vec![
+                (
+                    "main.kora",
+                    r#"import "util.kora"; int main() { return helper(); }"#,
+                ),
+                ("util.kora", "int helper() { return 1; }"),
+            ],
+        );
+        assert!(resolve_program(&program).is_err());
+    }
+
+    #[test]
+    fn test_same_function_name_across_sources_is_distinct() {
+        let program = load_program(
+            "main.kora",
+            vec![
+                (
+                    "main.kora",
+                    r#"import "a.kora"; import "b.kora"; int main() { return 0; }"#,
+                ),
+                ("a.kora", "int helper() { return 1; }"),
+                ("b.kora", "int helper() { return 2; }"),
+            ],
+        );
+        let symbols = resolve_program(&program).expect("resolve");
+        // Both keep the bare name, but are distinct symbols.
+        let a = source_module(&program, "a.kora").module.functions[0].id;
+        let b = source_module(&program, "b.kora").module.functions[0].id;
+        let a_id = symbols.symbol_id_of_declaration(a).unwrap();
+        let b_id = symbols.symbol_id_of_declaration(b).unwrap();
+        assert_eq!(symbols.symbol(a_id).name, "helper");
+        assert_eq!(symbols.symbol(b_id).name, "helper");
+        assert_ne!(a_id, b_id);
     }
 
     #[test]
@@ -563,7 +486,7 @@ mod tests {
         let source = "int f(a: int) { return a; }";
         let tokens = lexer::Lexer::lex(source).expect("lex");
         let module = parser::Parser::new(tokens).parse().expect("parse");
-        let symbols = Resolver::new().resolve(&module).expect("resolve");
+        let symbols = Resolver::new().resolve(&[&module]).expect("resolve");
 
         // Reach the `a` in `return a;` and confirm its NodeId resolves to `int`.
         let body = &module.functions[0].node.statement;
@@ -594,7 +517,7 @@ mod tests {
         "#;
         let tokens = lexer::Lexer::lex(source).expect("lex");
         let module = parser::Parser::new(tokens).parse().expect("parse");
-        let symbols = Resolver::new().resolve(&module).expect("resolve");
+        let symbols = Resolver::new().resolve(&[&module]).expect("resolve");
 
         let func = &module.functions[0];
         let Statement::Compound(stmts) = &func.node.statement.node else {
@@ -682,6 +605,33 @@ mod tests {
     }
 
     #[test]
+    fn test_sibling_scopes_at_same_depth_do_not_leak() {
+        // A binding in one block is invisible to a later sibling block.
+        let source = r#"
+            int main() {
+                { let a: int = 1; }
+                { let b: int = a; }
+                return 0;
+            }
+        "#;
+        let errors = resolve(source).expect_err("expected undefined-identifier error");
+        assert_eq!(errors.len(), 1, "errors: {:?}", errors);
+    }
+
+    #[test]
+    fn test_braceless_control_flow_body_declaration_is_scoped() {
+        // A `let` in a braceless while/if body must not leak past the construct.
+        let cases = [
+            r#"int main() { while (true) let x: int = 1; return x; }"#,
+            r#"int main() { if (true) let x: int = 1; return x; }"#,
+        ];
+        for source in cases {
+            let errors = resolve(source).expect_err(source);
+            assert_eq!(errors.len(), 1, "source: {}, errors: {:?}", source, errors);
+        }
+    }
+
+    #[test]
     fn test_undefined_identifiers_in_expression_positions() {
         // Undefined names are flagged in binary, index, and unary positions.
         let source = r#"
@@ -760,17 +710,17 @@ mod tests {
         "#;
         let symbols = resolve(source).expect("resolve");
         assert!(symbols.struct_exists("Point"));
-        assert_eq!(symbols.resolve_struct_member("Point", "x"), Some(Type::Int));
+        assert_eq!(symbols.struct_member("Point", "x"), Some(Type::Int));
         assert_eq!(
-            symbols.resolve_struct_member("Point", "y"),
+            symbols.struct_member("Point", "y"),
             Some(Type::Array(Box::new(Type::Char)))
         );
-        assert_eq!(symbols.resolve_struct_member("Point", "z"), None);
-        assert_eq!(symbols.resolve_struct_member("Missing", "x"), None);
+        assert_eq!(symbols.struct_member("Point", "z"), None);
+        assert_eq!(symbols.struct_member("Missing", "x"), None);
     }
 
     #[test]
-    fn test_impl_blocks_declare_mangled_methods() {
+    fn test_impl_blocks_declare_methods() {
         let symbols = resolve(
             r#"
             struct P { x: int }
@@ -779,11 +729,11 @@ mod tests {
             "#,
         )
         .expect("resolve");
-        let get = symbols.resolve_method("P", "get").expect("get");
-        assert_eq!(symbols.symbol(get).name, "P$get");
-        assert!(symbols.resolve_method("P", "set").is_some());
-        assert!(symbols.resolve_method("P", "missing").is_none());
-        assert!(symbols.resolve_method("Q", "get").is_none());
+        let get = symbols.struct_method("P", "get").expect("get");
+        assert_eq!(symbols.symbol(get).name, "get");
+        assert!(symbols.struct_method("P", "set").is_some());
+        assert!(symbols.struct_method("P", "missing").is_none());
+        assert!(symbols.struct_method("Q", "get").is_none());
     }
 
     #[test]
