@@ -1,0 +1,332 @@
+int abs(n: int) {
+    if (n < 0) {
+        return -n;
+    }
+    return n;
+}
+
+int min(a: int, b: int) {
+    if (a < b) {
+        return a;
+    }
+    return b;
+}
+
+int max(a: int, b: int) {
+    if (a > b) {
+        return a;
+    }
+    return b;
+}
+
+int clamp(v: int, lo: int, hi: int) {
+    if (v < lo) {
+        return lo;
+    }
+    if (v > hi) {
+        return hi;
+    }
+    return v;
+}
+
+int pow(base: int, exp: int) {
+    if (exp < 0) {
+        return 0;
+    }
+    let result = 1;
+    while (exp > 0) {
+        result = result * base;
+        exp = exp - 1;
+    }
+    return result;
+}
+
+int gcd(a: int, b: int) {
+    if (a < 0) {
+        a = -a;
+    }
+    if (b < 0) {
+        b = -b;
+    }
+    while (b != 0) {
+        let t = b;
+        b = a % b;
+        a = t;
+    }
+    return a;
+}
+
+
+real absf(x: real) {
+    if (x < 0.0) {
+        return -x;
+    }
+    return x;
+}
+
+int sign(n: int) {
+    if (n > 0) {
+        return 1;
+    }
+    if (n < 0) {
+        return -1;
+    }
+    return 0;
+}
+
+real signf(x: real) {
+    if (x > 0.0) {
+        return 1.0;
+    }
+    if (x < 0.0) {
+        return -1.0;
+    }
+    return 0.0;
+}
+
+real minf(a: real, b: real) {
+    if (a < b) {
+        return a;
+    }
+    return b;
+}
+
+real maxf(a: real, b: real) {
+    if (a > b) {
+        return a;
+    }
+    return b;
+}
+
+real clampf(v: real, lo: real, hi: real) {
+    if (v < lo) {
+        return lo;
+    }
+    if (v > hi) {
+        return hi;
+    }
+    return v;
+}
+
+real floorf(x: real) {
+    let t = (x as int) as real;
+    if (t > x) {
+        return t - 1.0;
+    }
+    return t;
+}
+
+real ceilf(x: real) {
+    let t = (x as int) as real;
+    if (t < x) {
+        return t + 1.0;
+    }
+    return t;
+}
+
+real roundf(x: real) {
+    if (x < 0.0) {
+        return ceilf(x - 0.5);
+    }
+    return floorf(x + 0.5);
+}
+
+real sqrtf(x: real) {
+    if (x <= 0.0) {
+        return 0.0;
+    }
+    let scale = 1.0;
+    let v = x;
+    while (v >= 4.0) {
+        v = v / 4.0;
+        scale = scale * 2.0;
+    }
+    while (v < 1.0) {
+        v = v * 4.0;
+        scale = scale * 0.5;
+    }
+    let guess = v;
+    let i = 0;
+    while (i < 20) {
+        guess = (guess + v / guess) * 0.5;
+        i = i + 1;
+    }
+    return guess * scale;
+}
+
+real sin(x: real) {
+    let pi = 3.141592653589793;
+    let two_pi = 6.283185307179586;
+    let half_pi = 1.5707963267948966;
+    let k = (x / two_pi) as int;
+    let r = x - (k as real) * two_pi;
+    if (r > pi) {
+        r = r - two_pi;
+    }
+    if (r < -pi) {
+        r = r + two_pi;
+    }
+    if (r > half_pi) {
+        r = pi - r;
+    }
+    if (r < -half_pi) {
+        r = -pi - r;
+    }
+    let r2 = r * r;
+    let term = r;
+    let sum = r;
+    let i = 1;
+    while (i < 10) {
+        let denom = ((2 * i) * (2 * i + 1)) as real;
+        term = -term * r2 / denom;
+        sum = sum + term;
+        i = i + 1;
+    }
+    return sum;
+}
+
+real cos(x: real) {
+    let half_pi = 1.5707963267948966;
+    return sin(x + half_pi);
+}
+
+real tan(x: real) {
+    return sin(x) / cos(x);
+}
+
+real exp(x: real) {
+    let ln2 = 0.6931471805599453;
+    let k = roundf(x / ln2) as int;
+    let r = x - (k as real) * ln2;
+    let term = 1.0;
+    let sum = 1.0;
+    let i = 1;
+    while (i < 15) {
+        term = term * r / (i as real);
+        sum = sum + term;
+        i = i + 1;
+    }
+    let p = 1.0;
+    if (k >= 0) {
+        let j = 0;
+        while (j < k) {
+            p = p * 2.0;
+            j = j + 1;
+        }
+    } else {
+        let j = 0;
+        while (j < -k) {
+            p = p * 0.5;
+            j = j + 1;
+        }
+    }
+    return sum * p;
+}
+
+real log(x: real) {
+    if (x <= 0.0) {
+        return 0.0;
+    }
+    let ln2 = 0.6931471805599453;
+    let e = 0;
+    let m = x;
+    while (m >= 2.0) {
+        m = m * 0.5;
+        e = e + 1;
+    }
+    while (m < 1.0) {
+        m = m * 2.0;
+        e = e - 1;
+    }
+
+    let t = (m - 1.0) / (m + 1.0);
+    let t2 = t * t;
+    let power = t;
+    let sum = t;
+    let i = 1;
+    while (i < 15) {
+        power = power * t2;
+        sum = sum + power / ((2 * i + 1) as real);
+        i = i + 1;
+    }
+    return 2.0 * sum + (e as real) * ln2;
+}
+
+real log2(x: real) {
+    return log(x) * 1.4426950408889634;
+}
+
+real powf(base: real, exponent: real) {
+    if (base > 0.0) {
+        return exp(exponent * log(base));
+    }
+    if (base == 0.0 && exponent == 0.0) {
+        return 1.0;
+    }
+    return 0.0;
+}
+
+real atan(x: real) {
+    let neg = false;
+    let a = x;
+    if (a < 0.0) {
+        a = -a;
+        neg = true;
+    }
+    let recip = false;
+    if (a > 1.0) {
+        a = 1.0 / a;
+        recip = true;
+    }
+    let sixth = false;
+    if (a > 0.2679491924311227) {
+        let sqrt3 = 1.7320508075688772;
+        a = (sqrt3 * a - 1.0) / (sqrt3 + a);
+        sixth = true;
+    }
+    let a2 = a * a;
+    let power = a;
+    let sum = a;
+    let i = 1;
+    while (i < 12) {
+        power = power * a2;
+        let denom = (2 * i + 1) as real;
+        if (i % 2 == 1) {
+            sum = sum - power / denom;
+        } else {
+            sum = sum + power / denom;
+        }
+        i = i + 1;
+    }
+    if (sixth) {
+        sum = sum + 0.5235987755982988;
+    }
+    if (recip) {
+        sum = 1.5707963267948966 - sum;
+    }
+    if (neg) {
+        sum = -sum;
+    }
+    return sum;
+}
+
+real atan2(y: real, x: real) {
+    let pi = 3.141592653589793;
+    let half_pi = 1.5707963267948966;
+    if (x > 0.0) {
+        return atan(y / x);
+    }
+    if (x < 0.0) {
+        if (y >= 0.0) {
+            return atan(y / x) + pi;
+        }
+        return atan(y / x) - pi;
+    }
+    if (y > 0.0) {
+        return half_pi;
+    }
+    if (y < 0.0) {
+        return -half_pi;
+    }
+    return 0.0;
+}

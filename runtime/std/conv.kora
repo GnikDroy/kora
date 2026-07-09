@@ -1,0 +1,61 @@
+string int_to_string(n: int) {
+    if (n == 0) {
+        return "0";
+    }
+    let negative = n < 0;
+    if (negative) {
+        n = -n;
+    }
+    let digits: [char] = [];
+    while (n > 0) {
+        digits.insert(0, ((n % 10) + 48) as char);
+        n = n / 10;
+    }
+    if (negative) {
+        digits.insert(0, '-');
+    }
+    return digits;
+}
+
+string bool_to_string(b: bool) {
+    if (b) {
+        return "true";
+    }
+    return "false";
+}
+
+string char_to_string(c: char) {
+    let s: [char] = [];
+    s.push(c);
+    return s;
+}
+
+int? string_to_int(s: string) {
+    if (s.len() == 0) {
+        return none;
+    }
+    let i = 0;
+    let negative = false;
+    if (s[0] == '-') {
+        negative = true;
+        i = 1;
+    } else if (s[0] == '+') {
+        i = 1;
+    }
+    if (i == s.len()) {
+        return none;
+    }
+    let value = 0;
+    while (i < s.len()) {
+        let c = s[i];
+        if (c < '0' || c > '9') {
+            return none;
+        }
+        value = value * 10 + ((c as int) - 48);
+        i = i + 1;
+    }
+    if (negative) {
+        return -value;
+    }
+    return value;
+}

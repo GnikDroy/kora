@@ -1,0 +1,160 @@
+bool is_space(c: char) {
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r';
+}
+
+int? index_of(haystack: string, needle: string) {
+    let n = haystack.len();
+    let m = needle.len();
+    if (m == 0) {
+        return 0;
+    }
+    if (m > n) {
+        return none;
+    }
+    let i = 0;
+    while (i <= n - m) {
+        let j = 0;
+        let matched = true;
+        while (j < m) {
+            if (haystack[i + j] != needle[j]) {
+                matched = false;
+                break;
+            }
+            j = j + 1;
+        }
+        if (matched) {
+            return i;
+        }
+        i = i + 1;
+    }
+    return none;
+}
+
+bool contains(haystack: string, needle: string) {
+    return index_of(haystack, needle) != none;
+}
+
+bool starts_with(s: string, prefix: string) {
+    if (prefix.len() > s.len()) {
+        return false;
+    }
+    let i = 0;
+    while (i < prefix.len()) {
+        if (s[i] != prefix[i]) {
+            return false;
+        }
+        i = i + 1;
+    }
+    return true;
+}
+
+bool ends_with(s: string, suffix: string) {
+    let n = s.len();
+    let m = suffix.len();
+    if (m > n) {
+        return false;
+    }
+    let i = 0;
+    while (i < m) {
+        if (s[n - m + i] != suffix[i]) {
+            return false;
+        }
+        i = i + 1;
+    }
+    return true;
+}
+
+string to_upper(s: string) {
+    let result: [char] = [];
+    let i = 0;
+    while (i < s.len()) {
+        let c = s[i];
+        if (c >= 'a' && c <= 'z') {
+            let upper = (c as int) - 32;
+            result.push(upper as char);
+        } else {
+            result.push(c);
+        }
+        i = i + 1;
+    }
+    return result;
+}
+
+string to_lower(s: string) {
+    let result: [char] = [];
+    let i = 0;
+    while (i < s.len()) {
+        let c = s[i];
+        if (c >= 'A' && c <= 'Z') {
+            let lower = (c as int) + 32;
+            result.push(lower as char);
+        } else {
+            result.push(c);
+        }
+        i = i + 1;
+    }
+    return result;
+}
+
+string trim(s: string) {
+    let start = 0;
+    let end = s.len();
+    while (start < end && is_space(s[start])) {
+        start = start + 1;
+    }
+    while (end > start && is_space(s[end - 1])) {
+        end = end - 1;
+    }
+    return s.slice(start, end);
+}
+
+string repeat(s: string, n: int) {
+    let result: [char] = [];
+    let i = 0;
+    while (i < n) {
+        result.extend(s);
+        i = i + 1;
+    }
+    return result;
+}
+
+string reverse(s: string) {
+    let result: [char] = [];
+    let i = s.len() - 1;
+    while (i >= 0) {
+        result.push(s[i]);
+        i = i - 1;
+    }
+    return result;
+}
+
+[string] split(s: string, sep: char) {
+    let parts: [string] = [];
+    let current: [char] = [];
+    let i = 0;
+    while (i < s.len()) {
+        let c = s[i];
+        if (c == sep) {
+            parts.push(current);
+            current = [];
+        } else {
+            current.push(c);
+        }
+        i = i + 1;
+    }
+    parts.push(current);
+    return parts;
+}
+
+string join(parts: [string], sep: string) {
+    let result: [char] = [];
+    let i = 0;
+    while (i < parts.len()) {
+        if (i > 0) {
+            result.extend(sep);
+        }
+        result.extend(parts[i]);
+        i = i + 1;
+    }
+    return result;
+}
