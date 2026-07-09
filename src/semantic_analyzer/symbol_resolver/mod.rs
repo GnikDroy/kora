@@ -50,11 +50,11 @@ pub(super) mod test_support {
         Resolver::new().resolve(&[&module])
     }
 
-    pub(super) fn resolve_program(program: &LoadedProgram) -> Result<SymbolTable, Vec<TypeErr>> {
+    pub(crate) fn resolve_program(program: &LoadedProgram) -> Result<SymbolTable, Vec<TypeErr>> {
         Resolver::new().resolve_program(program)
     }
 
-    pub(super) fn load_program(
+    pub(crate) fn load_program(
         entry: &str,
         files: Vec<(&'static str, &'static str)>,
     ) -> LoadedProgram {

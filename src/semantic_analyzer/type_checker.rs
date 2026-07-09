@@ -290,8 +290,11 @@ impl<'a> TypeChecker<'a> {
             return self.get_copy_intrinsic_type(args, span).map(Some);
         }
 
-        // Method call
-        if let Expression::Access(obj, member) = &f.node {
+        // Method call `obj.method(...)`. Skipped when the access is a
+        // module-qualified reference, which the resolver bound to a symbol.
+        if let Expression::Access(obj, member) = &f.node
+            && self.symbols.symbol_id_of_use(f.id).is_none()
+        {
             match self.get_expression_type(obj)? {
                 Type::Struct(struct_name) => {
                     if let Some(method) = self.symbols.struct_method(&struct_name.node, member) {
@@ -542,7 +545,14 @@ impl<'a> TypeChecker<'a> {
                 }),
             Cast(expr, typename) => self.get_cast_expression_type(expr, typename, span),
             ArrayIndex(left, right) => self.get_array_index_expression_type(left, right, span),
-            Access(left, member) => self.get_access_expression_type(left, member, span),
+            Access(left, member) => match self.symbols.symbol_id_of_use(expr.id) {
+                // A module-qualified access (`m.member`) the resolver bound to a symbol.
+                Some(id) => self.symbols.symbol(id).ty.clone().ok_or(TypeErr {
+                    msg: "Cannot determine the type of this member",
+                    span: span.clone(),
+                }),
+                None => self.get_access_expression_type(left, member, span),
+            },
             Construct(typename, size) => self.get_construct_expression_type(typename, size, span),
             StructLiteral(typename, fields) => self.get_struct_literal_type(typename, fields, span),
         }?;
@@ -690,6 +700,47 @@ mod tests {
     };
 
     use super::TypeChecker;
+    use crate::loader::LoadedProgram;
+    use crate::semantic_analyzer::symbol_resolver::test_support::{load_program, resolve_program};
+
+    fn program_type_checks(program: &LoadedProgram) -> bool {
+        let symbols = resolve_program(program).expect("resolve");
+        let mut checker = TypeChecker::new(&symbols);
+        for module in &program.modules {
+            checker.visit_module(&module.module);
+        }
+        checker.check().is_ok()
+    }
+
+    #[test]
+    fn test_module_qualified_call_type_checks() {
+        let program = load_program(
+            "main.kora",
+            vec![
+                (
+                    "main.kora",
+                    r#"import "util.kora"; int main() { return util.helper(); }"#,
+                ),
+                ("util.kora", "int helper() { return 1; }"),
+            ],
+        );
+        assert!(program_type_checks(&program));
+    }
+
+    #[test]
+    fn test_module_qualified_call_arity_is_checked() {
+        let program = load_program(
+            "main.kora",
+            vec![
+                (
+                    "main.kora",
+                    r#"import "util.kora"; int main() { return util.helper(1); }"#,
+                ),
+                ("util.kora", "int helper() { return 1; }"),
+            ],
+        );
+        assert!(!program_type_checks(&program));
+    }
 
     #[test]
     fn test_valid() {
