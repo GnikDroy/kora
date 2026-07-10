@@ -1,7 +1,7 @@
-<div style="display: flex; flex-direction: row; gap: 1em; align-items: center;">
-    <img src="logo.svg" alt="Kora" width="64" height="64" />
-    <h1 style="font-size: 2em;"> Kora </h1>
-</div>
+<h1>
+    <img src="logo.svg" alt="Kora" width="64" height="64" align="center" />
+    <span> Kora </span>
+</h1>
 
 Kora is a small, statically typed, C-like programming language with a garbage collector. It compiles to JavaScript, so your programs run right
 in the browser with nothing to install.
