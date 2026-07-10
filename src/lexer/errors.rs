@@ -16,8 +16,12 @@ impl fmt::Display for LexerErr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "error: {} ({}:{})\nsuggestion: {}",
-            self.msg, self.position.row, self.position.col, self.suggestion
-        )
+            "error: {} ({}:{})",
+            self.msg, self.position.row, self.position.col
+        )?;
+        if !self.suggestion.is_empty() {
+            write!(f, "\nnote: {}", self.suggestion)?;
+        }
+        Ok(())
     }
 }

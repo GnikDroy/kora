@@ -14,6 +14,7 @@ let currentFile = FILES[0];
 let editor = null;
 let jsView = null;
 let menuOpen = false;
+let monacoRef = null;
 
 const isDirty = (name) =>
   models[name] && models[name].getValue() !== originals[name];
@@ -28,9 +29,14 @@ export async function loadSources() {
 }
 
 export function createEditors(monaco) {
+  monacoRef = monaco;
   for (const name of FILES) {
     models[name] = monaco.editor.createModel(originals[name], "kora");
-    models[name].onDidChangeContent(() => renderTrigger());
+    models[name].onDidChangeContent(() => {
+      renderTrigger();
+      // Positions go stale as the user edits; drop them until the next Run.
+      monaco.editor.setModelMarkers(models[name], "kora", []);
+    });
   }
 
   const shared = {
@@ -207,6 +213,39 @@ export function getSource() {
 
 export function setTranspiledJs(text) {
   if (jsView) jsView.setValue(text);
+}
+
+// Every compiler error prints as `error: <msg> (<row>:<col>)`; position-less
+// errors (e.g. at EOF) omit the parens and get no marker.
+function parseErrors(text, model) {
+  const markers = [];
+  for (const line of text.split("\n")) {
+    const m = line.match(/^error:\s*(.*?)\s*\((\d+):(\d+)\)\s*$/);
+    if (!m) continue;
+    const row = Math.min(Math.max(+m[2], 1), model.getLineCount());
+    const col = +m[3];
+    const word = model.getWordAtPosition({ lineNumber: row, column: col });
+    markers.push({
+      severity: monacoRef.MarkerSeverity.Error,
+      message: m[1],
+      startLineNumber: row,
+      startColumn: word ? word.startColumn : col,
+      endLineNumber: row,
+      endColumn: word ? word.endColumn : col + 1,
+    });
+  }
+  return markers;
+}
+
+export function setCompileErrors(text) {
+  if (!monacoRef || !editor) return;
+  const model = models[currentFile];
+  monacoRef.editor.setModelMarkers(model, "kora", parseErrors(text, model));
+}
+
+export function clearCompileErrors() {
+  if (!monacoRef) return;
+  monacoRef.editor.setModelMarkers(models[currentFile], "kora", []);
 }
 
 export function layoutJsView() {

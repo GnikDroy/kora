@@ -1,11 +1,9 @@
-<p align="center">
-  <img src="logo.svg" alt="Kora" width="120" height="120" />
-</p>
+<div style="display: flex; flex-direction: row; gap: 1em; align-items: center;">
+    <img src="logo.svg" alt="Kora" width="64" height="64" />
+    <h1 style="font-size: 2em;"> Kora </h1>
+</div>
 
-# Kora
-
-Kora is a small, statically typed, C-like programming language — a hobby
-compiler written in Rust. It compiles to JavaScript, so your programs run right
+Kora is a small, statically typed, C-like programming language with a garbage collector. It compiles to JavaScript, so your programs run right
 in the browser with nothing to install.
 
 **[Try Kora in the online playground](https://gnikdroy.github.io/kora/)**

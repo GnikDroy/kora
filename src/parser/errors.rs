@@ -14,11 +14,11 @@ impl fmt::Display for ParseErr {
         match &self.token {
             Some(token) => write!(
                 f,
-                "error: {}\n{}:{}\n{:?}",
-                self.msg, token.start.row, token.start.col, token.token
+                "error: {} ({}:{})",
+                self.msg, token.start.row, token.start.col
             ),
 
-            None => write!(f, "error: {}\nEOF", self.msg),
+            None => write!(f, "error: {}", self.msg),
         }
     }
 }

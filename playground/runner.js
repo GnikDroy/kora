@@ -1,5 +1,12 @@
 import init, { transpile } from "../pkg/compiler.js";
-import { editorReady, getSource, setTranspiledJs, layoutJsView } from "./editor.js";
+import {
+  clearCompileErrors,
+  editorReady,
+  getSource,
+  layoutJsView,
+  setCompileErrors,
+  setTranspiledJs,
+} from "./editor.js";
 import { ASYNC_EXTERNS, EXTERNS, appendOutput, clearOutput, readLine } from "./runtime.js";
 
 let compilerReady = false;
@@ -188,11 +195,13 @@ export async function run() {
     try {
       compiled = transpile(getSource() + EXTERNS, ASYNC_EXTERNS);
     } catch (err) {
+      setCompileErrors(String(err));
       appendOutput(String(err));
-      setTranspiledJs("// Compile error — see Output tab.");
+      setTranspiledJs("// Compile error — see the editor and Output tab.");
       selectTab("output");
       return;
     }
+    clearCompileErrors();
 
     setTranspiledJs(await prettify(compiled));
     await executeInWorker(compiled, abortController.signal);

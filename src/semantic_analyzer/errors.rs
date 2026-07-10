@@ -11,7 +11,7 @@ impl Error for TypeErr {}
 
 impl fmt::Display for TypeErr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(
+        write!(
             f,
             "error: {} ({}:{})",
             self.msg, self.span.start.row, self.span.start.col

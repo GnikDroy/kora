@@ -10,6 +10,6 @@ impl Error for TranspilerErr {}
 
 impl fmt::Display for TranspilerErr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(f, "{}", self.msg)
+        write!(f, "error: {}", self.msg)
     }
 }
