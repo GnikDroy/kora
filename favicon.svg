@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-label="Kora">
+  <style>
+    /* Recolour here: edit these three values, or override the CSS variables
+       (--kora-bg-1, --kora-bg-2, --kora-blade) from your page when inlined. */
+    .tile-a { stop-color: var(--kora-bg-1, #fb4934); } /* tile, top-left     */
+    .tile-b { stop-color: var(--kora-bg-2, #cc241d); } /* tile, bottom-right */
+    .blade  { fill:       var(--kora-blade, #fbf1c7); } /* blade + hilt       */
+  </style>
+  <defs>
+    <linearGradient id="koraTile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" class="tile-a"/>
+      <stop offset="1" class="tile-b"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="60" fill="url(#koraTile)"/>
+  <g class="blade" transform="translate(-12 -18)">
+    <circle cx="104" cy="222" r="13"/>
+    <rect x="96" y="186" width="16" height="30" rx="7"/>
+    <circle cx="104" cy="180" r="15"/>
+    <path fill-rule="evenodd" d="M94 172 C100 126 114 100 132 80 C146 94 158 80 172 66 C192 116 156 152 116 172 Z M144 106 a6 6 0 1 0 12 0 a6 6 0 1 0 -12 0 Z M140 128 a6 6 0 1 0 12 0 a6 6 0 1 0 -12 0 Z"/>
+  </g>
+</svg>

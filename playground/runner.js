@@ -136,6 +136,8 @@ function executeInWorker(code, signal) {
         clearOutput();
       } else if (msg.type === "canvas") {
         selectTab("canvas");
+      } else if (msg.type === "stdout") {
+        selectTab("output");
       } else if (msg.type === "input") {
         try {
           const value = await readLine(signal);

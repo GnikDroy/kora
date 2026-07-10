@@ -2,11 +2,13 @@ let pendingInput = null;
 const keysDown = new Set();
 let ctx = null;
 let canvasShown = false;
+let stdoutShown = false;
 let mouseX = 0;
 let mouseY = 0;
 let mouseDown = false;
 
 function clear() {
+  useStdout();
   postMessage({ type: "clear" });
 }
 
@@ -14,6 +16,13 @@ function useCanvas() {
   if (!canvasShown) {
     canvasShown = true;
     postMessage({ type: "canvas" });
+  }
+}
+
+function useStdout() {
+  if (!stdoutShown) {
+    stdoutShown = true;
+    postMessage({ type: "stdout" });
   }
 }
 
@@ -143,6 +152,7 @@ function draw_text(s, x, y) {
 }
 
 function print(a) {
+  useStdout();
   if (Array.isArray(a)) a = a.join("");
   postMessage({ type: "print", text: String(a) });
 }

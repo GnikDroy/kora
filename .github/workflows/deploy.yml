@@ -32,6 +32,7 @@ jobs:
         run: |
           mkdir -p _site/pkg
           cp index.html _site/
+          cp logo.svg favicon.svg _site/
           cp -r playground _site/
           cp -r res _site/
           cp pkg/compiler.js pkg/compiler_bg.wasm _site/pkg/

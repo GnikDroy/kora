@@ -1,6 +1,3 @@
-// Files shown as tabs above the editor. Order = tab order.
-// Sources are fetched from res/ at page load; the same files are
-// used by the Rust `transpiles_ui_examples` test.
 const FILES = [
   "mandelbrot.kora",
   "sudoku.kora",
@@ -16,6 +13,11 @@ const originals = {};
 let currentFile = FILES[0];
 let editor = null;
 let jsView = null;
+let menuOpen = false;
+
+const isDirty = (name) =>
+  models[name] && models[name].getValue() !== originals[name];
+const stem = (name) => name.replace(/\.kora$/, "");
 
 export async function loadSources() {
   await Promise.all(FILES.map(async (name) => {
@@ -25,124 +27,174 @@ export async function loadSources() {
   }));
 }
 
-function updateScrollIndicators() {
-  const bar = document.getElementById("file-tabs");
-  const left = document.getElementById("tabs-left");
-  const right = document.getElementById("tabs-right");
-  if (!bar || !left || !right) return;
-  left.classList.toggle("hidden", bar.scrollLeft <= 0);
-  right.classList.toggle(
-    "hidden",
-    bar.scrollLeft + bar.clientWidth >= bar.scrollWidth - 1,
-  );
-}
-
 export function createEditors(monaco) {
-  const bar = document.getElementById("file-tabs");
-  bar.addEventListener("wheel", (e) => {
-    if (e.deltaY && !e.deltaX) {
-      bar.scrollLeft += e.deltaY;
-      e.preventDefault();
-    }
-  }, { passive: false });
-
-  bar.addEventListener("scroll", updateScrollIndicators);
-  new ResizeObserver(updateScrollIndicators).observe(bar);
-
-  document.getElementById("tabs-left").addEventListener("click", () => {
-    bar.scrollBy({ left: -bar.clientWidth * 0.6, behavior: "smooth" });
-  });
-  document.getElementById("tabs-right").addEventListener("click", () => {
-    bar.scrollBy({ left: bar.clientWidth * 0.6, behavior: "smooth" });
-  });
-
-  bar.addEventListener("keydown", (e) => {
-    const idx = FILES.indexOf(currentFile);
-    let next = null;
-    if (e.key === "ArrowRight") next = FILES[(idx + 1) % FILES.length];
-    else if (e.key === "ArrowLeft") next = FILES[(idx - 1 + FILES.length) % FILES.length];
-    else if (e.key === "Home") next = FILES[0];
-    else if (e.key === "End") next = FILES[FILES.length - 1];
-    if (next) {
-      e.preventDefault();
-      switchFile(next, { focusEditor: false });
-    }
-  });
-
   for (const name of FILES) {
     models[name] = monaco.editor.createModel(originals[name], "kora");
-    models[name].onDidChangeContent(() => renderFileTabs());
+    models[name].onDidChangeContent(() => renderTrigger());
   }
 
-  editor = monaco.editor.create(document.getElementById("editor"), {
-    model: models[currentFile],
+  const shared = {
     theme: "kora-light",
     automaticLayout: true,
     fontSize: 13,
     minimap: { enabled: false },
     scrollBeyondLastLine: false,
     padding: { top: 16 },
+  };
+
+  editor = monaco.editor.create(document.getElementById("editor"), {
+    model: models[currentFile],
+    ...shared,
   });
 
   jsView = monaco.editor.create(document.getElementById("js-view"), {
     value: "// Transpiled JavaScript will appear here after you Run.",
     language: "javascript",
-    theme: "kora-light",
-    automaticLayout: true,
     readOnly: true,
-    fontSize: 13,
-    minimap: { enabled: false },
-    scrollBeyondLastLine: false,
-    padding: { top: 16 },
+    ...shared,
   });
 
-  renderFileTabs();
+  setupFilePicker();
+  renderTrigger();
 }
 
-export function renderFileTabs() {
-  const bar = document.getElementById("file-tabs");
-  if (!bar) return;
-  bar.innerHTML = "";
+function setupFilePicker() {
+  const btn = document.getElementById("file-picker-btn");
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleMenu();
+  });
+  btn.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      openMenu();
+      focusItem(FILES.indexOf(currentFile));
+    }
+  });
+  document.getElementById("file-picker-menu").addEventListener(
+    "keydown",
+    onMenuKeydown,
+  );
+  document.addEventListener("click", closeMenu);
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeMenu();
+  });
+}
+
+function renderTrigger() {
+  const label = document.getElementById("file-picker-label");
+  if (!label) return;
+  label.textContent = stem(currentFile) + (isDirty(currentFile) ? " •" : "");
+}
+
+function renderMenu() {
+  const menu = document.getElementById("file-picker-menu");
+  menu.innerHTML = "";
   for (const name of FILES) {
-    const btn = document.createElement("button");
     const active = name === currentFile;
-    const dirty = models[name] && models[name].getValue() !== originals[name];
-    btn.className = "file-tab" + (active ? " active" : "") + (dirty ? " dirty" : "");
-    btn.title = dirty ? `${name} — edited, differs from the built-in example` : name;
-    btn.setAttribute("role", "tab");
-    btn.setAttribute("aria-selected", String(active));
-    btn.tabIndex = active ? 0 : -1;
-    btn.onclick = () => switchFile(name);
-    const label = document.createElement("span");
-    label.textContent = name.replace(/\.kora$/, "");
-    const dot = document.createElement("span");
-    dot.className = "dot";
-    btn.appendChild(label);
-    btn.appendChild(dot);
-    bar.appendChild(btn);
-    if (active) btn.scrollIntoView({ inline: "nearest", block: "nearest" });
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "file-picker-item" + (active ? " active" : "");
+    item.setAttribute("role", "option");
+    item.setAttribute("aria-selected", String(active));
+    item.tabIndex = -1;
+
+    const text = document.createElement("span");
+    text.className = "fp-name";
+    text.textContent = stem(name);
+
+    item.append(text);
+    if (isDirty(name)) {
+      const d = document.createElement("span");
+      d.className = "fp-dirty";
+      d.textContent = "•";
+      d.title = "edited";
+      item.append(d);
+    }
+    if (active) {
+      const check = document.createElement("i");
+      check.className = "fa-solid fa-check fp-check";
+      item.append(check);
+    }
+    item.addEventListener("click", (e) => {
+      e.stopPropagation();
+      switchFile(name);
+      closeMenu();
+      editor.focus();
+    });
+
+    const li = document.createElement("li");
+    li.append(item);
+    menu.append(li);
   }
-  updateScrollIndicators();
+}
+
+const menuItems = () =>
+  Array.from(document.querySelectorAll("#file-picker-menu .file-picker-item"));
+
+function focusItem(i) {
+  const items = menuItems();
+  if (!items.length) return;
+  const idx = (i + items.length) % items.length;
+  items.forEach((el) => el.classList.remove("focused"));
+  items[idx].classList.add("focused");
+  items[idx].focus();
+}
+
+function openMenu() {
+  if (menuOpen) return;
+  renderMenu();
+  menuOpen = true;
+  document.getElementById("file-picker-menu").classList.remove("hidden");
+  document.getElementById("file-picker-btn").setAttribute("aria-expanded", "true");
+}
+
+function closeMenu() {
+  if (!menuOpen) return;
+  menuOpen = false;
+  document.getElementById("file-picker-menu").classList.add("hidden");
+  document.getElementById("file-picker-btn").setAttribute("aria-expanded", "false");
+}
+
+function toggleMenu() {
+  if (menuOpen) {
+    closeMenu();
+  } else {
+    openMenu();
+    focusItem(FILES.indexOf(currentFile));
+  }
+}
+
+function onMenuKeydown(e) {
+  const items = menuItems();
+  const cur = items.findIndex((el) => el.classList.contains("focused"));
+  if (e.key === "ArrowDown") { e.preventDefault(); focusItem(cur + 1); }
+  else if (e.key === "ArrowUp") { e.preventDefault(); focusItem(cur - 1); }
+  else if (e.key === "Home") { e.preventDefault(); focusItem(0); }
+  else if (e.key === "End") { e.preventDefault(); focusItem(items.length - 1); }
+  else if (e.key === "Enter" || e.key === " ") {
+    e.preventDefault();
+    if (cur >= 0) items[cur].click();
+  } else if (e.key === "Escape") {
+    e.preventDefault();
+    closeMenu();
+    document.getElementById("file-picker-btn").focus();
+  }
 }
 
 export function switchFile(name, { focusEditor = true } = {}) {
   if (!models[name]) return;
   currentFile = name;
   editor.setModel(models[name]);
-  renderFileTabs();
-  if (focusEditor) {
-    editor.focus();
-  } else {
-    const active = document.querySelector("#file-tabs .file-tab.active");
-    if (active) active.focus();
-  }
+  renderTrigger();
+  if (focusEditor) editor.focus();
 }
 
 export function resetCurrentFile() {
   const original = originals[currentFile];
   if (original == null) return;
   models[currentFile].setValue(original);
-  renderFileTabs();
+  renderTrigger();
 }
 
 export function editorReady() {

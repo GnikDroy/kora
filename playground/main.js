@@ -17,13 +17,8 @@ Promise.all([monacoReady(), loadSources()])
   })
   .catch((err) => {
     console.error(err);
-    const bar = document.getElementById("file-tabs");
-    if (bar) {
-      bar.innerHTML =
-        `<span style="color:#f87171; font-size:12px; padding:0 12px">` +
-        `Failed to load examples: ${err.message}` +
-        `</span>`;
-    }
+    const label = document.getElementById("file-picker-label");
+    if (label) label.textContent = "Failed to load examples";
   });
 
 initCompiler();

@@ -3,9 +3,31 @@
   <head>
     <meta charset="utf-8" />
     <title>Kora Playground</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Caveat:wght@700&family=Shantell+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
-      tailwind.config = { darkMode: "class" };
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              white: "#fefaeb",
+              zinc: {
+                50: "#f9f5d7", 100: "#f2e5bc", 200: "#ebdbb2", 300: "#d5c4a1",
+                400: "#bdae93", 500: "#928374", 600: "#7c6f64", 700: "#504945",
+                800: "#3c3836", 900: "#282828", 950: "#1d2021",
+              },
+              emerald: { 500: "#427b58", 600: "#2f5a40" },
+            },
+          },
+        },
+      };
       if (localStorage.getItem("kora-theme") === "dark") {
         document.documentElement.classList.add("dark");
       }
@@ -36,62 +58,34 @@
     <script type="module" src="playground/main.js"></script>
   </head>
   <body class="bg-white text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100 overflow-hidden">
-    <!-- Header -->
-    <header
-      class="h-14 border-b border-zinc-200 dark:border-zinc-800 px-4 flex items-center justify-between"
-    >
-      <div class="flex items-center gap-3">
-        <div class="w-8 h-8 rounded-lg bg-emerald-500 flex items-center justify-center font-black text-white">
-          K
-        </div>
-        <div>
-          <h1 class="text-base font-semibold leading-tight">Kora</h1>
-          <p class="text-xs text-zinc-500 dark:text-zinc-400 leading-tight">Online playground</p>
-        </div>
-      </div>
-
-      <div class="flex items-center gap-2">
-      <button
-        id="theme-btn"
-        aria-label="Toggle dark mode"
-        class="w-8 h-8 rounded-md text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors"
-      >
-        <i class="fa-solid fa-moon"></i>
-      </button>
-      <button
-        id="run-btn"
-        disabled
-        class="inline-flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold text-sm px-4 py-1.5 rounded-md transition-colors disabled:hover:bg-emerald-500 opacity-50 cursor-not-allowed"
-      >
-        <i class="fa-solid fa-play text-xs"></i>
-        <span class="run-label">Loading…</span>
-      </button>
-      </div>
-    </header>
-
-    <!-- Body -->
-    <main class="flex flex-row" style="height: calc(100vh - 3.5rem)">
+    <main class="flex flex-row h-screen">
       <!-- Editor -->
       <section class="w-1/2 h-full border-r border-zinc-200 dark:border-zinc-800 flex flex-col">
-        <div class="h-9 flex items-stretch border-b border-zinc-200 dark:border-zinc-800">
-          <div class="relative flex-1 min-w-0 flex items-stretch">
-            <button id="tabs-left" class="tab-scroll left hidden" aria-label="Scroll tabs left">
-              <i class="fa-solid fa-chevron-left text-[10px]"></i>
+        <div class="h-9 flex items-center gap-2 px-2 border-b border-zinc-200 dark:border-zinc-800">
+          <img src="logo.svg" alt="Kora" width="24" height="24" class="w-6 h-6 flex-none" />
+          <span class="font-brand text-2xl leading-none text-zinc-800 dark:text-zinc-100 flex-none">Kora</span>
+          <div id="file-picker" class="relative ml-auto">
+            <button
+              id="file-picker-btn"
+              type="button"
+              aria-haspopup="listbox"
+              aria-expanded="false"
+              class="file-picker-btn"
+            >
+              <span id="file-picker-label">…</span>
+              <i class="fa-solid fa-chevron-down fp-caret"></i>
             </button>
-            <div
-              id="file-tabs"
-              role="tablist"
+            <ul
+              id="file-picker-menu"
+              role="listbox"
               aria-label="Example programs"
-              class="w-full flex items-stretch overflow-x-auto no-scrollbar"
-            ></div>
-            <button id="tabs-right" class="tab-scroll right hidden" aria-label="Scroll tabs right">
-              <i class="fa-solid fa-chevron-right text-[10px]"></i>
-            </button>
+              class="file-picker-menu hidden"
+            ></ul>
           </div>
           <button
             id="reset-btn"
             title="Restore this file's original example"
-            class="flex-none px-3 text-xs text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 border-l border-zinc-200 dark:border-zinc-800 transition-colors"
+            class="flex-none px-2.5 py-1 rounded-md text-xs text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 hover:bg-zinc-200/60 dark:hover:bg-zinc-800/60 transition-colors"
           >
             <i class="fa-solid fa-rotate-left text-[10px] mr-1"></i>
             Reset
@@ -103,7 +97,7 @@
       <!-- Right pane: tabs + input -->
       <section class="w-1/2 h-full flex flex-col">
         <!-- Tabs -->
-        <div class="h-9 flex items-center border-b border-zinc-200 dark:border-zinc-800">
+        <div class="h-9 flex items-center border-b border-zinc-200 dark:border-zinc-800 pr-2">
           <button
             class="tab-btn active px-4 h-full text-xs uppercase tracking-wider text-zinc-500 border-b-2 border-transparent hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
             data-tab="output"
@@ -112,16 +106,33 @@
           </button>
           <button
             class="tab-btn px-4 h-full text-xs uppercase tracking-wider text-zinc-500 border-b-2 border-transparent hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
-            data-tab="js"
-          >
-            Transpiled JS
-          </button>
-          <button
-            class="tab-btn px-4 h-full text-xs uppercase tracking-wider text-zinc-500 border-b-2 border-transparent hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
             data-tab="canvas"
           >
             Canvas
           </button>
+          <button
+            class="tab-btn px-4 h-full text-xs uppercase tracking-wider text-zinc-500 border-b-2 border-transparent hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
+            data-tab="js"
+          >
+            JS
+          </button>
+          <div class="ml-auto flex items-center gap-2">
+            <button
+              id="theme-btn"
+              aria-label="Toggle dark mode"
+              class="w-7 h-7 rounded-md text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors"
+            >
+              <i class="fa-solid fa-moon"></i>
+            </button>
+            <button
+              id="run-btn"
+              disabled
+              class="inline-flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold text-sm px-3.5 py-1 rounded-md transition-colors disabled:hover:bg-emerald-500 opacity-50 cursor-not-allowed"
+            >
+              <i class="fa-solid fa-play text-xs"></i>
+              <span class="run-label">Loading…</span>
+            </button>
+          </div>
         </div>
 
         <!-- Tab panels -->

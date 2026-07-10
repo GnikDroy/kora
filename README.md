@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="logo.svg" alt="Kora" width="120" height="120" />
+</p>
+
 # Kora
 
 Kora is a small, statically typed, C-like programming language — a hobby

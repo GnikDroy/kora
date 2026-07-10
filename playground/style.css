@@ -1,109 +1,106 @@
 html, body { height: 100%; margin: 0; }
 body {
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, sans-serif;
+  font-family: "Shantell Sans", ui-rounded, "Segoe UI", system-ui,
+    -apple-system, sans-serif;
 }
+.font-brand {
+  font-family: "Caveat", ui-serif, cursive;
+  font-weight: 700;
+}
+
 .tab-btn.active {
-  color: #18181b;
-  border-bottom-color: #34d399;
+  color: #282828;
+  border-bottom-color: #cc241d;
 }
+
 #stdout {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 13px;
   line-height: 1.55;
 }
-/* Hide default focus rings we don't want, keep tab focus for a11y */
-button:focus { outline: none; }
-button:focus-visible { outline: 2px solid #34d399; outline-offset: 2px; }
 
-/* Highlight the stdin box while a program is blocked on input(). */
+button:focus { outline: none; }
+button:focus-visible { outline: 2px solid #cc241d; outline-offset: 2px; }
+
 .kora-awaiting-input {
-  border-color: #34d399 !important;
-  box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.15);
+  border-color: #d79921 !important;
+  box-shadow: 0 0 0 3px rgba(215, 153, 33, 0.2);
 }
 .kora-awaiting-input::placeholder {
-  color: #34d399;
+  color: #b57614;
 }
 
-/* Scrollable containers that shouldn't show a scrollbar. */
-.no-scrollbar {
-  scrollbar-width: none;
-}
-.no-scrollbar::-webkit-scrollbar {
-  display: none;
-}
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
 
-/* Edge indicators shown while tabs overflow in that direction. */
-.tab-scroll {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  z-index: 10;
-  width: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #52525b;
-  cursor: pointer;
-}
-.tab-scroll:hover { color: #18181b; }
-.tab-scroll.left {
-  left: 0;
-  background: linear-gradient(to right, #ffffff 45%, transparent);
-}
-.tab-scroll.right {
-  right: 0;
-  background: linear-gradient(to left, #ffffff 45%, transparent);
-}
-
-/* File tab bar above the editor. */
-.file-tab {
-  padding: 0 14px;
-  height: 100%;
+.file-picker-btn {
   display: inline-flex;
   align-items: center;
-  font-size: 12px;
-  color: #52525b;
-  border-bottom: 2px solid transparent;
+  gap: 6px;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #3c3836;
   background: transparent;
+  border: none;
   cursor: pointer;
-  white-space: nowrap;
-  transition: color 0.15s, border-color 0.15s, background-color 0.15s;
+  transition: background-color 0.15s;
 }
-.file-tab:hover {
-  color: #18181b;
-  background-color: rgba(0, 0, 0, 0.05);
-}
-.file-tab.active {
-  color: #18181b;
-  border-bottom-color: #34d399;
-}
-.file-tab .dot {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  border-radius: 9999px;
-  margin-left: 8px;
-  background-color: #a1a1aa;
-  opacity: 0;
-  transition: opacity 0.15s;
-}
-.file-tab.dirty .dot { opacity: 1; }
+.file-picker-btn:hover { background: rgba(60, 56, 54, 0.06); }
+.fp-caret { font-size: 9px; color: #928374; }
 
-/* Dark-theme overrides, toggled via .dark on <html>. */
-.dark .tab-btn.active { color: #f4f4f5; }
-.dark .file-tab { color: #a1a1aa; }
-.dark .file-tab:hover {
-  color: #f4f4f5;
-  background-color: rgba(63, 63, 70, 0.4);
+.file-picker-menu {
+  position: absolute;
+  top: calc(100% + 5px);
+  left: 0;
+  z-index: 30;
+  min-width: 190px;
+  margin: 0;
+  padding: 5px;
+  list-style: none;
+  background: #fefaeb;
+  border: 1px solid #ebdbb2;
+  border-radius: 11px;
+  box-shadow: 0 10px 28px rgba(40, 20, 14, 0.16);
+  max-height: 65vh;
+  overflow-y: auto;
 }
-.dark .file-tab.active { color: #f4f4f5; }
-.dark .file-tab .dot { background-color: #71717a; }
-.dark .tab-scroll { color: #a1a1aa; }
-.dark .tab-scroll:hover { color: #f4f4f5; }
-.dark .tab-scroll.left {
-  background: linear-gradient(to right, #09090b 45%, transparent);
+.file-picker-menu.hidden { display: none; }
+
+.file-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 9px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: #3c3836;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
 }
-.dark .tab-scroll.right {
-  background: linear-gradient(to left, #09090b 45%, transparent);
+.file-picker-item:focus-visible { outline: none; }
+.file-picker-item:hover,
+.file-picker-item.focused { background: rgba(60, 56, 54, 0.1); }
+.file-picker-item.active { font-weight: 600; }
+.file-picker-item .fp-name { flex: 1; white-space: nowrap; }
+.file-picker-item .fp-dirty { color: #b57614; }
+.file-picker-item .fp-check { color: #79740e; font-size: 11px; }
+
+.dark .tab-btn.active { color: #fefaeb; }
+.dark .file-picker-btn { color: #ebdbb2; }
+.dark .file-picker-btn:hover { background: rgba(235, 219, 178, 0.08); }
+.dark .file-picker-menu {
+  background: #282828;
+  border-color: #3c3836;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
 }
+.dark .file-picker-item { color: #ebdbb2; }
+.dark .file-picker-item:hover,
+.dark .file-picker-item.focused { background: rgba(235, 219, 178, 0.1); }
+.dark .file-picker-item .fp-dirty { color: #d79921; }
+.dark .file-picker-item .fp-check { color: #b8bb26; }
