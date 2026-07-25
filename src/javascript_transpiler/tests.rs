@@ -241,11 +241,29 @@ fn test_array_equality_emits_structural_compare() {
     );
     assert!(js.contains("__kora_runtime_equality_intrinsic("), "{js}");
     assert!(js.contains("!__kora_runtime_equality_intrinsic("), "{js}");
-    assert!(js.contains("s[0]==='a'"), "{js}");
+    assert!(js.contains("__kora_runtime_index(s,0)==='a'"), "{js}");
     assert!(
-        !js.contains("__kora_runtime_equality_intrinsic(s[0]"),
+        !js.contains("__kora_runtime_equality_intrinsic(__kora_runtime_index(s,0)"),
         "{js}"
     );
+}
+
+#[test]
+fn test_array_indexing_is_bounds_checked() {
+    let js = transpile(
+        r#"
+            int main() {
+                let a = [1, 2, 3];
+                a[1] = a[0];
+                return a[2];
+            }
+        "#,
+    );
+    assert!(
+        js.contains("__kora_runtime_index_set(a,1,__kora_runtime_index(a,0))"),
+        "{js}"
+    );
+    assert!(js.contains("return __kora_runtime_index(a,2);"), "{js}");
 }
 
 #[test]

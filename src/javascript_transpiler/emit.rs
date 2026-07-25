@@ -5,6 +5,10 @@ use crate::parser::*;
 use crate::semantic_analyzer::ArrayMethod;
 
 const INTRINSICS: &str = "\
+function __kora_panic(message) {
+    throw new Error(message);
+}
+
 function __kora_runtime_equality_intrinsic(a, b) {
     if (a === b) return true;
     if (!Array.isArray(a) || !Array.isArray(b)) return a === b;
@@ -15,8 +19,18 @@ function __kora_runtime_equality_intrinsic(a, b) {
     return true;
 }
 
+function __kora_runtime_index(a, i) {
+    if (i < 0 || i >= a.length) __kora_panic(\"index out of bounds\");
+    return a[i];
+}
+
+function __kora_runtime_index_set(a, i, v) {
+    if (i < 0 || i >= a.length) __kora_panic(\"index out of bounds\");
+    return a[i] = v;
+}
+
 function __kora_runtime_unwrap(x) {
-    if (x === null || x === undefined) throw new Error(\"force-unwrapped a none value\");
+    if (x === null || x === undefined) __kora_panic(\"force-unwrapped a none value\");
     return x;
 }
 ";
@@ -320,6 +334,19 @@ impl ASTVisitor for JavascriptTranspiler {
         op: &BinaryOp,
         right: &Spanned<Expression>,
     ) {
+        if matches!(op, BinaryOp::Assign)
+            && let Expression::ArrayIndex(array, index) = &left.node
+        {
+            self.source.push_str("__kora_runtime_index_set(");
+            self.visit_expression(array);
+            self.source.push(',');
+            self.visit_expression(index);
+            self.source.push(',');
+            self.visit_expression(right);
+            self.source.push(')');
+            return;
+        }
+
         // Optional comparison: `x == none`, `x != none`, or two optionals.
         // Loose `==`/`!=` so a `none` (null) matches an uninitialized field
         // (undefined) from a bare `new Struct`.
@@ -526,10 +553,11 @@ impl ASTVisitor for JavascriptTranspiler {
         left: &Spanned<Expression>,
         right: &Spanned<Expression>,
     ) {
-        self.operand(left);
-        self.source.push('[');
+        self.source.push_str("__kora_runtime_index(");
+        self.visit_expression(left);
+        self.source.push(',');
         self.visit_expression(right);
-        self.source.push(']');
+        self.source.push(')');
     }
 
     fn visit_cast_expression(&mut self, expr: &Spanned<Expression>, typename: &Type) {
