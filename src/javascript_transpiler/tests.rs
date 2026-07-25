@@ -197,9 +197,9 @@ fn test_array_methods_emit_js_builtins() {
         "#,
     );
     assert!(js.contains("a.push(3)"), "{js}");
-    assert!(js.contains("a.splice(0,0,4)"), "{js}");
-    assert!(js.contains("a.splice(1,1)[0]"), "{js}");
-    assert!(js.contains("a.pop()"), "{js}");
+    assert!(js.contains("__kora_runtime_insert(a,0,4)"), "{js}");
+    assert!(js.contains("__kora_runtime_remove(a,1)"), "{js}");
+    assert!(js.contains("__kora_runtime_pop(a)"), "{js}");
     assert!(js.contains("a.slice(0,1)"), "{js}");
     assert!(js.contains("a.push(..."), "{js}");
     assert!(js.contains("a.length"), "{js}");
@@ -246,6 +246,24 @@ fn test_array_equality_emits_structural_compare() {
         !js.contains("__kora_runtime_equality_intrinsic(__kora_runtime_index(s,0)"),
         "{js}"
     );
+}
+
+#[test]
+fn test_runtime_checks_emit_intrinsics() {
+    let js = transpile(
+        r#"
+            int main() {
+                let a = 7 / 2;
+                let b = 7 % 2;
+                let c = 7.0 / 2.0;
+                return a + b;
+            }
+        "#,
+    );
+    assert!(js.contains("__kora_runtime_div(7,2)"), "{js}");
+    assert!(js.contains("__kora_runtime_mod(7,2)"), "{js}");
+    // real division stays raw `/` (IEEE Infinity on /0, both backends)
+    assert!(js.contains("let c = 7/2;"), "{js}");
 }
 
 #[test]
@@ -360,7 +378,7 @@ fn test_bare_new_struct_is_zero_filled() {
         "{js}"
     );
     assert!(
-        js.contains("Array.from({length:2},()=>({value:0,flag:false,tags:[],next:null}))"),
+        js.contains("Array.from({length:__kora_runtime_check_len(2)},()=>({value:0,flag:false,tags:[],next:null}))"),
         "{js}"
     );
 }
@@ -381,7 +399,9 @@ fn test_bare_new_struct_zero_fill_is_recursive() {
     // A default-constructible struct member is "zero".
     assert!(js.contains("({a:({x:0,y:0}),b:({x:0,y:0})})"), "{js}");
     assert!(
-        js.contains("Array.from({length:2},()=>({a:({x:0,y:0}),b:({x:0,y:0})}))"),
+        js.contains(
+            "Array.from({length:__kora_runtime_check_len(2)},()=>({a:({x:0,y:0}),b:({x:0,y:0})}))"
+        ),
         "{js}"
     );
 }

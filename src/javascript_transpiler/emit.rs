@@ -33,6 +33,36 @@ function __kora_runtime_unwrap(x) {
     if (x === null || x === undefined) __kora_panic(\"force-unwrapped a none value\");
     return x;
 }
+
+function __kora_runtime_div(a, b) {
+    if (b === 0) __kora_panic(\"division by zero\");
+    return Math.trunc(a / b);
+}
+
+function __kora_runtime_mod(a, b) {
+    if (b === 0) __kora_panic(\"division by zero\");
+    return a % b;
+}
+
+function __kora_runtime_pop(a) {
+    if (a.length === 0) __kora_panic(\"pop from empty array\");
+    return a.pop();
+}
+
+function __kora_runtime_insert(a, i, v) {
+    if (i < 0 || i > a.length) __kora_panic(\"index out of bounds\");
+    a.splice(i, 0, v);
+}
+
+function __kora_runtime_remove(a, i) {
+    if (i < 0 || i >= a.length) __kora_panic(\"index out of bounds\");
+    return a.splice(i, 1)[0];
+}
+
+function __kora_runtime_check_len(n) {
+    if (n < 0) __kora_panic(\"negative array length\");
+    return n;
+}
 ";
 
 impl JavascriptTranspiler {
@@ -404,19 +434,24 @@ impl ASTVisitor for JavascriptTranspiler {
             return;
         }
 
-        // JS `/` is float division; Kora `int / int` truncates toward zero.
         let int_div =
             matches!(op, BinaryOp::Divide) && self.types.get(&left.id) == Some(&Type::Int);
-        if int_div {
-            self.source.push_str("Math.trunc(");
+        if int_div || matches!(op, BinaryOp::Modulo) {
+            self.source.push_str(if int_div {
+                "__kora_runtime_div("
+            } else {
+                "__kora_runtime_mod("
+            });
+            self.visit_expression(left);
+            self.source.push(',');
+            self.visit_expression(right);
+            self.source.push(')');
+            return;
         }
         self.operand(left);
         self.source
             .push_str(JavascriptTranspiler::repr_binary_operator(op));
         self.operand(right);
-        if int_div {
-            self.source.push(')');
-        }
     }
 
     fn visit_unary_expression(&mut self, op: &UnaryOp, expr: &Spanned<Expression>) {
@@ -443,6 +478,33 @@ impl ASTVisitor for JavascriptTranspiler {
             let Expression::Access(obj, _) = &expr.node else {
                 unreachable!("array method calls are calls on an access expression");
             };
+            match method {
+                ArrayMethod::Pop => {
+                    self.source.push_str("__kora_runtime_pop(");
+                    self.visit_expression(obj);
+                    self.source.push(')');
+                    return;
+                }
+                ArrayMethod::Insert => {
+                    self.source.push_str("__kora_runtime_insert(");
+                    self.visit_expression(obj);
+                    self.source.push(',');
+                    self.visit_expression(&exprs[0]);
+                    self.source.push(',');
+                    self.visit_expression(&exprs[1]);
+                    self.source.push(')');
+                    return;
+                }
+                ArrayMethod::Remove => {
+                    self.source.push_str("__kora_runtime_remove(");
+                    self.visit_expression(obj);
+                    self.source.push(',');
+                    self.visit_expression(&exprs[0]);
+                    self.source.push(')');
+                    return;
+                }
+                _ => {}
+            }
             self.operand(obj);
             match method {
                 ArrayMethod::Len => self.source.push_str(".length"),
@@ -450,19 +512,6 @@ impl ASTVisitor for JavascriptTranspiler {
                     self.source.push_str(".push(");
                     self.visit_expression(&exprs[0]);
                     self.source.push(')');
-                }
-                ArrayMethod::Pop => self.source.push_str(".pop()"),
-                ArrayMethod::Insert => {
-                    self.source.push_str(".splice(");
-                    self.visit_expression(&exprs[0]);
-                    self.source.push_str(",0,");
-                    self.visit_expression(&exprs[1]);
-                    self.source.push(')');
-                }
-                ArrayMethod::Remove => {
-                    self.source.push_str(".splice(");
-                    self.visit_expression(&exprs[0]);
-                    self.source.push_str(",1)[0]");
                 }
                 ArrayMethod::Slice => {
                     self.source.push_str(".slice(");
@@ -477,6 +526,7 @@ impl ASTVisitor for JavascriptTranspiler {
                     self.visit_expression(&exprs[0]);
                     self.source.push(')');
                 }
+                ArrayMethod::Pop | ArrayMethod::Insert | ArrayMethod::Remove => unreachable!(),
             }
             return;
         }
@@ -588,16 +638,17 @@ impl ASTVisitor for JavascriptTranspiler {
         match size {
             Some(expr) => match typename {
                 Type::Struct(name) => {
-                    self.source.push_str("Array.from({length:");
+                    self.source
+                        .push_str("Array.from({length:__kora_runtime_check_len(");
                     self.visit_expression(expr);
-                    self.source.push_str("},()=>");
+                    self.source.push_str(")},()=>");
                     self.emit_struct_zero(&name.node);
                     self.source.push(')');
                 }
                 _ => {
-                    self.source.push_str("new Array(");
+                    self.source.push_str("new Array(__kora_runtime_check_len(");
                     self.visit_expression(expr);
-                    self.source.push_str(").fill(");
+                    self.source.push_str(")).fill(");
                     self.emit_default(typename);
                     self.source.push(')');
                 }
