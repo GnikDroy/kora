@@ -22,7 +22,7 @@ mod cli {
 
     use kora::codegen;
 
-    const RUNTIME: &str = include_str!("../runtime/libk_rt.c");
+    const RUNTIME_LIB: &[u8] = include_bytes!(env!("KORA_RUNTIME"));
 
     struct Args {
         input: PathBuf,
@@ -105,8 +105,8 @@ mod cli {
     }
 
     fn link(object: &Path, output: &Path) -> Result<(), String> {
-        let runtime_path = std::env::temp_dir().join("libk_rt.c");
-        std::fs::write(&runtime_path, RUNTIME).map_err(|e| e.to_string())?;
+        let runtime_path = std::env::temp_dir().join("libkora.a");
+        std::fs::write(&runtime_path, RUNTIME_LIB).map_err(|e| e.to_string())?;
 
         let status = Command::new("cc")
             .arg(object)

@@ -125,7 +125,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
             None => self.context.void_type().fn_type(&param_types, false),
         };
 
-        let llvm_name = if name == "main" { "k_main" } else { name };
+        let llvm_name = if name == "main" { "__kora_main" } else { name };
         let function = self.module.add_function(llvm_name, function_type, None);
         let id = self
             .symbols
@@ -728,8 +728,8 @@ mod tests {
             .expect("jit");
         unsafe {
             engine
-                .get_function::<unsafe extern "C" fn() -> i64>("k_main")
-                .expect("k_main")
+                .get_function::<unsafe extern "C" fn() -> i64>("__kora_main")
+                .expect("__kora_main")
                 .call()
         }
     }

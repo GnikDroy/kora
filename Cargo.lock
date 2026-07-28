@@ -80,6 +80,7 @@ dependencies = [
 name = "kora"
 version = "0.1.0"
 dependencies = [
+ "cc",
  "console_error_panic_hook",
  "inkwell",
  "lol_alloc",
