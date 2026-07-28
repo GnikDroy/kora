@@ -2,6 +2,7 @@
 
 mod lexer;
 mod loader;
+mod mangle;
 mod parser;
 mod semantic_analyzer;
 mod stdlib;

@@ -1,6 +1,6 @@
 use super::JavascriptTranspiler;
 use super::error::TranspilerErr;
-use super::mangle::mangle;
+use crate::mangle::mangle;
 use crate::parser::*;
 use crate::semantic_analyzer::ArrayMethod;
 

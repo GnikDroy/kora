@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use super::mangle::mangle;
+use crate::mangle::mangle;
 use crate::parser::*;
 
 /// JavaScript is a colored language ;)

@@ -1,6 +1,6 @@
 use std::path::{Component, Path};
 
-pub(super) fn mangle(prefix: &str, name: &str) -> String {
+pub(crate) fn mangle(prefix: &str, name: &str) -> String {
     if prefix.is_empty() {
         name.to_string()
     } else {
@@ -8,7 +8,7 @@ pub(super) fn mangle(prefix: &str, name: &str) -> String {
     }
 }
 
-pub(super) fn mangle_prefix(path: &Path) -> String {
+pub(crate) fn mangle_prefix(path: &Path) -> String {
     let parts: Vec<String> = path
         .components()
         .filter_map(|c| match c {

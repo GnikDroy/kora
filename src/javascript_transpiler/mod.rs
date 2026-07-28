@@ -1,7 +1,6 @@
 mod coloring;
 mod emit;
 mod error;
-mod mangle;
 
 #[cfg(test)]
 mod tests;
@@ -9,8 +8,8 @@ mod tests;
 use std::collections::{HashMap, HashSet};
 
 use self::error::TranspilerErr;
-use self::mangle::{mangle, mangle_prefix};
 use crate::loader::LoadedProgram;
+use crate::mangle::{mangle, mangle_prefix};
 use crate::parser::*;
 use crate::semantic_analyzer::{ArrayMethod, SymbolId, SymbolTable};
 
