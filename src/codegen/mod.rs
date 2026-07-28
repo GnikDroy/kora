@@ -1,6 +1,8 @@
 mod errors;
+mod link;
 
 pub use errors::*;
+pub use link::build_binary;
 
 use std::collections::HashMap;
 
@@ -9,8 +11,8 @@ use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module as LlvmModule;
 use inkwell::types::{BasicType, BasicTypeEnum};
-use inkwell::values::{BasicValueEnum, FunctionValue, PointerValue, ValueKind};
-use inkwell::{FloatPredicate, IntPredicate};
+use inkwell::values::{BasicValueEnum, FunctionValue, IntValue, PointerValue, ValueKind};
+use inkwell::{AddressSpace, FloatPredicate, IntPredicate};
 
 use crate::frontend::CompiledProgram;
 use crate::parser::*;
@@ -458,6 +460,9 @@ impl<'ctx> CodeGen<'ctx, '_> {
             Type::Int | Type::Char | Type::Bool => {
                 let l = lhs.into_int_value();
                 let r = rhs.into_int_value();
+                if matches!(op, Divide | Modulo) {
+                    self.check_nonzero_divisor(r);
+                }
                 // Char is unsigned; Int is signed. Bool only reaches ==/!=.
                 let signed = operand_type == Type::Int;
                 let b = &self.builder;
@@ -674,6 +679,43 @@ impl<'ctx> CodeGen<'ctx, '_> {
         }
     }
 
+    fn check_nonzero_divisor(&mut self, divisor: IntValue<'ctx>) {
+        let function = self.current_function.unwrap();
+        let is_zero = self
+            .builder
+            .build_int_compare(
+                IntPredicate::EQ,
+                divisor,
+                divisor.get_type().const_zero(),
+                "is_zero",
+            )
+            .unwrap();
+        let panic_block = self.context.append_basic_block(function, "div_by_zero");
+        let cont_block = self.context.append_basic_block(function, "div_cont");
+        self.builder
+            .build_conditional_branch(is_zero, panic_block, cont_block)
+            .unwrap();
+        self.builder.position_at_end(panic_block);
+        self.build_panic("division by zero");
+        self.builder.position_at_end(cont_block);
+    }
+
+    fn build_panic(&mut self, message: &str) {
+        let panic_fn = self.module.get_function("__kora_panic").unwrap_or_else(|| {
+            let ptr = self.context.ptr_type(AddressSpace::default());
+            let ty = self.context.void_type().fn_type(&[ptr.into()], false);
+            self.module.add_function("__kora_panic", ty, None)
+        });
+        let message = self
+            .builder
+            .build_global_string_ptr(message, "panic_msg")
+            .unwrap();
+        self.builder
+            .build_call(panic_fn, &[message.as_pointer_value().into()], "")
+            .unwrap();
+        self.builder.build_unreachable().unwrap();
+    }
+
     /// Allocas live in the entry block so LLVM's mem2reg can promote them.
     fn entry_alloca(&self, ty: BasicTypeEnum<'ctx>, name: &str) -> PointerValue<'ctx> {
         let entry = self
@@ -726,6 +768,16 @@ mod tests {
         let engine = llvm
             .create_jit_execution_engine(OptimizationLevel::None)
             .expect("jit");
+
+        extern "C" fn jit_panic(_message: *const i8) {
+            panic!("__kora_panic reached in a JIT test");
+        }
+
+        if let Some(f) = llvm.get_function("__kora_panic") {
+            let jit_panic = jit_panic as *const ();
+            engine.add_global_mapping(&f, jit_panic as usize);
+        }
+
         unsafe {
             engine
                 .get_function::<unsafe extern "C" fn() -> i64>("__kora_main")

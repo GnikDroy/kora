@@ -12,6 +12,11 @@ int main(void) {
 
 void __kora_exit(long code) { exit((int)code); }
 
+_Noreturn void __kora_panic(const char *message) {
+    fprintf(stderr, "panic: %s\n", message);
+    exit(EXIT_FAILURE);
+}
+
 void print_int(long x) { printf("%ld\n", x); }
 
 void print_real(double x) { printf("%g\n", x); }
