@@ -16,6 +16,35 @@ use crate::semantic_analyzer::{ArrayMethod, SymbolId, SymbolTable};
 
 pub(crate) use coloring::resolve_async_fns;
 
+pub fn emit_js(
+    compiled: crate::CompiledProgram,
+    async_externs: HashSet<String>,
+) -> Result<String, String> {
+    let entry = &compiled.program.modules.first().unwrap().module;
+    let method_calls = mangled_method_calls(&compiled.symbols, &compiled.method_calls);
+    let function_names = function_names(&compiled.symbols, &compiled.program);
+    let async_fns = resolve_async_fns(entry, &method_calls, async_externs);
+    let struct_members = struct_member_map(&compiled.symbols);
+
+    let modules: Vec<&Module> = compiled.program.modules.iter().map(|m| &m.module).collect();
+    let mut transpiler = JavascriptTranspiler::new(
+        compiled.types,
+        method_calls,
+        compiled.array_method_calls,
+        struct_members,
+        function_names,
+        async_fns,
+    );
+    transpiler.emit_program(&modules);
+
+    transpiler.get_source().map(|s| s.to_string()).map_err(|e| {
+        e.iter()
+            .map(|x| x.to_string())
+            .collect::<Vec<_>>()
+            .join("\n")
+    })
+}
+
 pub(crate) fn struct_member_map(symbols: &SymbolTable) -> HashMap<String, Vec<(String, Type)>> {
     symbols
         .structs

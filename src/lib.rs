@@ -14,6 +14,7 @@ mod javascript_transpiler;
 mod playground;
 
 pub use frontend::{CompileErr, CompiledProgram, compile};
+pub use javascript_transpiler::emit_js;
 pub use lexer::LexerErr;
 pub use loader::LoadErr;
 pub use parser::ParseErr;

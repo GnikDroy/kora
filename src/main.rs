@@ -1,57 +1,27 @@
-// Native LLVM codegen CLI. Compiled only with `--features codegen` (requires
-// LLVM 22); the default build is the front-end + JS transpiler + wasm
-// playground, whose entry point is the library, so `main` is an empty stub.
-#[cfg(not(feature = "codegen"))]
-fn main() {}
-
-#[cfg(feature = "codegen")]
 fn main() -> std::process::ExitCode {
     cli::run()
 }
 
-#[cfg(feature = "codegen")]
 mod cli {
     use std::path::{Path, PathBuf};
-    use std::process::{Command, ExitCode};
+    use std::process::ExitCode;
 
-    use inkwell::OptimizationLevel;
-    use inkwell::context::Context;
-    use inkwell::targets::{
-        CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine,
-    };
+    use clap::Parser;
 
-    use kora::codegen;
-
-    const RUNTIME_LIB: &[u8] = include_bytes!(env!("KORA_RUNTIME"));
-
+    #[derive(Parser)]
+    #[command(version)]
     struct Args {
         input: PathBuf,
-        output: PathBuf,
+        #[cfg(feature = "codegen")]
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        #[cfg(feature = "codegen")]
+        #[arg(long)]
         emit_llvm: bool,
-    }
-
-    fn parse_args() -> Result<Args, String> {
-        let mut input = None;
-        let mut output = None;
-        let mut emit_llvm = false;
-
-        let mut args = std::env::args().skip(1);
-        while let Some(arg) = args.next() {
-            match arg.as_str() {
-                "-o" => output = Some(PathBuf::from(args.next().ok_or("-o expects a path")?)),
-                "--emit-llvm" => emit_llvm = true,
-                _ if input.is_none() => input = Some(PathBuf::from(arg)),
-                _ => return Err(format!("unexpected argument: {}", arg)),
-            }
-        }
-
-        let input = input.ok_or("usage: kora <input.kora> [-o <output>] [--emit-llvm]")?;
-        let output = output.unwrap_or_else(|| input.with_extension(""));
-        Ok(Args {
-            input,
-            output,
-            emit_llvm,
-        })
+        #[arg(long)]
+        emit_js: bool,
+        #[arg(long = "async-extern", value_name = "NAME")]
+        async_externs: Vec<String>,
     }
 
     fn compile(args: &Args) -> Result<(), String> {
@@ -68,8 +38,30 @@ mod cli {
                     .join("\n")
             })?;
 
+        if args.emit_js {
+            let js = kora::emit_js(program, args.async_externs.iter().cloned().collect())?;
+            print!("{}", js);
+            return Ok(());
+        }
+
+        native(args, program)
+    }
+
+    #[cfg(feature = "codegen")]
+    fn native(args: &Args, program: kora::CompiledProgram) -> Result<(), String> {
+        use inkwell::OptimizationLevel;
+        use inkwell::context::Context;
+        use inkwell::targets::{
+            CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine,
+        };
+
+        let output = args
+            .output
+            .clone()
+            .unwrap_or_else(|| args.input.with_extension(""));
+
         let context = Context::create();
-        let llvm = codegen::compile(&context, &program).map_err(|e| e.to_string())?;
+        let llvm = kora::codegen::compile(&context, &program).map_err(|e| e.to_string())?;
 
         if args.emit_llvm {
             print!("{}", llvm.print_to_string().to_string());
@@ -94,21 +86,29 @@ mod cli {
             .ok_or("cannot create target machine")?;
         llvm.set_triple(&triple);
 
-        let object_path = args.output.with_extension("o");
+        let object_path = output.with_extension("o");
         machine
             .write_to_file(&llvm, FileType::Object, &object_path)
             .map_err(|e| e.to_string())?;
 
-        link(&object_path, &args.output)?;
+        link(&object_path, &output)?;
         std::fs::remove_file(&object_path).ok();
         Ok(())
     }
 
+    #[cfg(not(feature = "codegen"))]
+    fn native(_args: &Args, _program: kora::CompiledProgram) -> Result<(), String> {
+        Ok(())
+    }
+
+    #[cfg(feature = "codegen")]
     fn link(object: &Path, output: &Path) -> Result<(), String> {
+        const RUNTIME_LIB: &[u8] = include_bytes!(env!("KORA_RUNTIME"));
+
         let runtime_path = std::env::temp_dir().join("libkora.a");
         std::fs::write(&runtime_path, RUNTIME_LIB).map_err(|e| e.to_string())?;
 
-        let status = Command::new("cc")
+        let status = std::process::Command::new("cc")
             .arg(object)
             .arg(&runtime_path)
             .arg("-o")
@@ -122,13 +122,7 @@ mod cli {
     }
 
     pub fn run() -> ExitCode {
-        let args = match parse_args() {
-            Ok(args) => args,
-            Err(e) => {
-                eprintln!("{}", e);
-                return ExitCode::FAILURE;
-            }
-        };
+        let args = Args::parse();
         match compile(&args) {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {

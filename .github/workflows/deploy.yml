@@ -26,7 +26,7 @@ jobs:
         run: cargo install wasm-pack --locked
 
       - name: Build wasm
-        run: wasm-pack build --target web --out-name compiler
+        run: wasm-pack build --target web --out-name compiler -- --no-default-features
 
       - name: Assemble site
         run: |
