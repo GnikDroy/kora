@@ -322,14 +322,14 @@ fn test_native_structural_equality() {
 fn test_native_strings() {
     let (stdout, _, code) = run_native(
         r#"
-            extern void print(s: string);
+            import "std/io";
             int main() {
                 let s = "hello";
                 s[0] = 'H';
-                print(s);
+                io.print(s);
                 let t = s + " world";
-                print(t);
-                print(t.slice(6, 11));
+                io.print(t);
+                io.print(t.slice(6, 11));
                 return t.len();
             }
         "#,
@@ -517,15 +517,14 @@ fn test_native_input_reads_lines_until_eof() {
     std::fs::write(
         &entry,
         r#"
-            extern string? input();
-            extern void print(s: string);
+            import "std/io";
             int main() {
                 let count = 0;
-                let line = input();
+                let line = io.input();
                 while (line != none) {
-                    print(line!);
+                    io.print(line!);
                     count = count + 1;
-                    line = input();
+                    line = io.input();
                 }
                 return count;
             }
@@ -622,10 +621,10 @@ fn test_native_std_conv() {
         "main.kora",
         r#"
             import "std/conv";
-            extern void print(s: string);
+            import "std/io";
             int main() {
-                print(conv.int_to_string(-42));
-                print(conv.bool_to_string(1 < 2));
+                io.print(conv.int_to_string(-42));
+                io.print(conv.bool_to_string(1 < 2));
                 let n = conv.string_to_int("123");
                 let bad = conv.string_to_int("12x");
                 let r = 0;
@@ -645,11 +644,11 @@ fn test_native_std_str() {
         "main.kora",
         r#"
             import "std/str";
-            extern void print(s: string);
+            import "std/io";
             int main() {
                 let parts = str.split("a,b,c", ',');
-                print(str.join(parts, "-"));
-                print(str.to_upper(str.trim("  hi  ")));
+                io.print(str.join(parts, "-"));
+                io.print(str.to_upper(str.trim("  hi  ")));
                 let r = 0;
                 if (str.contains("hello", "ell")) { r = r + 1; }
                 if (str.starts_with("hello", "he")) { r = r + 2; }
@@ -707,4 +706,32 @@ fn test_native_diamond_imports() {
         ("shared.kora", "int base() { return 10; }"),
     ]);
     assert_eq!(code, 33);
+}
+
+#[test]
+fn test_native_clear_sleep_random() {
+    let start = std::time::Instant::now();
+    let (stdout, _, code) = run_native(
+        r#"
+            import "std/term";
+            import "std/io";
+            import "std/math";
+            extern void sleep(ms: int);
+            int main() {
+                term.clear();
+                io.print("fresh");
+                sleep(50);
+                let a = math.random();
+                let b = math.random();
+                let r = 0;
+                if (a >= 0.0 && a < 1.0) { r = r + 1; }
+                if (b >= 0.0 && b < 1.0) { r = r + 2; }
+                if (a != b) { r = r + 4; }
+                return r;
+            }
+        "#,
+    );
+    assert_eq!(stdout, "\x1b[2J\x1b[Hfresh\n");
+    assert_eq!(code, 7);
+    assert!(start.elapsed() >= std::time::Duration::from_millis(40));
 }

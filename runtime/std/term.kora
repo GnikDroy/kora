@@ -1,0 +1,16 @@
+import "std/io";
+
+string csi(code: string) {
+    let s = "";
+    s.push(27 as char);
+    s.push('[');
+    return s + code;
+}
+
+void clear() {
+    io.write(csi("2J") + csi("H"));
+}
+
+void home() {
+    io.write(csi("H"));
+}

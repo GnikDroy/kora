@@ -1,21 +1,23 @@
+import "std/io";
+
 # Sudoku solver via backtracking. The board is a flat 81-cell int
 # array indexed as row * 9 + col; 0 marks an empty cell.
 
 void print_board(board: [int]) {
     for (let row = 0; row < 9; row = row + 1) {
         if (row == 3 || row == 6) {
-            print("------+-------+------\n");
+            io.write("------+-------+------\n");
         }
         for (let col = 0; col < 9; col = col + 1) {
-            if (col == 3 || col == 6) { print("| "); }
+            if (col == 3 || col == 6) { io.write("| "); }
             let v = board[row * 9 + col];
             if (v == 0) {
-                print(". ");
+                io.write(". ");
             } else {
-                print([(v + 48) as char, ' ']);
+                io.write([(v + 48) as char, ' ']);
             }
         }
-        print("\n");
+        io.write("\n");
     }
 }
 
@@ -69,14 +71,14 @@ int main() {
     # Classic hard-ish puzzle from the Wikipedia Sudoku page.
     load_puzzle(board, "530070000600195000098000060800060003400803001700020006060000280000419005000080079");
 
-    print("Puzzle:\n\n");
+    io.write("Puzzle:\n\n");
     print_board(board);
 
     if (solve(board)) {
-        print("\nSolved:\n\n");
+        io.write("\nSolved:\n\n");
         print_board(board);
     } else {
-        print("\nNo solution found.\n");
+        io.write("\nNo solution found.\n");
     }
     return 0;
 }

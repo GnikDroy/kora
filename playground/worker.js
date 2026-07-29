@@ -7,11 +7,6 @@ let mouseX = 0;
 let mouseY = 0;
 let mouseDown = false;
 
-function clear() {
-  useStdout();
-  postMessage({ type: "clear" });
-}
-
 function useCanvas() {
   if (!canvasShown) {
     canvasShown = true;
@@ -151,17 +146,24 @@ function draw_text(s, x, y) {
   ctx.fillText(String(s), x, y);
 }
 
-function print(a) {
+function __kora_write(s) {
   useStdout();
-  if (Array.isArray(a)) a = a.join("");
-  postMessage({ type: "print", text: String(a) });
+  if (Array.isArray(s)) s = s.join("");
+  postMessage({ type: "write", text: String(s) });
 }
 
-function input() {
-  return new Promise((resolve) => {
-    pendingInput = resolve;
-    postMessage({ type: "input" });
-  });
+let inputBuffer = [];
+async function __kora_getchar() {
+  if (inputBuffer.length === 0) {
+    useStdout();
+    const line = await new Promise((resolve) => {
+      pendingInput = resolve;
+      postMessage({ type: "input" });
+    });
+    inputBuffer = line;
+    inputBuffer.push("\n");
+  }
+  return inputBuffer.shift().charCodeAt(0);
 }
 
 function sleep(ms) {
@@ -173,7 +175,7 @@ function is_key_down(key) {
   return keysDown.has(key);
 }
 
-function random() {
+function __kora_random() {
   return Math.random();
 }
 
@@ -183,7 +185,7 @@ onmessage = async (e) => {
     if (msg.canvas) ctx = msg.canvas.getContext("2d");
     try {
       const fn = new Function(
-        "clear", "print", "input", "sleep", "is_key_down", "random",
+        "__kora_write", "__kora_getchar", "__kora_random", "sleep", "is_key_down",
         "draw_clear", "set_color", "fill_rect", "fill_circle", "draw_text",
         "stroke_rect", "stroke_circle", "draw_line", "fill_triangle",
         "set_line_width", "set_font_size", "set_alpha",
@@ -193,7 +195,7 @@ onmessage = async (e) => {
         msg.code + "\nreturn main();",
       );
       await fn(
-        clear, print, input, sleep, is_key_down, random,
+        __kora_write, __kora_getchar, __kora_random, sleep, is_key_down,
         draw_clear, set_color, fill_rect, fill_circle, draw_text,
         stroke_rect, stroke_circle, draw_line, fill_triangle,
         set_line_width, set_font_size, set_alpha,

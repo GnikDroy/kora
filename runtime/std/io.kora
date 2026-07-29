@@ -1,0 +1,24 @@
+extern void __kora_write(s: string);
+extern int __kora_getchar();
+
+void write(s: string) {
+    __kora_write(s);
+}
+
+void print(s: string) {
+    write(s);
+    write("\n");
+}
+
+string? input() {
+    let line = "";
+    let c = __kora_getchar();
+    while (c != -1 && c != ('\n' as int)) {
+        line.push(c as char);
+        c = __kora_getchar();
+    }
+    if (c == -1 && line.len() == 0) {
+        return none;
+    }
+    return line;
+}

@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 
 #include "array.h"
 
@@ -19,22 +20,30 @@ _Noreturn void __kora_panic(const char *message) {
   exit(EXIT_FAILURE);
 }
 
-KoraArray *input(void) {
-  KoraArray *line = __kora_array_new(0, 0, 1);
-  int c;
-  while ((c = getchar()) != EOF && c != '\n') {
-    char byte = (char)c;
-    __kora_array_push(line, &byte, 1);
+void sleep(long ms) {
+  if (ms <= 0) {
+    return;
   }
-  if (c == EOF && line->len == 0) {
-    return NULL;
-  }
-  return line;
+  struct timespec duration = {ms / 1000, (ms % 1000) * 1000000L};
+  nanosleep(&duration, NULL);
 }
 
-void print(const KoraArray *s) {
+void __kora_write(const KoraArray *s) {
   fwrite(s->buf, 1, s->len, stdout);
-  putchar('\n');
+  fflush(stdout);
+}
+
+long __kora_getchar(void) { return getchar(); }
+
+double __kora_random(void) {
+  static int seeded = 0;
+  if (!seeded) {
+    struct timespec now;
+    clock_gettime(CLOCK_REALTIME, &now);
+    srand48(now.tv_nsec ^ now.tv_sec);
+    seeded = 1;
+  }
+  return drand48();
 }
 
 void print_int(long x) { printf("%ld\n", x); }

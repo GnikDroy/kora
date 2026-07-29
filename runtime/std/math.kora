@@ -1,3 +1,9 @@
+extern real __kora_random();
+
+real random() {
+    return __kora_random();
+}
+
 int abs(n: int) {
     if (n < 0) {
         return -n;

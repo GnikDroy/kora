@@ -1,4 +1,5 @@
 import "std/conv";
+import "std/math";
 
 # Snake, at ~10 fps. Arrow keys steer, q quits.
 # Eat the red dot to grow; walls and your own tail end the game. Canvas-rendered.
@@ -47,8 +48,8 @@ impl Game {
         let placed = false;
         while (!placed) {
             self.food = point(
-                (random() * ((grid_cols() - 2) as real)) as int + 1,
-                (random() * ((grid_rows() - 2) as real)) as int + 1,
+                (math.random() * ((grid_cols() - 2) as real)) as int + 1,
+                (math.random() * ((grid_rows() - 2) as real)) as int + 1,
             );
             placed = !self.snake.hits(self.food.x, self.food.y);
         }

@@ -7,7 +7,14 @@ import {
   setCompileErrors,
   setTranspiledJs,
 } from "./editor.js";
-import { ASYNC_EXTERNS, EXTERNS, appendOutput, clearOutput, readLine } from "./runtime.js";
+import {
+  ASYNC_EXTERNS,
+  EXTERNS,
+  appendOutput,
+  clearOutput,
+  fitTerminal,
+  readLine,
+} from "./runtime.js";
 
 let compilerReady = false;
 let isRunning = false;
@@ -55,8 +62,9 @@ export function selectTab(name) {
   for (const el of document.querySelectorAll(".tab-panel")) {
     el.classList.toggle("hidden", el.dataset.tab !== name);
   }
-  // Monaco needs a re-layout when a hidden container becomes visible.
+  // Monaco and xterm need a re-layout when a hidden container becomes visible.
   if (name === "js") layoutJsView();
+  if (name === "output") fitTerminal();
 }
 
 function setRunning(running) {
@@ -137,10 +145,8 @@ function executeInWorker(code, signal) {
 
     worker.onmessage = async (e) => {
       const msg = e.data;
-      if (msg.type === "print") {
+      if (msg.type === "write") {
         appendOutput(msg.text);
-      } else if (msg.type === "clear") {
-        clearOutput();
       } else if (msg.type === "canvas") {
         selectTab("canvas");
       } else if (msg.type === "stdout") {

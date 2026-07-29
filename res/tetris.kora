@@ -1,4 +1,5 @@
 import "std/conv";
+import "std/math";
 
 # Tetris. Arrows move and rotate, ArrowDown soft-drops, space hard-drops,
 # q quits. Rendered to the canvas.
@@ -174,7 +175,7 @@ impl Bag {
     int next(self) {
         if (self.queue.len() == 0) {
             for (let i = 0; i < 7; i = i + 1) {
-                self.queue.insert((random() * ((i + 1) as real)) as int, i);
+                self.queue.insert((math.random() * ((i + 1) as real)) as int, i);
             }
         }
         return self.queue.remove(0);

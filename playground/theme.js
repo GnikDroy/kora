@@ -1,3 +1,5 @@
+import { setTerminalTheme } from "./runtime.js";
+
 const STORAGE_KEY = "kora-theme";
 
 export function currentTheme() {
@@ -10,6 +12,7 @@ export function applyTheme(theme) {
   if (window.monaco) {
     monaco.editor.setTheme(theme === "dark" ? "kora-dark" : "kora-light");
   }
+  setTerminalTheme(theme);
   const icon = document.querySelector("#theme-btn i");
   if (icon) {
     icon.className = theme === "dark" ? "fa-solid fa-sun" : "fa-solid fa-moon";

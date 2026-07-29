@@ -40,6 +40,14 @@
       referrerpolicy="no-referrer"
     />
 
+    <!-- xterm must load BEFORE Monaco -->
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+
     <link
       rel="stylesheet"
       data-name="vs/editor/editor.main"
@@ -137,11 +145,8 @@
 
         <!-- Tab panels -->
         <div class="flex-1 min-h-0 relative">
-          <div
-            class="tab-panel absolute inset-0 overflow-auto p-4"
-            data-tab="output"
-          >
-            <pre id="stdout" class="whitespace-pre text-zinc-800 dark:text-zinc-200"></pre>
+          <div class="tab-panel absolute inset-0 p-2" data-tab="output">
+            <div id="terminal" class="absolute inset-2"></div>
           </div>
           <div
             class="tab-panel absolute inset-0 hidden"

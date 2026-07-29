@@ -13,10 +13,8 @@ body {
   border-bottom-color: #cc241d;
 }
 
-#stdout {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 13px;
-  line-height: 1.55;
+#terminal .xterm {
+  height: 100%;
 }
 
 button:focus { outline: none; }

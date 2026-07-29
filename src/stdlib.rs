@@ -4,6 +4,8 @@ use std::path::Path;
 
 const MODULES: &[(&str, &str)] = &[
     ("std/conv", include_str!("../runtime/std/conv.kora")),
+    ("std/io", include_str!("../runtime/std/io.kora")),
+    ("std/term", include_str!("../runtime/std/term.kora")),
     ("std/math", include_str!("../runtime/std/math.kora")),
     ("std/str", include_str!("../runtime/std/str.kora")),
 ];
