@@ -66,7 +66,11 @@ pub(crate) fn function_names(
             mangle_prefix(&program.sources[module.id.0 as usize].path)
         };
         for func in &module.module.functions {
-            let name = mangle(&prefix, &func.node.name);
+            let name = if Some(module.id) == entry && func.node.name == "main" {
+                "__kora_main".to_string()
+            } else {
+                mangle(&prefix, &func.node.name)
+            };
             by_node.insert(func.id, name.clone());
             if let Some(id) = symbols.symbol_id_of_declaration(func.id) {
                 by_symbol.insert(id, name);

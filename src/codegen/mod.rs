@@ -64,12 +64,13 @@ pub fn lower<'ctx>(
     };
     let entry = program.program.modules.first().map(|m| m.id);
     for module in program.program.modules.iter() {
-        let prefix = if Some(module.id) == entry {
+        let is_entry = Some(module.id) == entry;
+        let prefix = if is_entry {
             String::new()
         } else {
             mangle_prefix(&program.program.sources[module.id.0 as usize].path)
         };
-        codegen.declare_module(&module.module, &prefix)?;
+        codegen.declare_module(&module.module, &prefix, is_entry)?;
     }
     for module in program.program.modules.iter() {
         codegen.lower_module(&module.module)?;
@@ -86,7 +87,12 @@ impl<'ctx> CodeGen<'ctx, '_> {
         self.frame.as_mut().unwrap()
     }
 
-    fn declare_module(&mut self, module: &Module, prefix: &str) -> Result<(), CodegenErr> {
+    fn declare_module(
+        &mut self,
+        module: &Module,
+        prefix: &str,
+        is_entry: bool,
+    ) -> Result<(), CodegenErr> {
         for func in module.extern_functions.iter() {
             // The C ABI of a by-value struct {i8, T} is compiler/platform dependent.
             // only reference optionals (pointers) should cross C.
@@ -111,22 +117,12 @@ impl<'ctx> CodeGen<'ctx, '_> {
             )?;
         }
         for func in module.functions.iter() {
-            if prefix.is_empty() && func.node.name == "main" {
-                let signature_ok =
-                    func.node.return_type == Some(Type::Int) && func.node.arguments.is_empty();
-                if !signature_ok {
-                    return Err(CodegenErr {
-                        msg: "main must be declared as `int main()`",
-                        span: func.span.clone(),
-                    });
-                }
-            }
-            self.declare_function(
-                func.id,
-                &mangle(prefix, &func.node.name),
-                &func.node.return_type,
-                &func.node.arguments,
-            )?;
+            let name = if is_entry && func.node.name == "main" {
+                "__kora_main".to_string()
+            } else {
+                mangle(prefix, &func.node.name)
+            };
+            self.declare_function(func.id, &name, &func.node.return_type, &func.node.arguments)?;
         }
         for impl_ in module.impls.iter() {
             for func in impl_.node.functions.iter() {

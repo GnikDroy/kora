@@ -157,11 +157,11 @@ fn test_methods_emit_mangled_global_functions() {
             }
         "#,
     );
-    assert!(js.contains("function P$get(self)"), "{js}");
-    assert!(js.contains("function P$me(self)"), "{js}");
-    assert!(js.contains("function P$set(self, v)"), "{js}");
-    assert!(js.contains("P$set(p,3)"), "{js}");
-    assert!(js.contains("P$get(P$me(p))"), "{js}");
+    assert!(js.contains("function kora$P$get(self)"), "{js}");
+    assert!(js.contains("function kora$P$me(self)"), "{js}");
+    assert!(js.contains("function kora$P$set(self, v)"), "{js}");
+    assert!(js.contains("kora$P$set(p,3)"), "{js}");
+    assert!(js.contains("kora$P$get(kora$P$me(p))"), "{js}");
 }
 
 #[test]
@@ -180,11 +180,11 @@ fn test_async_coloring_propagates_through_method_calls() {
             }
         "#,
     );
-    assert!(js.contains("async function P$ask(self)"), "{js}");
-    assert!(js.contains("async function P$relay(self)"), "{js}");
+    assert!(js.contains("async function kora$P$ask(self)"), "{js}");
+    assert!(js.contains("async function kora$P$relay(self)"), "{js}");
     assert!(js.contains("async function main()"), "{js}");
-    assert!(js.contains("(await P$ask(self))"), "{js}");
-    assert!(js.contains("(await P$relay(p))"), "{js}");
+    assert!(js.contains("(await kora$P$ask(self))"), "{js}");
+    assert!(js.contains("(await kora$P$relay(p))"), "{js}");
 }
 
 #[test]
@@ -459,9 +459,9 @@ fn test_imported_stdlib_functions_are_mangled_and_called() {
         )],
         HashSet::new(),
     );
-    assert!(js.contains("function std$conv$int_to_string("), "{js}");
-    assert!(js.contains("std$conv$int_to_string(42)"), "{js}");
-    assert!(js.contains("function main("), "{js}");
+    assert!(js.contains("function kora$std$conv$int_to_string("), "{js}");
+    assert!(js.contains("kora$std$conv$int_to_string(42)"), "{js}");
+    assert!(js.contains("function __kora_main("), "{js}");
     assert!(!js.contains("conv.int_to_string"), "{js}");
 }
 
@@ -477,10 +477,13 @@ fn test_str_module_transpiles_and_cross_calls_within_module() {
         )],
         HashSet::new(),
     );
-    assert!(js.contains("function std$str$contains("), "{js}");
-    assert!(js.contains("function std$str$index_of("), "{js}");
-    assert!(js.contains("std$str$index_of(haystack,needle)"), "{js}");
-    assert!(js.contains("std$str$contains("), "{js}");
+    assert!(js.contains("function kora$std$str$contains("), "{js}");
+    assert!(js.contains("function kora$std$str$index_of("), "{js}");
+    assert!(
+        js.contains("kora$std$str$index_of(haystack,needle)"),
+        "{js}"
+    );
+    assert!(js.contains("kora$std$str$contains("), "{js}");
 }
 
 #[test]
@@ -524,10 +527,10 @@ fn test_async_coloring_crosses_modules() {
         )],
         HashSet::from(["__kora_getchar".to_string()]),
     );
-    assert!(js.contains("async function std$io$input()"), "{js}");
+    assert!(js.contains("async function kora$std$io$input()"), "{js}");
     assert!(js.contains("(await __kora_getchar())"), "{js}");
-    assert!(js.contains("async function main()"), "{js}");
-    assert!(js.contains("(await std$io$input())"), "{js}");
-    assert!(js.contains("function std$io$print("), "{js}");
-    assert!(!js.contains("async function std$io$print("), "{js}");
+    assert!(js.contains("async function __kora_main()"), "{js}");
+    assert!(js.contains("(await kora$std$io$input())"), "{js}");
+    assert!(js.contains("function kora$std$io$print("), "{js}");
+    assert!(!js.contains("async function kora$std$io$print("), "{js}");
 }

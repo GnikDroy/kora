@@ -2,9 +2,9 @@ use std::path::{Component, Path};
 
 pub(crate) fn mangle(prefix: &str, name: &str) -> String {
     if prefix.is_empty() {
-        name.to_string()
+        format!("kora${name}")
     } else {
-        format!("{prefix}${name}")
+        format!("kora${prefix}${name}")
     }
 }
 

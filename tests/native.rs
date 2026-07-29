@@ -837,7 +837,7 @@ fn test_native_and_js_backends_agree() {
     })
     .expect("front-end");
     let js = kora::transpile(program, std::collections::HashSet::new()).expect("transpile");
-    let shim = "\nfunction __kora_write(s){process.stdout.write(Array.isArray(s)?s.join(\"\"):String(s))}\nfunction __kora_getchar(){return -1}\nfunction __kora_random(){return 0}\nmain();\n";
+    let shim = "\nfunction __kora_write(s){process.stdout.write(Array.isArray(s)?s.join(\"\"):String(s))}\nfunction __kora_getchar(){return -1}\nfunction __kora_random(){return 0}\n__kora_main();\n";
     let mjs = dir.join("main.mjs");
     std::fs::write(&mjs, format!("{js}{shim}")).unwrap();
     let out = Command::new("node").arg(&mjs).output().expect("node");
@@ -848,4 +848,25 @@ fn test_native_and_js_backends_agree() {
         String::from_utf8_lossy(&out.stderr)
     );
     assert_eq!(String::from_utf8_lossy(&out.stdout), native_out);
+}
+
+#[test]
+fn test_native_kora_names_cannot_interpose_libc() {
+    let (stdout, _, code) = run_native(
+        r#"
+            import "std/conv";
+            import "std/io";
+            int write(x: int) { return x * 2; }
+            int malloc(n: int) { return n + 1; }
+            int remove(a: int) { return a - 1; }
+            int main() {
+                let xs = [1, 2, 3];
+                xs.push(write(4));
+                io.print(conv.int_to_string(malloc(10) + remove(5) + xs[3]));
+                return 0;
+            }
+        "#,
+    );
+    assert_eq!(stdout, "23\n");
+    assert_eq!(code, 0);
 }

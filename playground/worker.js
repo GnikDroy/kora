@@ -192,7 +192,7 @@ onmessage = async (e) => {
         "canvas_width", "canvas_height", "text_width",
         "mouse_x", "mouse_y", "is_mouse_down",
         "save", "restore", "translate", "rotate",
-        msg.code + "\nreturn main();",
+        msg.code + "\nreturn __kora_main();",
       );
       await fn(
         __kora_write, __kora_getchar, __kora_random, sleep, is_key_down,

@@ -93,6 +93,21 @@ where
         analyze_errors.extend(errors.iter().cloned());
     }
 
+    // The entry point has a fixed signature
+    if let Some(module) = program.modules.first()
+        && let Some(main) = module
+            .module
+            .functions
+            .iter()
+            .find(|f| f.node.name == "main")
+        && (main.node.return_type != Some(Type::Int) || !main.node.arguments.is_empty())
+    {
+        analyze_errors.push(TypeErr {
+            msg: "main must be declared as `int main()`",
+            span: main.span.clone(),
+        });
+    }
+
     if !analyze_errors.is_empty() {
         return Err(analyze_errors
             .into_iter()
@@ -248,6 +263,33 @@ mod tests {
         if let Err(errors) = result {
             panic!("unexpected errors: {errors:?}");
         }
+    }
+
+    #[test]
+    fn test_rejects_wrong_main_signature() {
+        for source in [
+            "real main() { return 1.0; }",
+            "int main(x: int) { return x; }",
+        ] {
+            let Err(errors) = compile("main.kora", provider(vec![("main.kora", source)])) else {
+                panic!("expected a main-signature error for {source}");
+            };
+            assert!(matches!(errors.as_slice(), [CompileErr::Semantic(_)]));
+        }
+        // a `main` in an imported module is an ordinary function
+        assert!(
+            compile(
+                "main.kora",
+                provider(vec![
+                    (
+                        "main.kora",
+                        r#"import "util.kora"; int main() { return util.main(1); }"#
+                    ),
+                    ("util.kora", "int main(x: int) { return x; }"),
+                ]),
+            )
+            .is_ok()
+        );
     }
 
     #[test]
