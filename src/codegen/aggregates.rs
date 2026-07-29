@@ -75,18 +75,23 @@ impl<'ctx> CodeGen<'ctx, '_> {
         let object = self.gc_malloc(struct_type.size_of().unwrap(), "new");
         let members = self.program.symbols.struct_members(name).unwrap().to_vec();
         for (index, (member, member_type)) in members.iter().enumerate() {
-            if let Type::Struct(inner) = member_type {
-                let inner_default = self.struct_constructor(&inner.node, span)?;
-                let value = self.builder.build_call(inner_default, &[], "new").unwrap();
-                let ValueKind::Basic(value) = value.try_as_basic_value() else {
-                    unreachable!();
-                };
-                let field = self
-                    .builder
-                    .build_struct_gep(struct_type, object, index as u32, member)
-                    .unwrap();
-                self.builder.build_store(field, value).unwrap();
-            }
+            let value = match member_type {
+                Type::Struct(inner) => {
+                    let inner_default = self.struct_constructor(&inner.node, span)?;
+                    let call = self.builder.build_call(inner_default, &[], "new").unwrap();
+                    let ValueKind::Basic(value) = call.try_as_basic_value() else {
+                        unreachable!();
+                    };
+                    value
+                }
+                Type::Array(_) => self.array_new(member_type, span)?,
+                _ => continue, // GC_malloc zeros scalers
+            };
+            let field = self
+                .builder
+                .build_struct_gep(struct_type, object, index as u32, member)
+                .unwrap();
+            self.builder.build_store(field, value).unwrap();
         }
         self.builder.build_return(Some(&object)).unwrap();
 

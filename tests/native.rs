@@ -204,3 +204,179 @@ fn test_native_structs_as_function_values() {
     );
     assert_eq!(code, 11);
 }
+
+#[test]
+fn test_native_array_literals_index_len() {
+    let (_, _, code) = run_native(
+        r#"
+            int main() {
+                let a = [10, 20, 30];
+                a[1] = a[0] + 5;
+                let x = 0;
+                x = a[2] = 99;
+                return a.len() * 10 + a[1] + x - 99 - 15 + 1;
+            }
+        "#,
+    );
+    assert_eq!(code, 31);
+}
+
+#[test]
+fn test_native_array_methods() {
+    let (_, _, code) = run_native(
+        r#"
+            int main() {
+                let a = [1, 2];
+                a.push(3);
+                a.insert(0, 0);
+                let r = a.remove(1);
+                let p = a.pop();
+                let b = a.slice(0, 2);
+                a.extend([7, 8]);
+                return a.len() * 50 + b.len() * 20 + r * 10 + p;
+            }
+        "#,
+    );
+    assert_eq!(code, 253);
+}
+
+#[test]
+fn test_native_extend_self() {
+    let (_, _, code) = run_native(
+        r#"
+            int main() {
+                let a = [1, 2, 3];
+                a.extend(a);
+                return a.len() * 10 + a[3];
+            }
+        "#,
+    );
+    assert_eq!(code, 61);
+}
+
+#[test]
+fn test_native_array_panics() {
+    let (_, stderr, code) = run_native("int main() { let a = [1]; return a[1]; }");
+    assert!(stderr.contains("index out of bounds"), "{stderr}");
+    assert_eq!(code, 1);
+    let (_, stderr, code) = run_native("int main() { let a = [1]; a[-1] = 0; return 0; }");
+    assert!(stderr.contains("index out of bounds"), "{stderr}");
+    assert_eq!(code, 1);
+    let (_, stderr, code) = run_native("int main() { let a = new int[0]; return a.pop(); }");
+    assert!(stderr.contains("pop from empty array"), "{stderr}");
+    assert_eq!(code, 1);
+    let (_, stderr, code) = run_native("int main() { let a = [1]; a.insert(3, 9); return 0; }");
+    assert!(stderr.contains("index out of bounds"), "{stderr}");
+    assert_eq!(code, 1);
+    let (_, stderr, code) =
+        run_native("int main() { let n = 0 - 1; let a = new int[n]; return 0; }");
+    assert!(stderr.contains("negative array length"), "{stderr}");
+    assert_eq!(code, 1);
+}
+
+#[test]
+fn test_native_concat_is_pure_and_copy_is_independent() {
+    let (_, _, code) = run_native(
+        r#"
+            int main() {
+                let a = [1, 2];
+                let b = [3];
+                let c = a + b;
+                let d = copy(a);
+                d[0] = 9;
+                return c.len() * 10 + a.len() * 5 + a[0] + c[2];
+            }
+        "#,
+    );
+    assert_eq!(code, 44);
+}
+
+#[test]
+fn test_native_structural_equality() {
+    let (_, _, code) = run_native(
+        r#"
+            int main() {
+                let a = [[1, 2], [3]];
+                let b = [[1, 2], [3]];
+                let c = [[1, 2], [4]];
+                let r = 0;
+                if (a == b) { r = r + 1; }
+                if (a != c) { r = r + 2; }
+                if ([1.5] == [1.5]) { r = r + 4; }
+                if ("abc" == "abc") { r = r + 8; }
+                if ("abc" != "abd") { r = r + 16; }
+                return r;
+            }
+        "#,
+    );
+    assert_eq!(code, 31);
+}
+
+#[test]
+fn test_native_strings() {
+    let (stdout, _, code) = run_native(
+        r#"
+            extern void print(s: string);
+            int main() {
+                let s = "hello";
+                s[0] = 'H';
+                print(s);
+                let t = s + " world";
+                print(t);
+                print(t.slice(6, 11));
+                return t.len();
+            }
+        "#,
+    );
+    assert_eq!(stdout, "Hello\nHello world\nworld\n");
+    assert_eq!(code, 11);
+}
+
+#[test]
+fn test_native_new_arrays_zeroed_and_struct_slots_distinct() {
+    let (_, _, code) = run_native(
+        r#"
+            struct P { x: int }
+            int main() {
+                let a = new int[3];
+                let b = new P[2];
+                b[0].x = 7;
+                return a[0] + a[1] + a[2] + b[0].x * 10 + b[1].x;
+            }
+        "#,
+    );
+    assert_eq!(code, 70);
+}
+
+#[test]
+fn test_native_struct_array_members_default_empty() {
+    let (_, _, code) = run_native(
+        r#"
+            struct Bag { items: [int], name: string }
+            int main() {
+                let b = new Bag;
+                b.items.push(5);
+                b.items.push(6);
+                return b.items.len() * 10 + b.items[1] + b.name.len();
+            }
+        "#,
+    );
+    assert_eq!(code, 26);
+}
+
+#[test]
+fn test_native_char_array_iteration() {
+    let (_, _, code) = run_native(
+        r#"
+            int main() {
+                let s = "abc";
+                let sum = 0;
+                for (let i = 0; i < s.len(); i = i + 1) {
+                    sum = sum + (s[i] as int);
+                }
+                return sum - 97 - 98 - 99;
+            }
+        "#,
+    );
+    assert_eq!(code, 0);
+}

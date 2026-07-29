@@ -1,4 +1,5 @@
 mod aggregates;
+mod arrays;
 mod errors;
 mod expression;
 mod link;
@@ -18,7 +19,7 @@ use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module as LlvmModule;
 use inkwell::types::{BasicType, BasicTypeEnum, StructType};
-use inkwell::values::{FunctionValue, IntValue, PointerValue, ValueKind};
+use inkwell::values::{BasicValueEnum, FunctionValue, IntValue, PointerValue, ValueKind};
 
 use crate::frontend::CompiledProgram;
 use crate::mangle::mangle;
@@ -32,6 +33,7 @@ pub struct CodeGen<'ctx, 'a> {
     program: &'a CompiledProgram,
     functions: HashMap<SymbolId, FunctionValue<'ctx>>,
     struct_types: HashMap<String, StructType<'ctx>>,
+    array_equality_fns: HashMap<Type, FunctionValue<'ctx>>, // memoized `i1 @"eq.N"(ptr, ptr)` per array type
     default_fns: HashMap<String, FunctionValue<'ctx>>,
     frame: Option<Frame<'ctx>>,
 }
@@ -64,6 +66,7 @@ pub fn lower<'ctx>(
         program,
         functions: HashMap::new(),
         struct_types: HashMap::new(),
+        array_equality_fns: HashMap::new(),
         default_fns: HashMap::new(),
         frame: None,
     };
@@ -213,10 +216,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
             Type::Real => Ok(self.context.f64_type().into()),
             Type::Bool => Ok(self.context.bool_type().into()),
             Type::Char => Ok(self.context.i8_type().into()),
-            Type::Array(_) => Err(CodegenErr {
-                msg: "codegen for arrays is not implemented yet",
-                span: span.clone(),
-            }),
+            Type::Array(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
             Type::Optional(_) => Err(CodegenErr {
                 msg: "codegen for optionals is not implemented yet",
                 span: span.clone(),
@@ -245,6 +245,18 @@ impl<'ctx> CodeGen<'ctx, '_> {
         }
     }
 
+    fn panic_if(&mut self, failed: IntValue<'ctx>, message: &'static str) {
+        let function = self.frame().function;
+        let panic_block = self.context.append_basic_block(function, "panic");
+        let cont_block = self.context.append_basic_block(function, "cont");
+        self.builder
+            .build_conditional_branch(failed, panic_block, cont_block)
+            .unwrap();
+        self.builder.position_at_end(panic_block);
+        self.build_panic(message);
+        self.builder.position_at_end(cont_block);
+    }
+
     fn build_panic(&mut self, message: &str) {
         let panic_fn = self.module.get_function("__kora_panic").unwrap_or_else(|| {
             let ptr = self.context.ptr_type(AddressSpace::default());
@@ -261,7 +273,21 @@ impl<'ctx> CodeGen<'ctx, '_> {
         self.builder.build_unreachable().unwrap();
     }
 
-    /// Allocas live in entry block so LLVM mem2reg can promote them.
+    pub(super) fn spill(&mut self, value: BasicValueEnum<'ctx>) -> PointerValue<'ctx> {
+        let slot = self.entry_alloca(value.get_type(), "spill");
+        self.builder.build_store(slot, value).unwrap();
+        slot
+    }
+
+    pub(super) fn type_layout(
+        &mut self,
+        ty: &Type,
+        span: &Span,
+    ) -> Result<(BasicTypeEnum<'ctx>, IntValue<'ctx>), CodegenErr> {
+        let ty = self.basic_type(ty, span)?;
+        Ok((ty, ty.size_of().unwrap()))
+    }
+
     fn entry_alloca(&self, ty: BasicTypeEnum<'ctx>, name: &str) -> PointerValue<'ctx> {
         let entry = self.frame().function.get_first_basic_block().unwrap();
         let builder = self.context.create_builder();

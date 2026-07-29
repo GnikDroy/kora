@@ -67,14 +67,13 @@ impl<'ctx> CodeGen<'ctx, '_> {
             Expression::Call(callee, args) => Ok(self
                 .lower_call(callee, args, span)?
                 .expect("type checker rejects void calls in value position")),
-            Expression::StringLiteral(_) => Err(CodegenErr {
-                msg: "codegen for strings is not implemented yet",
-                span: span.clone(),
-            }),
-            Expression::Array(_) | Expression::ArrayIndex(_, _) => Err(CodegenErr {
-                msg: "codegen for arrays is not implemented yet",
-                span: span.clone(),
-            }),
+            Expression::StringLiteral(s) => Ok(self.lower_string_literal(s)),
+            Expression::Array(elems) => self.lower_array_literal(expr, elems),
+            Expression::ArrayIndex(array, index) => {
+                let ptr = self.array_element_pointer(array, index, span)?;
+                let ty = self.basic_type(&self.program.types[&expr.id], span)?;
+                Ok(self.builder.build_load(ty, ptr, "elem").unwrap())
+            }
             Expression::NoneLiteral | Expression::Unwrap(_) => Err(CodegenErr {
                 msg: "codegen for optionals is not implemented yet",
                 span: span.clone(),
@@ -102,10 +101,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 Ok(object.into())
             }
             Expression::Construct(typename, size) => match (typename, size) {
-                (_, Some(_)) => Err(CodegenErr {
-                    msg: "codegen for arrays is not implemented yet",
-                    span: span.clone(),
-                }),
+                (_, Some(size)) => self.lower_array_construct(typename, size, span),
                 (Type::Struct(name), None) => {
                     let default = self.struct_constructor(&name.node, span)?;
                     let call = self.builder.build_call(default, &[], "new").unwrap();
@@ -142,10 +138,9 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 let id = self.program.symbols.symbol_id_of_use(expr.id).unwrap();
                 Ok(self.frame().variables[&id])
             }
-            Expression::ArrayIndex(_, _) => Err(CodegenErr {
-                msg: "codegen for arrays is not implemented yet",
-                span: expr.span.clone(),
-            }),
+            Expression::ArrayIndex(array, index) => {
+                self.array_element_pointer(array, index, &expr.span)
+            }
             Expression::Access(obj, member) => self.struct_member_pointer(obj, member, &expr.span),
             _ => unreachable!("type checker rejects other assignment targets"),
         }
@@ -219,6 +214,11 @@ impl<'ctx> CodeGen<'ctx, '_> {
                     _ => unreachable!("type checker rejects other real operators"),
                 };
                 result
+            }
+            Type::Array(_) => {
+                let l = lhs.into_pointer_value();
+                let r = rhs.into_pointer_value();
+                return self.lower_array_binary(&operand_type, op, l, r, span);
             }
             _ => {
                 return Err(CodegenErr {
@@ -343,11 +343,8 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 (self.functions[&id], None)
             }
             Expression::Access(obj, _) => {
-                if self.program.array_method_calls.contains_key(&callee.id) {
-                    return Err(CodegenErr {
-                        msg: "codegen for arrays is not implemented yet",
-                        span: span.clone(),
-                    });
+                if let Some(&method) = self.program.array_method_calls.get(&callee.id) {
+                    return self.lower_array_method(method, obj, args, span);
                 }
                 let method = self.program.method_calls[&callee.id];
                 (self.functions[&method], Some(obj))
@@ -386,16 +383,12 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 self.builder.build_memcpy(copy, 1, source, 1, size).unwrap();
                 Ok(copy.into())
             }
-            Type::Array(_) => Err(CodegenErr {
-                msg: "codegen for arrays is not implemented yet",
-                span: span.clone(),
-            }),
+            Type::Array(_) => self.lower_array_copy(arg, span),
             _ => unreachable!("type checker rejects copy of scalars"),
         }
     }
 
     fn check_nonzero_divisor(&mut self, divisor: IntValue<'ctx>) {
-        let function = self.frame().function;
         let is_zero = self
             .builder
             .build_int_compare(
@@ -405,13 +398,6 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 "is_zero",
             )
             .unwrap();
-        let panic_block = self.context.append_basic_block(function, "div_by_zero");
-        let cont_block = self.context.append_basic_block(function, "div_cont");
-        self.builder
-            .build_conditional_branch(is_zero, panic_block, cont_block)
-            .unwrap();
-        self.builder.position_at_end(panic_block);
-        self.build_panic("division by zero");
-        self.builder.position_at_end(cont_block);
+        self.panic_if(is_zero, "division by zero");
     }
 }
