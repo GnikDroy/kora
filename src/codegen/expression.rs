@@ -24,7 +24,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
             }
             Expression::Identifier(name) => {
                 let id = self.program.symbols.symbol_id_of_use(expr.id).unwrap();
-                let alloca = self.variables.get(&id).ok_or(CodegenErr {
+                let alloca = self.frame().variables.get(&id).ok_or(CodegenErr {
                     msg: "functions cannot be used as values",
                     span: span.clone(),
                 })?;
@@ -140,7 +140,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
         match &expr.node {
             Expression::Identifier(_) => {
                 let id = self.program.symbols.symbol_id_of_use(expr.id).unwrap();
-                Ok(self.variables[&id])
+                Ok(self.frame().variables[&id])
             }
             Expression::ArrayIndex(_, _) => Err(CodegenErr {
                 msg: "codegen for arrays is not implemented yet",
@@ -236,7 +236,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
         op: BinaryOp,
         right: &Spanned<Expression>,
     ) -> Result<BasicValueEnum<'ctx>, CodegenErr> {
-        let function = self.current_function.unwrap();
+        let function = self.frame().function;
         let lhs = self.lower_expression(left)?.into_int_value();
         let lhs_block = self.builder.get_insert_block().unwrap();
 
@@ -395,7 +395,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
     }
 
     fn check_nonzero_divisor(&mut self, divisor: IntValue<'ctx>) {
-        let function = self.current_function.unwrap();
+        let function = self.frame().function;
         let is_zero = self
             .builder
             .build_int_compare(

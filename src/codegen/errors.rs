@@ -18,3 +18,29 @@ impl fmt::Display for CodegenErr {
         )
     }
 }
+
+#[derive(Debug)]
+pub enum LinkErr {
+    EmitObject(String),
+    Io(std::io::Error),
+    LinkFailed,
+}
+
+impl Error for LinkErr {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            LinkErr::Io(e) => Some(e),
+            _ => None,
+        }
+    }
+}
+
+impl fmt::Display for LinkErr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            LinkErr::EmitObject(e) => write!(f, "{e}"),
+            LinkErr::Io(e) => write!(f, "{e}"),
+            LinkErr::LinkFailed => write!(f, "linking failed"),
+        }
+    }
+}

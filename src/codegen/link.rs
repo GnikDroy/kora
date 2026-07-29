@@ -7,15 +7,40 @@ use inkwell::targets::{
     CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine,
 };
 
+use super::LinkErr;
+
 const RUNTIME_LIB: &[u8] = include_bytes!(env!("KORA_RUNTIME"));
 
-pub fn link(llvm: &Module, output: &Path) -> Result<(), String> {
+pub fn link(llvm: &Module, output: &Path) -> Result<(), LinkErr> {
     llvm.verify()
-        .map_err(|e| format!("internal error: invalid IR generated:\n{}", e))?;
+        .unwrap_or_else(|e| panic!("invalid IR generated:\n{e}"));
 
-    Target::initialize_native(&InitializationConfig::default())?;
+    let object_path = output.with_extension("o");
+    emit_object_file(llvm, &object_path)?;
+    let runtime_path = output.with_extension("a");
+    let status = std::fs::write(&runtime_path, RUNTIME_LIB)
+        .map_err(LinkErr::Io)
+        .and_then(|_| {
+            Command::new("cc")
+                .arg(&object_path)
+                .arg(&runtime_path)
+                .arg("-o")
+                .arg(output)
+                .status()
+                .map_err(LinkErr::Io)
+        });
+    std::fs::remove_file(&object_path).ok();
+    std::fs::remove_file(&runtime_path).ok();
+    if !status?.success() {
+        return Err(LinkErr::LinkFailed);
+    }
+    Ok(())
+}
+
+fn emit_object_file(llvm: &Module, object: &Path) -> Result<(), LinkErr> {
+    Target::initialize_native(&InitializationConfig::default()).map_err(LinkErr::EmitObject)?;
     let triple = TargetMachine::get_default_triple();
-    let target = Target::from_triple(&triple).map_err(|e| e.to_string())?;
+    let target = Target::from_triple(&triple).map_err(|e| LinkErr::EmitObject(e.to_string()))?;
     let machine = target
         .create_target_machine(
             &triple,
@@ -25,32 +50,9 @@ pub fn link(llvm: &Module, output: &Path) -> Result<(), String> {
             RelocMode::PIC,
             CodeModel::Default,
         )
-        .ok_or("cannot create target machine")?;
+        .ok_or_else(|| LinkErr::EmitObject("cannot create target machine".to_string()))?;
     llvm.set_triple(&triple);
-
-    let object_path = output.with_extension("o");
     machine
-        .write_to_file(llvm, FileType::Object, &object_path)
-        .map_err(|e| e.to_string())?;
-    let result = cc(&object_path, output);
-    std::fs::remove_file(&object_path).ok();
-    result
-}
-
-fn cc(object: &Path, output: &Path) -> Result<(), String> {
-    let runtime_path = output.with_extension("a");
-    std::fs::write(&runtime_path, RUNTIME_LIB).map_err(|e| e.to_string())?;
-
-    let status = Command::new("cc")
-        .arg(object)
-        .arg(&runtime_path)
-        .arg("-o")
-        .arg(output)
-        .status()
-        .map_err(|e| format!("cannot run cc: {}", e));
-    std::fs::remove_file(&runtime_path).ok();
-    if !status?.success() {
-        return Err("linking failed".to_string());
-    }
-    Ok(())
+        .write_to_file(llvm, FileType::Object, object)
+        .map_err(|e| LinkErr::EmitObject(e.to_string()))
 }

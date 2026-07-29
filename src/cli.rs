@@ -59,7 +59,7 @@ fn build(args: &Args, program: kora::CompiledProgram) -> Result<(), String> {
         return Ok(());
     }
 
-    kora::codegen::link(&llvm, &output)
+    kora::codegen::link(&llvm, &output).map_err(|e| e.to_string())
 }
 
 #[cfg(not(feature = "codegen"))]

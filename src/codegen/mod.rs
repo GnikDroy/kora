@@ -30,13 +30,16 @@ pub struct CodeGen<'ctx, 'a> {
     module: LlvmModule<'ctx>,
     builder: Builder<'ctx>,
     program: &'a CompiledProgram,
-    variables: HashMap<SymbolId, PointerValue<'ctx>>,
     functions: HashMap<SymbolId, FunctionValue<'ctx>>,
     struct_types: HashMap<String, StructType<'ctx>>,
     default_fns: HashMap<String, FunctionValue<'ctx>>,
-    // (continue target, break target) per enclosing loop
+    frame: Option<Frame<'ctx>>,
+}
+
+struct Frame<'ctx> {
+    function: FunctionValue<'ctx>,
+    variables: HashMap<SymbolId, PointerValue<'ctx>>,
     loops: Vec<(BasicBlock<'ctx>, BasicBlock<'ctx>)>,
-    current_function: Option<FunctionValue<'ctx>>,
 }
 
 pub fn lower<'ctx>(
@@ -59,18 +62,24 @@ pub fn lower<'ctx>(
         module: context.create_module("kora"),
         builder: context.create_builder(),
         program,
-        variables: HashMap::new(),
         functions: HashMap::new(),
         struct_types: HashMap::new(),
         default_fns: HashMap::new(),
-        loops: Vec::new(),
-        current_function: None,
+        frame: None,
     };
     codegen.lower_module(&program.program.modules[0].module)?;
     Ok(codegen.module)
 }
 
 impl<'ctx> CodeGen<'ctx, '_> {
+    fn frame(&self) -> &Frame<'ctx> {
+        self.frame.as_ref().unwrap()
+    }
+
+    fn frame_mut(&mut self) -> &mut Frame<'ctx> {
+        self.frame.as_mut().unwrap()
+    }
+
     fn lower_module(&mut self, module: &Module) -> Result<(), CodegenErr> {
         for func in module.extern_functions.iter() {
             self.declare_function(
@@ -163,7 +172,11 @@ impl<'ctx> CodeGen<'ctx, '_> {
             .symbol_id_of_declaration(func.id)
             .unwrap();
         let function = self.functions[&id];
-        self.current_function = Some(function);
+        self.frame = Some(Frame {
+            function,
+            variables: HashMap::new(),
+            loops: Vec::new(),
+        });
 
         let entry = self.context.append_basic_block(function, "entry");
         self.builder.position_at_end(entry);
@@ -178,14 +191,12 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 .symbols
                 .symbol_id_of_declaration(pair.id)
                 .unwrap();
-            self.variables.insert(id, alloca);
+            self.frame_mut().variables.insert(id, alloca);
         }
 
         self.lower_statement(&func.node.statement)?;
 
-        // The return checker guarantees non-void functions return on every
-        // real path; anything still open here is a void fall-through or an
-        // unreachable continuation block.
+        // The return checker guarantees non-void functions return on every branch
         let block = self.builder.get_insert_block().unwrap();
         if block.get_terminator().is_none() {
             match func.node.return_type {
@@ -210,7 +221,6 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 msg: "codegen for optionals is not implemented yet",
                 span: span.clone(),
             }),
-            // Aggregates are reference types.
             Type::Struct(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
             Type::Function(_, _) => Err(CodegenErr {
                 msg: "functions cannot be used as values",
@@ -218,9 +228,6 @@ impl<'ctx> CodeGen<'ctx, '_> {
             }),
         }
     }
-
-    /// The C-ABI body of a struct (decl-order members; aggregate members are
-    /// pointers), memoized by name.
 
     fn gc_malloc(&mut self, size: IntValue<'ctx>, name: &str) -> PointerValue<'ctx> {
         let malloc = self.module.get_function("GC_malloc").unwrap_or_else(|| {
@@ -238,11 +245,6 @@ impl<'ctx> CodeGen<'ctx, '_> {
         }
     }
 
-    /// `ptr @"default.S"()` — the zero value of a struct, as emitted for bare
-    /// `new S`. GC_malloc returns zeroed memory, which already covers scalar
-    /// members; nested struct members get fresh recursive defaults so slots
-    /// are distinct objects.
-
     fn build_panic(&mut self, message: &str) {
         let panic_fn = self.module.get_function("__kora_panic").unwrap_or_else(|| {
             let ptr = self.context.ptr_type(AddressSpace::default());
@@ -259,14 +261,9 @@ impl<'ctx> CodeGen<'ctx, '_> {
         self.builder.build_unreachable().unwrap();
     }
 
-    /// Allocas live in the entry block so LLVM's mem2reg can promote them.
-
+    /// Allocas live in entry block so LLVM mem2reg can promote them.
     fn entry_alloca(&self, ty: BasicTypeEnum<'ctx>, name: &str) -> PointerValue<'ctx> {
-        let entry = self
-            .current_function
-            .unwrap()
-            .get_first_basic_block()
-            .unwrap();
+        let entry = self.frame().function.get_first_basic_block().unwrap();
         let builder = self.context.create_builder();
         match entry.get_first_instruction() {
             Some(instruction) => builder.position_before(&instruction),
@@ -275,10 +272,9 @@ impl<'ctx> CodeGen<'ctx, '_> {
         builder.build_alloca(ty, name).unwrap()
     }
 
-    /// After `return`/`break`/`continue`, later statements in the block are
-    /// unreachable but must still compile somewhere.
+    /// After return/break/continue, statements are unreachable but must compile.
     fn start_continuation_block(&mut self) {
-        let function = self.current_function.unwrap();
+        let function = self.frame().function;
         let block = self.context.append_basic_block(function, "unreachable");
         self.builder.position_at_end(block);
     }

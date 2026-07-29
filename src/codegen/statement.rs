@@ -29,7 +29,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                     .symbols
                     .symbol_id_of_declaration(name.id)
                     .unwrap();
-                self.variables.insert(id, alloca);
+                self.frame_mut().variables.insert(id, alloca);
                 Ok(())
             }
             Statement::Return(expr) => {
@@ -51,7 +51,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
             Statement::While(cond, body) => self.lower_while(cond, body),
             Statement::For(init, cond, step, body) => self.lower_for(init, cond, step, body),
             Statement::Break => {
-                let (_, break_target) = *self.loops.last().unwrap();
+                let (_, break_target) = *self.frame().loops.last().unwrap();
                 self.builder
                     .build_unconditional_branch(break_target)
                     .unwrap();
@@ -59,7 +59,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 Ok(())
             }
             Statement::Continue => {
-                let (continue_target, _) = *self.loops.last().unwrap();
+                let (continue_target, _) = *self.frame().loops.last().unwrap();
                 self.builder
                     .build_unconditional_branch(continue_target)
                     .unwrap();
@@ -75,7 +75,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
         then_stmt: &Spanned<Statement>,
         else_stmt: Option<&Spanned<Statement>>,
     ) -> Result<(), CodegenErr> {
-        let function = self.current_function.unwrap();
+        let function = self.frame().function;
         let cond_value = self.lower_expression(cond)?.into_int_value();
 
         let then_block = self.context.append_basic_block(function, "then");
@@ -108,7 +108,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
         cond: &Spanned<Expression>,
         body: &Spanned<Statement>,
     ) -> Result<(), CodegenErr> {
-        let function = self.current_function.unwrap();
+        let function = self.frame().function;
         let cond_block = self.context.append_basic_block(function, "while_cond");
         let body_block = self.context.append_basic_block(function, "while_body");
         let after_block = self.context.append_basic_block(function, "while_after");
@@ -121,9 +121,9 @@ impl<'ctx> CodeGen<'ctx, '_> {
             .unwrap();
 
         self.builder.position_at_end(body_block);
-        self.loops.push((cond_block, after_block));
+        self.frame_mut().loops.push((cond_block, after_block));
         self.lower_statement(body)?;
-        self.loops.pop();
+        self.frame_mut().loops.pop();
         self.branch_if_open(cond_block);
 
         self.builder.position_at_end(after_block);
@@ -137,7 +137,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
         step: &Spanned<Expression>,
         body: &Spanned<Statement>,
     ) -> Result<(), CodegenErr> {
-        let function = self.current_function.unwrap();
+        let function = self.frame().function;
         self.lower_statement(init)?;
 
         let cond_block = self.context.append_basic_block(function, "for_cond");
@@ -153,9 +153,9 @@ impl<'ctx> CodeGen<'ctx, '_> {
             .unwrap();
 
         self.builder.position_at_end(body_block);
-        self.loops.push((step_block, after_block));
+        self.frame_mut().loops.push((step_block, after_block));
         self.lower_statement(body)?;
-        self.loops.pop();
+        self.frame_mut().loops.pop();
         self.branch_if_open(step_block);
 
         self.builder.position_at_end(step_block);
