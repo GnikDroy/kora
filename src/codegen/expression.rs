@@ -33,7 +33,8 @@ impl<'ctx> CodeGen<'ctx, '_> {
             }
             Expression::Binary(left, BinaryOp::Assign, right) => {
                 let target = self.lower_lvalue(left)?;
-                let value = self.lower_expression(right)?;
+                let expected = self.program.types[&left.id].clone();
+                let value = self.lower_expression_expecting(right, &expected)?;
                 self.builder.build_store(target, value).unwrap();
                 Ok(value)
             }
@@ -74,10 +75,8 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 let ty = self.basic_type(&self.program.types[&expr.id], span)?;
                 Ok(self.builder.build_load(ty, ptr, "elem").unwrap())
             }
-            Expression::NoneLiteral | Expression::Unwrap(_) => Err(CodegenErr {
-                msg: "codegen for optionals is not implemented yet",
-                span: span.clone(),
-            }),
+            Expression::NoneLiteral => self.lower_none(expr),
+            Expression::Unwrap(operand) => self.lower_unwrap(operand),
             Expression::Access(obj, member) => {
                 let ptr = self.struct_member_pointer(obj, member, span)?;
                 let ty = self.basic_type(&self.program.types[&expr.id], span)?;
@@ -90,7 +89,12 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 let struct_type = self.struct_type(&name.node, span)?;
                 let object = self.gc_malloc(struct_type.size_of().unwrap(), "new");
                 for (field, value) in fields.iter() {
-                    let value = self.lower_expression(value)?;
+                    let member = self
+                        .program
+                        .symbols
+                        .struct_member(&name.node, &field.node)
+                        .unwrap();
+                    let value = self.lower_expression_expecting(value, &member)?;
                     let index = self.struct_member_index(&name.node, &field.node);
                     let ptr = self
                         .builder
@@ -129,6 +133,24 @@ impl<'ctx> CodeGen<'ctx, '_> {
         }
     }
 
+    pub(super) fn lower_expression_expecting(
+        &mut self,
+        expr: &Spanned<Expression>,
+        expected: &Type,
+    ) -> Result<BasicValueEnum<'ctx>, CodegenErr> {
+        let value = self.lower_expression(expr)?;
+        let actual = self.program.types[&expr.id].clone();
+        if actual == *expected {
+            return Ok(value);
+        }
+        if let Type::Optional(inner) = expected
+            && actual == **inner
+        {
+            return self.lower_optional_wrap(value, inner, &expr.span);
+        }
+        Ok(value)
+    }
+
     fn lower_lvalue(
         &mut self,
         expr: &Spanned<Expression>,
@@ -154,6 +176,13 @@ impl<'ctx> CodeGen<'ctx, '_> {
         span: &Span,
     ) -> Result<BasicValueEnum<'ctx>, CodegenErr> {
         use BinaryOp::*;
+
+        if matches!(op, Equality | NotEquality)
+            && (matches!(self.program.types[&left.id], Type::Optional(_))
+                || matches!(self.program.types[&right.id], Type::Optional(_)))
+        {
+            return self.lower_optional_equality(left, op, right, span);
+        }
 
         let operand_type = self.program.types[&left.id].clone();
         let lhs = self.lower_expression(left)?;
@@ -334,31 +363,37 @@ impl<'ctx> CodeGen<'ctx, '_> {
         args: &[Spanned<Expression>],
         span: &Span,
     ) -> Result<Option<BasicValueEnum<'ctx>>, CodegenErr> {
-        let (function, receiver) = match &callee.node {
+        let (function, receiver, callee_symbol) = match &callee.node {
             Expression::Identifier(name) => {
                 if is_intrinsic(name) {
                     return self.lower_copy(&args[0], span).map(Some);
                 }
                 let id = self.program.symbols.symbol_id_of_use(callee.id).unwrap();
-                (self.functions[&id], None)
+                (self.functions[&id], None, id)
             }
             Expression::Access(obj, _) => {
                 if let Some(&method) = self.program.array_method_calls.get(&callee.id) {
                     return self.lower_array_method(method, obj, args, span);
                 }
                 let method = self.program.method_calls[&callee.id];
-                (self.functions[&method], Some(obj))
+                (self.functions[&method], Some(obj), method)
             }
             _ => unreachable!("type checker rejects other callees"),
         };
 
-        // A method's receiver is its first argument.
+        // A method's receiver is its first argument. remaining arguments coerce.
+        let Some(Type::Function(_, parameters)) =
+            self.program.symbols.symbol(callee_symbol).ty.clone()
+        else {
+            unreachable!("callees are declared with a function type");
+        };
+        let parameters = &parameters[parameters.len() - args.len()..];
         let mut arg_values = Vec::with_capacity(args.len() + 1);
         if let Some(obj) = receiver {
             arg_values.push(self.lower_expression(obj)?.into());
         }
-        for arg in args.iter() {
-            arg_values.push(self.lower_expression(arg)?.into());
+        for (arg, parameter) in args.iter().zip(parameters) {
+            arg_values.push(self.lower_expression_expecting(arg, parameter)?.into());
         }
 
         let call = self.builder.build_call(function, &arg_values, "").unwrap();

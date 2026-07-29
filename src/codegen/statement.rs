@@ -16,7 +16,10 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 Ok(())
             }
             Statement::Let(name, typename, init) => {
-                let value = self.lower_expression(init)?;
+                let value = match typename {
+                    Some(typename) => self.lower_expression_expecting(init, typename)?,
+                    None => self.lower_expression(init)?,
+                };
                 let k_type = match typename {
                     Some(typename) => typename.clone(),
                     None => self.program.types[&init.id].clone(),
@@ -35,7 +38,10 @@ impl<'ctx> CodeGen<'ctx, '_> {
             Statement::Return(expr) => {
                 match expr {
                     Some(expr) => {
-                        let value = self.lower_expression(expr)?;
+                        let return_type = self.frame().return_type.clone();
+                        let return_type =
+                            return_type.expect("checker rejects value returns in void functions");
+                        let value = self.lower_expression_expecting(expr, &return_type)?;
                         self.builder.build_return(Some(&value)).unwrap();
                     }
                     None => {

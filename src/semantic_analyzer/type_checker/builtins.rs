@@ -123,6 +123,10 @@ pub fn is_comparable(ty: &Type) -> bool {
     }
 }
 
+pub fn is_reference(ty: &Type) -> bool {
+    matches!(ty, Type::Array(_) | Type::Struct(_))
+}
+
 pub fn is_scalar(ty: &Type) -> bool {
     matches!(ty, Type::Int | Type::Real | Type::Bool | Type::Char)
 }

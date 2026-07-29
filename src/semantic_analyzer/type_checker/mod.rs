@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use super::{errors::TypeErr, symbol_resolver::*};
 use crate::parser::*;
 
-pub use builtins::ArrayMethod;
+pub use builtins::{ArrayMethod, is_reference};
 
 pub struct TypeChecker<'a> {
     symbols: &'a SymbolTable,

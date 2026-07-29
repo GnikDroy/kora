@@ -151,7 +151,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
             .into_pointer_value();
         let buf = self.array_buf(array);
         for (i, elem_expr) in elems.iter().enumerate() {
-            let value = self.lower_expression(elem_expr)?;
+            let value = self.lower_expression_expecting(elem_expr, &elem)?;
             let index = self.context.i64_type().const_int(i as u64, false);
             let slot = unsafe {
                 self.builder
@@ -243,7 +243,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
         let value = match method {
             ArrayMethod::Len => Some(self.array_len(array).into()),
             ArrayMethod::Push => {
-                let value = self.lower_expression(&args[0])?;
+                let value = self.lower_expression_expecting(&args[0], &elem)?;
                 let slot = self.spill(value);
                 self.array_fn_call(
                     "__kora_array_push",
@@ -258,7 +258,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
             }
             ArrayMethod::Insert => {
                 let index = self.lower_expression(&args[0])?;
-                let value = self.lower_expression(&args[1])?;
+                let value = self.lower_expression_expecting(&args[1], &elem)?;
                 let slot = self.spill(value);
                 self.array_fn_call(
                     "__kora_array_insert",
@@ -351,7 +351,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
         }
     }
 
-    fn array_equality_fn(
+    pub(super) fn array_equality_fn(
         &mut self,
         array_type: &Type,
         span: &Span,
@@ -445,6 +445,9 @@ impl<'ctx> CodeGen<'ctx, '_> {
                     unreachable!();
                 };
                 value.into_int_value()
+            }
+            Type::Optional(opt_inner) => {
+                self.is_optional_values_equal(opt_inner, elem_a, elem_b, span)?
             }
             _ => unreachable!("type checker limits array equality to comparable elements"),
         };

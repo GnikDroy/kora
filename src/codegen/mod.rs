@@ -3,6 +3,7 @@ mod arrays;
 mod errors;
 mod expression;
 mod link;
+mod optionals;
 mod statement;
 
 #[cfg(test)]
@@ -24,7 +25,7 @@ use inkwell::values::{BasicValueEnum, FunctionValue, IntValue, PointerValue, Val
 use crate::frontend::CompiledProgram;
 use crate::mangle::mangle;
 use crate::parser::*;
-use crate::semantic_analyzer::SymbolId;
+use crate::semantic_analyzer::{SymbolId, is_reference};
 
 pub struct CodeGen<'ctx, 'a> {
     context: &'ctx Context,
@@ -40,6 +41,7 @@ pub struct CodeGen<'ctx, 'a> {
 
 struct Frame<'ctx> {
     function: FunctionValue<'ctx>,
+    return_type: Option<Type>,
     variables: HashMap<SymbolId, PointerValue<'ctx>>,
     loops: Vec<(BasicBlock<'ctx>, BasicBlock<'ctx>)>,
 }
@@ -85,6 +87,21 @@ impl<'ctx> CodeGen<'ctx, '_> {
 
     fn lower_module(&mut self, module: &Module) -> Result<(), CodegenErr> {
         for func in module.extern_functions.iter() {
+            // The C ABI of a by-value struct {i8, T} is compiler/platform dependent.
+            // only reference optionals (pointers) should cross C.
+            // C also doesn't have optionals. extern really shouldn't be using optionals for scalars.
+            let scalar_optional =
+                |ty: &Type| matches!(ty, Type::Optional(inner) if !is_reference(inner));
+            let arguments = func.node.arguments.iter();
+            if arguments.clone().any(|p| scalar_optional(&p.node.typename))
+                || func.node.return_type.as_ref().is_some_and(scalar_optional)
+            {
+                return Err(CodegenErr {
+                    msg: "scalar optionals cannot cross the extern boundary",
+                    span: func.span.clone(),
+                });
+            }
+            drop(arguments);
             self.declare_function(
                 func.id,
                 &func.node.name,
@@ -177,6 +194,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
         let function = self.functions[&id];
         self.frame = Some(Frame {
             function,
+            return_type: func.node.return_type.clone(),
             variables: HashMap::new(),
             loops: Vec::new(),
         });
@@ -217,10 +235,14 @@ impl<'ctx> CodeGen<'ctx, '_> {
             Type::Bool => Ok(self.context.bool_type().into()),
             Type::Char => Ok(self.context.i8_type().into()),
             Type::Array(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
-            Type::Optional(_) => Err(CodegenErr {
-                msg: "codegen for optionals is not implemented yet",
-                span: span.clone(),
-            }),
+            Type::Optional(inner) => {
+                if is_reference(inner) {
+                    return Ok(self.context.ptr_type(AddressSpace::default()).into());
+                }
+                let inner = self.basic_type(inner, span)?;
+                let tag = self.context.i8_type().into();
+                Ok(self.context.struct_type(&[tag, inner], false).into())
+            }
             Type::Struct(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
             Type::Function(_, _) => Err(CodegenErr {
                 msg: "functions cannot be used as values",

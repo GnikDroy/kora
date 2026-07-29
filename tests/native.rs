@@ -380,3 +380,199 @@ fn test_native_char_array_iteration() {
     );
     assert_eq!(code, 0);
 }
+
+#[test]
+fn test_native_scalar_optionals() {
+    let (_, _, code) = run_native(
+        r#"
+            int? find(xs: [int], want: int) {
+                for (let i = 0; i < xs.len(); i = i + 1) {
+                    if (xs[i] == want) { return i; }
+                }
+                return none;
+            }
+            int main() {
+                let hit = find([5, 7, 9], 7);
+                let miss = find([5, 7, 9], 8);
+                let r = 0;
+                if (hit != none) { r = r + 1; }
+                if (miss == none) { r = r + 2; }
+                if (hit! == 1) { r = r + 4; }
+                let x: int? = 40;
+                let y: int? = x;
+                if (x == y) { r = r + 8; }
+                if (x != none) { r = r + x!; }
+                return r;
+            }
+        "#,
+    );
+    assert_eq!(code, 55);
+}
+
+#[test]
+fn test_native_optional_coercion_sites() {
+    let (_, _, code) = run_native(
+        r#"
+            struct Slot { value: int? }
+            int? id(x: int?) { return x; }
+            int main() {
+                let a: int? = 3;
+                a = 4;
+                a = none;
+                a = 5;
+                let s = new Slot { value: 6 };
+                s.value = 7;
+                let xs: [int?] = [a, none, s.value];
+                xs.push(8);
+                xs.insert(0, none);
+                let sum = 0;
+                for (let i = 0; i < xs.len(); i = i + 1) {
+                    if (xs[i] != none) { sum = sum + xs[i]!; }
+                }
+                return sum + id(20)!;
+            }
+        "#,
+    );
+    assert_eq!(code, 40);
+}
+
+#[test]
+fn test_native_unwrap_none_panics() {
+    let (_, stderr, code) = run_native(
+        r#"
+            int main() {
+                let x: int? = none;
+                return x!;
+            }
+        "#,
+    );
+    assert!(stderr.contains("force-unwrapped a none value"), "{stderr}");
+    assert_eq!(code, 1);
+}
+
+#[test]
+fn test_native_optional_structs_linked_list() {
+    let (_, _, code) = run_native(
+        r#"
+            struct Node { value: int, next: Node? }
+            int main() {
+                let head = new Node { value: 1, next: new Node { value: 2, next: none } };
+                let fresh = new Node;
+                let r = 0;
+                if (fresh.next == none) { r = r + 1; }
+                let sum = 0;
+                let cur: Node? = head;
+                while (cur != none) {
+                    sum = sum + cur!.value;
+                    cur = cur!.next;
+                }
+                return r * 10 + sum;
+            }
+        "#,
+    );
+    assert_eq!(code, 13);
+}
+
+#[test]
+fn test_native_optional_equality_forms() {
+    let (_, _, code) = run_native(
+        r#"
+            int main() {
+                let a: int? = 5;
+                let b: int? = 5;
+                let c: int? = 6;
+                let d: int? = none;
+                let e: int? = none;
+                let r = 0;
+                if (a == b) { r = r + 1; }
+                if (a != c) { r = r + 2; }
+                if (a != d) { r = r + 4; }
+                if (d == e) { r = r + 8; }
+                if (a == 5) { r = r + 16; }
+                let f: real? = 1.5;
+                if (f == 1.5) { r = r + 32; }
+                let g: [int]? = [1, 2];
+                let h: [int]? = [1, 2];
+                let i: [int]? = none;
+                if (g == h) { r = r + 64; }
+                if (g != i) { r = r + 128; }
+                return r;
+            }
+        "#,
+    );
+    assert_eq!(code, 255);
+}
+
+#[test]
+fn test_native_input_reads_lines_until_eof() {
+    let dir = std::env::temp_dir().join(format!("kora-native-{}-input", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let entry = dir.join("main.kora");
+    std::fs::write(
+        &entry,
+        r#"
+            extern string? input();
+            extern void print(s: string);
+            int main() {
+                let count = 0;
+                let line = input();
+                while (line != none) {
+                    print(line!);
+                    count = count + 1;
+                    line = input();
+                }
+                return count;
+            }
+        "#,
+    )
+    .unwrap();
+    let program = kora::compile(entry.to_str().unwrap(), |path: &Path| {
+        std::fs::read_to_string(path).ok()
+    })
+    .expect("front-end");
+    let context = Context::create();
+    let llvm = kora::codegen::lower(&context, &program).expect("codegen");
+    let binary = dir.join("main");
+    kora::codegen::link(&llvm, &binary).expect("build");
+
+    let mut child = Command::new(&binary)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("run");
+    use std::io::Write;
+    let long = "x".repeat(9000);
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(format!("alpha\n{long}\nbeta").as_bytes())
+        .unwrap();
+    let out = child.wait_with_output().unwrap();
+    std::fs::remove_dir_all(&dir).ok();
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout),
+        format!("alpha\n{long}\nbeta\n")
+    );
+    assert_eq!(out.status.code(), Some(3));
+}
+
+#[test]
+fn test_native_scalar_optional_extern_is_rejected() {
+    let dir = std::env::temp_dir().join(format!("kora-native-{}-extopt", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let entry = dir.join("main.kora");
+    std::fs::write(&entry, "extern int? bad();\nint main() { return 0; }").unwrap();
+    let program = kora::compile(entry.to_str().unwrap(), |path: &Path| {
+        std::fs::read_to_string(path).ok()
+    })
+    .expect("front-end");
+    let context = Context::create();
+    let err = kora::codegen::lower(&context, &program).unwrap_err();
+    std::fs::remove_dir_all(&dir).ok();
+    assert!(
+        err.to_string()
+            .contains("scalar optionals cannot cross the extern boundary"),
+        "{err}"
+    );
+}
