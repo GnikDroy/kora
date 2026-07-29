@@ -6,29 +6,37 @@ use crate::parser::*;
 /// JavaScript is a colored language ;)
 /// https://journal.stuffwithstuff.com/2015/02/01/what-color-is-your-function/
 pub(crate) fn resolve_async_fns(
-    module: &Module,
+    modules: &[&Module],
+    function_names: &HashMap<NodeId, String>,
     method_calls: &HashMap<NodeId, String>,
     async_externs: HashSet<String>,
 ) -> HashSet<String> {
     let mut async_fns = async_externs;
 
-    let callees: Vec<(String, HashSet<String>)> = module
-        .functions
+    let callees: Vec<(String, HashSet<String>)> = modules
         .iter()
-        .map(|f| {
-            (
-                f.node.name.clone(),
-                called_names(&f.node.statement, method_calls),
-            )
+        .flat_map(|module| {
+            module
+                .functions
+                .iter()
+                .map(|f| {
+                    (
+                        function_names
+                            .get(&f.id)
+                            .cloned()
+                            .unwrap_or_else(|| f.node.name.clone()),
+                        called_names(&f.node.statement, function_names, method_calls),
+                    )
+                })
+                .chain(module.impls.iter().flat_map(|impl_| {
+                    impl_.node.functions.iter().map(|f| {
+                        (
+                            mangle(&impl_.node.struct_name.node, &f.node.name),
+                            called_names(&f.node.statement, function_names, method_calls),
+                        )
+                    })
+                }))
         })
-        .chain(module.impls.iter().flat_map(|impl_| {
-            impl_.node.functions.iter().map(|f| {
-                (
-                    mangle(&impl_.node.struct_name.node, &f.node.name),
-                    called_names(&f.node.statement, method_calls),
-                )
-            })
-        }))
         .collect();
 
     loop {
@@ -50,13 +58,16 @@ pub(crate) fn resolve_async_fns(
     async_fns
 }
 
-/// Every function name called within a body. Free calls use the identifier;
-/// method calls resolve to their mangled name via `method_calls`.
+/// Every function name called within a body, under the same names the
+/// emitter uses: mangled for kora functions, bare for externs, and
+/// struct$method for methods.
 fn called_names(
     body: &Spanned<Statement>,
+    function_names: &HashMap<NodeId, String>,
     method_calls: &HashMap<NodeId, String>,
 ) -> HashSet<String> {
     let mut collector = CallCollector {
+        function_names,
         method_calls,
         names: HashSet::new(),
     };
@@ -65,6 +76,7 @@ fn called_names(
 }
 
 struct CallCollector<'a> {
+    function_names: &'a HashMap<NodeId, String>,
     method_calls: &'a HashMap<NodeId, String>,
     names: HashSet<String>,
 }
@@ -75,15 +87,12 @@ impl ASTVisitor for CallCollector<'_> {
         callee: &Spanned<Expression>,
         args: &[Spanned<Expression>],
     ) {
-        match &callee.node {
-            Expression::Identifier(name) => {
-                self.names.insert(name.clone());
-            }
-            _ => {
-                if let Some(name) = self.method_calls.get(&callee.id) {
-                    self.names.insert(name.clone());
-                }
-            }
+        if let Some(name) = self.function_names.get(&callee.id) {
+            self.names.insert(name.clone());
+        } else if let Some(name) = self.method_calls.get(&callee.id) {
+            self.names.insert(name.clone());
+        } else if let Expression::Identifier(name) = &callee.node {
+            self.names.insert(name.clone());
         }
         walk_call_expression(self, callee, args);
     }

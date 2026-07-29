@@ -8,12 +8,11 @@ use crate::{
 };
 
 const PRELUDE: &str = r#"
-            extern void clear();
-            extern void print(a: string);
-            extern string input();
+            extern void __kora_write(s: string);
+            extern int __kora_getchar();
+            extern real __kora_random();
             extern void sleep(ms: int);
             extern bool is_key_down(key: string);
-            extern real random();
             extern void draw_clear();
             extern void set_color(c: string);
             extern void fill_rect(x: int, y: int, w: int, h: int);
@@ -60,8 +59,12 @@ fn transpile(source: &str) -> String {
         .unwrap_or_else(|errs| panic!("return check: {errs:?}"));
 
     let method_calls = super::mangled_method_calls(&symbols, &checker.method_calls);
-    let async_fns =
-        super::resolve_async_fns(&module, &method_calls, HashSet::from(["input".to_string()]));
+    let async_fns = super::resolve_async_fns(
+        &[&module],
+        &HashMap::new(),
+        &method_calls,
+        HashSet::from(["__kora_getchar".to_string()]),
+    );
     let struct_members = super::struct_member_map(&symbols);
     let mut transpiler = JavascriptTranspiler::new(
         checker.types,
@@ -117,8 +120,12 @@ fn valid() {
     assert_eq!(checker.check().is_ok(), true);
 
     let method_calls = HashMap::new();
-    let async_fns =
-        super::resolve_async_fns(&module, &method_calls, HashSet::from(["input".to_string()]));
+    let async_fns = super::resolve_async_fns(
+        &[&module],
+        &HashMap::new(),
+        &method_calls,
+        HashSet::from(["__kora_getchar".to_string()]),
+    );
     let mut transpiler = JavascriptTranspiler::new(
         checker.types,
         method_calls,
@@ -163,8 +170,8 @@ fn test_async_coloring_propagates_through_method_calls() {
         r#"
             struct P { x: int }
             impl P {
-                string ask(self) { return input(); }
-                string relay(self) { return self.ask(); }
+                int ask(self) { return __kora_getchar(); }
+                int relay(self) { return self.ask(); }
             }
             int main() {
                 let p = new P;
@@ -421,13 +428,10 @@ fn transpile_program(
     let method_calls = super::mangled_method_calls(&compiled.symbols, &compiled.method_calls);
     let function_names = super::function_names(&compiled.symbols, &compiled.program);
     let struct_members = super::struct_member_map(&compiled.symbols);
-    let async_fns = super::resolve_async_fns(
-        &compiled.program.modules[0].module,
-        &method_calls,
-        async_externs,
-    );
     let modules: Vec<&parser::Module> =
         compiled.program.modules.iter().map(|m| &m.module).collect();
+    let async_fns =
+        super::resolve_async_fns(&modules, &function_names, &method_calls, async_externs);
     let mut transpiler = JavascriptTranspiler::new(
         compiled.types,
         method_calls,
@@ -500,4 +504,30 @@ fn transpiles_ui_examples() {
             async_externs.clone(),
         );
     }
+}
+
+#[test]
+fn test_async_coloring_crosses_modules() {
+    let js = transpile_program(
+        "main.kora",
+        vec![(
+            "main.kora",
+            format!(
+                "{PRELUDE}
+                import \"std/io\";
+                int main() {{
+                    let line = io.input();
+                    if (line != none) {{ io.print(line!); }}
+                    return 0;
+                }}"
+            ),
+        )],
+        HashSet::from(["__kora_getchar".to_string()]),
+    );
+    assert!(js.contains("async function std$io$input()"), "{js}");
+    assert!(js.contains("(await __kora_getchar())"), "{js}");
+    assert!(js.contains("async function main()"), "{js}");
+    assert!(js.contains("(await std$io$input())"), "{js}");
+    assert!(js.contains("function std$io$print("), "{js}");
+    assert!(!js.contains("async function std$io$print("), "{js}");
 }
