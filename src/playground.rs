@@ -29,5 +29,5 @@ pub fn transpile(source: &str, async_externs: Vec<String>) -> Result<String, Str
             .join("\n")
     })?;
 
-    crate::javascript_transpiler::emit_js(compiled, async_externs.into_iter().collect())
+    crate::javascript_transpiler::transpile(compiled, async_externs.into_iter().collect())
 }

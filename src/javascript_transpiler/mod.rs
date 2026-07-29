@@ -15,7 +15,7 @@ use crate::semantic_analyzer::{ArrayMethod, SymbolId, SymbolTable};
 
 pub(crate) use coloring::resolve_async_fns;
 
-pub fn emit_js(
+pub fn transpile(
     compiled: crate::CompiledProgram,
     async_externs: HashSet<String>,
 ) -> Result<String, String> {

@@ -9,7 +9,7 @@ use inkwell::targets::{
 
 const RUNTIME_LIB: &[u8] = include_bytes!(env!("KORA_RUNTIME"));
 
-pub fn build_binary(llvm: &Module, output: &Path) -> Result<(), String> {
+pub fn link(llvm: &Module, output: &Path) -> Result<(), String> {
     llvm.verify()
         .map_err(|e| format!("internal error: invalid IR generated:\n{}", e))?;
 
@@ -32,12 +32,12 @@ pub fn build_binary(llvm: &Module, output: &Path) -> Result<(), String> {
     machine
         .write_to_file(llvm, FileType::Object, &object_path)
         .map_err(|e| e.to_string())?;
-    let result = link(&object_path, output);
+    let result = cc(&object_path, output);
     std::fs::remove_file(&object_path).ok();
     result
 }
 
-fn link(object: &Path, output: &Path) -> Result<(), String> {
+fn cc(object: &Path, output: &Path) -> Result<(), String> {
     let runtime_path = output.with_extension("a");
     std::fs::write(&runtime_path, RUNTIME_LIB).map_err(|e| e.to_string())?;
 
