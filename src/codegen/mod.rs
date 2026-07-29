@@ -15,6 +15,7 @@ pub use link::link;
 use std::collections::HashMap;
 
 use inkwell::AddressSpace;
+use inkwell::attributes::{Attribute, AttributeLoc};
 use inkwell::basic_block::BasicBlock;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
@@ -291,7 +292,13 @@ impl<'ctx> CodeGen<'ctx, '_> {
         let panic_fn = self.module.get_function("__kora_panic").unwrap_or_else(|| {
             let ptr = self.context.ptr_type(AddressSpace::default());
             let ty = self.context.void_type().fn_type(&[ptr.into()], false);
-            self.module.add_function("__kora_panic", ty, None)
+            let function = self.module.add_function("__kora_panic", ty, None);
+            let noreturn = Attribute::get_named_enum_kind_id("noreturn");
+            function.add_attribute(
+                AttributeLoc::Function,
+                self.context.create_enum_attribute(noreturn, 0),
+            );
+            function
         });
         let message = self
             .builder

@@ -735,3 +735,117 @@ fn test_native_clear_sleep_random() {
     assert_eq!(code, 7);
     assert!(start.elapsed() >= std::time::Duration::from_millis(40));
 }
+
+#[test]
+fn test_native_all_std_modules() {
+    let (stdout, _, code) = run_native(
+        r#"
+            import "std/conv";
+            import "std/io";
+            import "std/math";
+            import "std/str";
+            import "std/term";
+
+            int main() {
+                term.home();
+                io.print(str.to_upper("kora") + conv.int_to_string(math.max(1, 5)));
+                let r = math.random();
+                if (r >= 0.0 && r < 1.0) { return 0; }
+                return 1;
+            }
+        "#,
+    );
+    assert_eq!(stdout, "\x1b[HKORA5\n");
+    assert_eq!(code, 0);
+}
+
+#[test]
+fn test_native_copy_is_shallow() {
+    let (_, _, code) = run_native(
+        r#"
+            struct Bag { items: [int], tag: int }
+            int main() {
+                let a = [[1, 2], [3]];
+                let b = copy(a);
+                b[0].push(9);
+                let bag = new Bag { items: [5], tag: 1 };
+                let dup = copy(bag);
+                dup.items.push(6);
+                dup.tag = 2;
+                let r = 0;
+                if (a[0].len() == 3) { r = r + 1; }
+                if (b.len() == 2 && b[1][0] == 3) { r = r + 2; }
+                if (bag.items.len() == 2) { r = r + 4; }
+                if (bag.tag == 1 && dup.tag == 2) { r = r + 8; }
+                return r;
+            }
+        "#,
+    );
+    // shallow: copied containers are fresh, nested aggregates are shared
+    assert_eq!(code, 15);
+}
+
+/// Differential parity: one deterministic program through both backends must
+/// produce byte-identical output (native binary vs Node running the emitted
+/// JS with a __kora_write shim).
+#[test]
+fn test_native_and_js_backends_agree() {
+    let source = r#"
+        import "std/conv";
+        import "std/io";
+        import "std/math";
+        import "std/str";
+        struct Vec2 { x: int, y: int }
+        impl Vec2 {
+            int dot(self, o: Vec2) { return self.x * o.x + self.y * o.y; }
+        }
+        void show(n: int) { io.print(conv.int_to_string(n)); }
+        int main() {
+            show(17 / 5 * 100 + 17 % 5);
+            show((1 << 40) % 1000007);
+            show((12 & 10) * 100 + (12 | 10) + (5 ^ 3));
+            show((2.9 as int) * 10 + ('a' as int));
+            io.print(str.to_upper("kora") + "-" + str.join(str.split("a,b", ','), "+"));
+            let xs = [3, 1, 2];
+            xs.insert(0, 9);
+            xs.push(xs.remove(1));
+            io.print(conv.int_to_string(xs.pop()) + conv.int_to_string(xs.len()));
+            let ys = copy(xs);
+            ys.extend(ys);
+            show(ys.len() * 10 + xs.len());
+            if (xs + ys != xs) { io.print("concat-ne"); }
+            let v = new Vec2 { x: 3, y: 4 };
+            show(v.dot(copy(v)));
+            let maybe = conv.string_to_int("123");
+            if (maybe != none) { show(maybe! + 1); }
+            if (conv.string_to_int("12x") == none) { io.print("bad-none"); }
+            io.print(conv.bool_to_string(math.absf(math.sin(1.0) - 0.8414709848) < 0.000001));
+            show(math.gcd(84, 35) * 1000 + math.pow(3, 7));
+            return 0;
+        }
+    "#;
+
+    let (native_out, native_err, native_code) = run_native(source);
+    assert_eq!(native_code, 0, "{native_err}");
+
+    let dir = std::env::temp_dir().join(format!("kora-native-{}-parity", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let entry = dir.join("main.kora");
+    std::fs::write(&entry, source).unwrap();
+    let program = kora::compile(entry.to_str().unwrap(), |path: &Path| {
+        std::fs::read_to_string(path).ok()
+    })
+    .expect("front-end");
+    let js = kora::transpile(program, std::collections::HashSet::new()).expect("transpile");
+    let shim = "\nfunction __kora_write(s){process.stdout.write(Array.isArray(s)?s.join(\"\"):String(s))}\nfunction __kora_getchar(){return -1}\nfunction __kora_random(){return 0}\nmain();\n";
+    let mjs = dir.join("main.mjs");
+    std::fs::write(&mjs, format!("{js}{shim}")).unwrap();
+    let out = Command::new("node").arg(&mjs).output().expect("node");
+    std::fs::remove_dir_all(&dir).ok();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&out.stdout), native_out);
+}

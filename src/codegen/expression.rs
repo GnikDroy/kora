@@ -249,12 +249,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 let r = rhs.into_pointer_value();
                 return self.lower_array_binary(&operand_type, op, l, r, span);
             }
-            _ => {
-                return Err(CodegenErr {
-                    msg: "codegen for operators on this type is not implemented yet",
-                    span: span.clone(),
-                });
-            }
+            _ => unreachable!("type checker rejects operators on other types"),
         };
         Ok(value)
     }

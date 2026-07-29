@@ -22,8 +22,8 @@ in the browser with nothing to install.
 - Modules — split a program across files with `import`, plus a small
   standard library (string helpers, math, and conversions) written in Kora
   itself.
-- Runs in the browser through a WebAssembly-powered playground. A native
-  LLVM backend is planned.
+- Runs in the browser through a WebAssembly-powered playground, and compiles
+  to native binaries through an LLVM backend (LLVM 22 is required).
 
 ## A taste of Kora
 
