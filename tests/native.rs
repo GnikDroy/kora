@@ -9,6 +9,10 @@ use inkwell::context::Context;
 static NEXT_DIR: AtomicUsize = AtomicUsize::new(0);
 
 fn run_native(source: &str) -> (String, String, i32) {
+    run_native_program(&[("main.kora", source)])
+}
+
+fn run_native_program(files: &[(&str, &str)]) -> (String, String, i32) {
     let dir = std::env::temp_dir().join(format!(
         "kora-native-{}-{}",
         std::process::id(),
@@ -16,8 +20,10 @@ fn run_native(source: &str) -> (String, String, i32) {
     ));
     std::fs::create_dir_all(&dir).unwrap();
 
-    let entry = dir.join("main.kora");
-    std::fs::write(&entry, source).unwrap();
+    for (name, source) in files {
+        std::fs::write(dir.join(name), source).unwrap();
+    }
+    let entry = dir.join(files[0].0);
     let program = kora::compile(entry.to_str().unwrap(), |path: &Path| {
         std::fs::read_to_string(path).ok()
     })
@@ -575,4 +581,130 @@ fn test_native_scalar_optional_extern_is_rejected() {
             .contains("scalar optionals cannot cross the extern boundary"),
         "{err}"
     );
+}
+
+#[test]
+fn test_native_multi_module() {
+    let (_, _, code) = run_native_program(&[
+        (
+            "main.kora",
+            r#"
+                import "util.kora";
+                import "geo.kora" g;
+                int main() {
+                    let p = g.origin();
+                    p.shift(util.double(3));
+                    return util.double(p.x) + g.taxi(p);
+                }
+            "#,
+        ),
+        ("util.kora", "int double(x: int) { return x * 2; }"),
+        (
+            "geo.kora",
+            r#"
+                import "util.kora";
+                struct Point { x: int, y: int }
+                impl Point {
+                    void shift(self, d: int) { self.x = self.x + d; self.y = self.y + d; }
+                }
+                Point origin() { return new Point; }
+                int taxi(p: Point) { return util.double(p.x + p.y); }
+            "#,
+        ),
+    ]);
+    // p = (6, 6); double(6) + taxi = 12 + 24
+    assert_eq!(code, 36);
+}
+
+#[test]
+fn test_native_std_conv() {
+    let (stdout, _, code) = run_native_program(&[(
+        "main.kora",
+        r#"
+            import "std/conv";
+            extern void print(s: string);
+            int main() {
+                print(conv.int_to_string(-42));
+                print(conv.bool_to_string(1 < 2));
+                let n = conv.string_to_int("123");
+                let bad = conv.string_to_int("12x");
+                let r = 0;
+                if (bad == none) { r = r + 1; }
+                if (n != none) { r = r + n! - 123; }
+                return r;
+            }
+        "#,
+    )]);
+    assert_eq!(stdout, "-42\ntrue\n");
+    assert_eq!(code, 1);
+}
+
+#[test]
+fn test_native_std_str() {
+    let (stdout, _, code) = run_native_program(&[(
+        "main.kora",
+        r#"
+            import "std/str";
+            extern void print(s: string);
+            int main() {
+                let parts = str.split("a,b,c", ',');
+                print(str.join(parts, "-"));
+                print(str.to_upper(str.trim("  hi  ")));
+                let r = 0;
+                if (str.contains("hello", "ell")) { r = r + 1; }
+                if (str.starts_with("hello", "he")) { r = r + 2; }
+                let i = str.index_of("hello", "llo");
+                if (i != none && i! == 2) { r = r + 4; }
+                return r + parts.len();
+            }
+        "#,
+    )]);
+    assert_eq!(stdout, "a-b-c\nHI\n");
+    assert_eq!(code, 10);
+}
+
+#[test]
+fn test_native_std_math() {
+    let (_, _, code) = run_native_program(&[(
+        "main.kora",
+        r#"
+            import "std/math";
+            int main() {
+                let r = 0;
+                if (math.abs(0 - 5) == 5 && math.max(2, 3) == 3) { r = r + 1; }
+                if (math.gcd(12, 18) == 6 && math.pow(2, 10) == 1024) { r = r + 2; }
+                if (math.absf(math.sqrtf(2.0) - 1.4142135624) < 0.000001) { r = r + 4; }
+                if (math.absf(math.sin(1.0) - 0.8414709848) < 0.000001) { r = r + 8; }
+                if (math.absf(math.atan2(1.0, 1.0) * 4.0 - 3.1415926536) < 0.000001) { r = r + 16; }
+                if (math.absf(math.powf(2.0, 10.0) - 1024.0) < 0.000001) { r = r + 32; }
+                return r;
+            }
+        "#,
+    )]);
+    assert_eq!(code, 63);
+}
+
+#[test]
+fn test_native_diamond_imports() {
+    let (_, _, code) = run_native_program(&[
+        (
+            "main.kora",
+            r#"
+                import "a.kora";
+                import "b.kora";
+                import "shared.kora";
+                int main() { return a.f() + b.g() + shared.base(); }
+            "#,
+        ),
+        (
+            "a.kora",
+            "import \"shared.kora\";\nint f() { return shared.base() + 1; }",
+        ),
+        (
+            "b.kora",
+            "import \"shared.kora\";\nint g() { return shared.base() + 2; }",
+        ),
+        ("shared.kora", "int base() { return 10; }"),
+    ]);
+    assert_eq!(code, 33);
 }

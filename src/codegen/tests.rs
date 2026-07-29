@@ -4,8 +4,15 @@ use inkwell::context::Context;
 use std::path::Path;
 
 fn run_main(source: &str) -> i64 {
-    let program = crate::compile("main.kora", |path: &Path| {
-        (path == Path::new("main.kora")).then(|| source.to_string())
+    run_main_files(&[("main.kora", source)])
+}
+
+fn run_main_files(files: &[(&str, &str)]) -> i64 {
+    let program = crate::compile(files[0].0, |path: &Path| {
+        files
+            .iter()
+            .find(|(name, _)| path == Path::new(name))
+            .map(|(_, source)| source.to_string())
     })
     .expect("front-end");
 
@@ -234,4 +241,20 @@ fn test_dead_code_after_return() {
         }
     "#;
     assert_eq!(run_main(source), 4);
+}
+
+#[test]
+fn test_cross_module_calls() {
+    let result = run_main_files(&[
+        (
+            "main.kora",
+            r#"
+                import "lib.kora";
+                int main() { return lib.triple(add(3, 4)); }
+                int add(a: int, b: int) { return a + b; }
+            "#,
+        ),
+        ("lib.kora", "int triple(x: int) { return x * 3; }"),
+    ]);
+    assert_eq!(result, 21);
 }

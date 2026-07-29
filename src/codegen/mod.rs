@@ -23,7 +23,7 @@ use inkwell::types::{BasicType, BasicTypeEnum, StructType};
 use inkwell::values::{BasicValueEnum, FunctionValue, IntValue, PointerValue, ValueKind};
 
 use crate::frontend::CompiledProgram;
-use crate::mangle::mangle;
+use crate::mangle::{mangle, mangle_prefix};
 use crate::parser::*;
 use crate::semantic_analyzer::{SymbolId, is_reference};
 
@@ -50,17 +50,6 @@ pub fn lower<'ctx>(
     context: &'ctx Context,
     program: &CompiledProgram,
 ) -> Result<LlvmModule<'ctx>, CodegenErr> {
-    if let Some(import) = program
-        .program
-        .modules
-        .iter()
-        .find_map(|m| m.imports.first())
-    {
-        return Err(CodegenErr {
-            msg: "codegen for imports is not implemented yet",
-            span: import.span.clone(),
-        });
-    }
     let mut codegen = CodeGen {
         context,
         module: context.create_module("kora"),
@@ -72,7 +61,18 @@ pub fn lower<'ctx>(
         default_fns: HashMap::new(),
         frame: None,
     };
-    codegen.lower_module(&program.program.modules[0].module)?;
+    let entry = program.program.modules.first().map(|m| m.id);
+    for module in program.program.modules.iter() {
+        let prefix = if Some(module.id) == entry {
+            String::new()
+        } else {
+            mangle_prefix(&program.program.sources[module.id.0 as usize].path)
+        };
+        codegen.declare_module(&module.module, &prefix)?;
+    }
+    for module in program.program.modules.iter() {
+        codegen.lower_module(&module.module)?;
+    }
     Ok(codegen.module)
 }
 
@@ -85,7 +85,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
         self.frame.as_mut().unwrap()
     }
 
-    fn lower_module(&mut self, module: &Module) -> Result<(), CodegenErr> {
+    fn declare_module(&mut self, module: &Module, prefix: &str) -> Result<(), CodegenErr> {
         for func in module.extern_functions.iter() {
             // The C ABI of a by-value struct {i8, T} is compiler/platform dependent.
             // only reference optionals (pointers) should cross C.
@@ -110,7 +110,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
             )?;
         }
         for func in module.functions.iter() {
-            if func.node.name == "main" {
+            if prefix.is_empty() && func.node.name == "main" {
                 let signature_ok =
                     func.node.return_type == Some(Type::Int) && func.node.arguments.is_empty();
                 if !signature_ok {
@@ -122,7 +122,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
             }
             self.declare_function(
                 func.id,
-                &func.node.name,
+                &mangle(prefix, &func.node.name),
                 &func.node.return_type,
                 &func.node.arguments,
             )?;
@@ -137,6 +137,10 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 )?;
             }
         }
+        Ok(())
+    }
+
+    fn lower_module(&mut self, module: &Module) -> Result<(), CodegenErr> {
         for func in module.functions.iter() {
             self.lower_function(func)?;
         }
@@ -175,7 +179,11 @@ impl<'ctx> CodeGen<'ctx, '_> {
         };
 
         let llvm_name = if name == "main" { "__kora_main" } else { name };
-        let function = self.module.add_function(llvm_name, function_type, None);
+        // dedupe externs (it is okay to extern declare multiple times)
+        let function = self
+            .module
+            .get_function(llvm_name)
+            .unwrap_or_else(|| self.module.add_function(llvm_name, function_type, None));
         let id = self
             .program
             .symbols

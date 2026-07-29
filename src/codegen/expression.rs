@@ -375,8 +375,13 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 if let Some(&method) = self.program.array_method_calls.get(&callee.id) {
                     return self.lower_array_method(method, obj, args, span);
                 }
-                let method = self.program.method_calls[&callee.id];
-                (self.functions[&method], Some(obj), method)
+                if let Some(&method) = self.program.method_calls.get(&callee.id) {
+                    (self.functions[&method], Some(obj), method)
+                } else {
+                    // A module-qualified call
+                    let id = self.program.symbols.symbol_id_of_use(callee.id).unwrap();
+                    (self.functions[&id], None, id)
+                }
             }
             _ => unreachable!("type checker rejects other callees"),
         };
