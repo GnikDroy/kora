@@ -870,3 +870,47 @@ fn test_native_kora_names_cannot_interpose_libc() {
     assert_eq!(stdout, "23\n");
     assert_eq!(code, 0);
 }
+
+#[test]
+fn test_emit_js_output_runs_under_node() {
+    let dir = std::env::temp_dir().join(format!("kora-native-{}-driver", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let entry = dir.join("main.kora");
+    std::fs::write(
+        &entry,
+        r#"
+            import "std/io";
+            int main() {
+                let line = io.input();
+                if (line != none) { io.print("got: " + line!); }
+                return 3;
+            }
+        "#,
+    )
+    .unwrap();
+
+    let emitted = Command::new(env!("CARGO_BIN_EXE_kora"))
+        .arg("--emit-js")
+        .arg("--emit-llvm")
+        .arg(&entry)
+        .output()
+        .expect("kora --emit-js --emit-llvm");
+    assert!(emitted.status.success());
+    assert!(emitted.stdout.is_empty(), "artifacts are files, not stdout");
+    // Both artifacts land next to the input with derived names.
+    let js = dir.join("main.js");
+    assert!(dir.join("main.ll").exists());
+
+    let mut child = Command::new("node")
+        .arg(&js)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("node");
+    use std::io::Write;
+    child.stdin.take().unwrap().write_all(b"hello\n").unwrap();
+    let out = child.wait_with_output().unwrap();
+    std::fs::remove_dir_all(&dir).ok();
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "got: hello\n");
+    assert_eq!(out.status.code(), Some(3));
+}
