@@ -124,7 +124,7 @@ void __kora_array_extend(KoraArray *a, const KoraArray *b, long elem_size) {
   zero_sentinel(a, elem_size);
 }
 
-/* Pure concatenation — the `+` operator. */
+/* Pure concatenation the `+` operator. */
 KoraArray *__kora_array_concat(const KoraArray *a, const KoraArray *b,
                                long elem_size) {
   KoraArray *r = __kora_array_new(a->len + b->len, 0, elem_size);

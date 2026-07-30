@@ -203,7 +203,7 @@ export async function run() {
     } catch (err) {
       setCompileErrors(String(err));
       appendOutput(String(err));
-      setTranspiledJs("// Compile error — see the editor and Output tab.");
+      setTranspiledJs("// Compile ERROR. see the editor and Output tab.");
       selectTab("output");
       return;
     }

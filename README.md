@@ -3,31 +3,36 @@
     <span> Kora </span>
 </h1>
 
-Kora is a small, statically typed, C-like programming language with a garbage collector. It compiles to JavaScript, so your programs run right
+Kora is a small, statically typed, programming language with a garbage collector. It compiles to native executables and JavaScript. Your programs run right
 in the browser with nothing to install.
 
 **[Try Kora in the online playground](https://gnikdroy.github.io/kora/)**
 
 ## Features
 
-- Familiar C-like syntax — `if` / `while` / `for`, functions, and blocks you
+- Familiar C-like syntax: `if` / `while` / `for`, functions, and blocks you
   already know.
 - Static typing with inference: `int`, `real`, `char`, `bool`,
   arrays, and strings.
 - Arrays and strings with handy built-in methods (`push`, `pop`, `insert`,
   `remove`, `slice`, `extend`, `len`). A `string` is just an array of `char`.
-- Structs and methods — group data with `struct`, attach behavior with
+- Structs and methods: POD types `struct`, attach behavior with
   `impl`.
-- Optionals (`T?`) for values that may be absent — no surprise nulls.
-- Modules — split a program across files with `import`, plus a small
-  standard library (string helpers, math, and conversions) written in Kora
-  itself.
+- Optionals (`T?`) instead of null. [The billion-dollar mistake](https://computerhistory.org/blog/in-memoriam-sir-antony-hoare-1934-2026/)
+- Runtime safety is a design choice: array indexing is
+  bounds-checked, integer division by zero, `pop()` on an empty array, and
+  force-unwrapping `none` all panic with a clear message instead of
+  corrupting memory.
+- Modules which allow you to split a program, plus a small
+  standard library (I/O, string helpers, math, and conversions) written in
+  Kora.
+- The native runtime written in C, the lingua-franca of programming languages.
 - Runs in the browser through a WebAssembly-powered playground, and compiles
   to native binaries through an LLVM backend (LLVM 22 is required).
 
 ## A taste of Kora
 
-Here is a Sudoku solver — arrays, recursion, and backtracking:
+Sudoku solver in kora using arrays, recursion, and backtracking:
 
 ```ruby
 # -------------------------------------------------------
@@ -36,24 +41,26 @@ Here is a Sudoku solver — arrays, recursion, and backtracking:
 # The playground has proper syntax highlighting for kora.
 # -------------------------------------------------------
 
+import "std/io";
+
 # Sudoku solver via backtracking. The board is a flat 81-cell int
 # array indexed as row * 9 + col; 0 marks an empty cell.
 
 void print_board(board: [int]) {
     for (let row = 0; row < 9; row = row + 1) {
         if (row == 3 || row == 6) {
-            print("------+-------+------\n");
+            io.write("------+-------+------\n");
         }
         for (let col = 0; col < 9; col = col + 1) {
-            if (col == 3 || col == 6) { print("| "); }
+            if (col == 3 || col == 6) { io.write("| "); }
             let v = board[row * 9 + col];
             if (v == 0) {
-                print(". ");
+                io.write(". ");
             } else {
-                print([(v + 48) as char, ' ']);
+                io.write([(v + 48) as char, ' ']);
             }
         }
-        print("\n");
+        io.write("\n");
     }
 }
 
@@ -107,31 +114,42 @@ int main() {
     # Classic hard-ish puzzle from the Wikipedia Sudoku page.
     load_puzzle(board, "530070000600195000098000060800060003400803001700020006060000280000419005000080079");
 
-    print("Puzzle:\n\n");
+    io.write("Puzzle:\n\n");
     print_board(board);
 
     if (solve(board)) {
-        print("\nSolved:\n\n");
+        io.write("\nSolved:\n\n");
         print_board(board);
     } else {
-        print("\nNo solution found.\n");
+        io.write("\nNo solution found.\n");
     }
     return 0;
 }
 ```
 
-For bigger programs, the [`res/`](res/) folder has playable versions of Snake,
-Tetris, Pong, Pacman, Doom, and a Mandelbrot renderer — all written in Kora.
+For bigger programs, the [`res/`](res/) folder has this Sudoku solver plus
+playable versions of Snake, Tetris, Pong, Pacman, Doom, and a Mandelbrot
+renderer.
 
 ## Try it locally
 
 ```bash
-wasm-pack build --target web --out-name compiler # build the wasm compiler
+wasm-pack build --target web --out-name compiler -- --no-default-features # build the wasm compiler
 python -m http.server # serve at localhost
 ```
 
-Then open the printed URL and start typing. Running the test suite is just
-`cargo test`.
+Then open the printed URL and start typing.
+
+To compile programs to native executables instead, build the compiler.
+Building the compiler requires lib LLVM 22 and a C compiler for the platform linker.
+
+```bash
+cargo build --release # build the compiler
+./target/release/kora program.kora -o program # native standalone binary
+./target/release/kora program.kora --emit-js  # or print the JavaScript
+```
+
+Running the test suite is `cargo test` (also requires LLVM 22).
 
 ## Grammar
 
@@ -152,7 +170,7 @@ rettype     = "void" | type ;
 params      = [ param { "," param } [ "," ] ] ;
 param       = ident ":" type ;
 
-type        = basetype { "?" } ;                (* "?" makes it optional *)
+type        = basetype [ "?" ] ;                (* "?" makes it optional *)
 basetype    = "int" | "real" | "char" | "bool" | "string"
             | ident                      (* struct name *)
             | "[" type "]" ;

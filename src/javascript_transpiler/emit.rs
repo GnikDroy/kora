@@ -461,7 +461,7 @@ impl ASTVisitor for JavascriptTranspiler {
     }
 
     fn visit_call_expression(&mut self, expr: &Spanned<Expression>, exprs: &[Spanned<Expression>]) {
-        // `copy(x)` — shallow copy of an aggregate, by argument type.
+        // `copy(x)` shallow copy of an aggregate, by argument type.
         if matches!(&expr.node, Expression::Identifier(name) if name == "copy") {
             let arg = &exprs[0];
             let (before, after) = match self.types.get(&arg.id) {

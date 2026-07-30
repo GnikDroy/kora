@@ -403,7 +403,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
         }
     }
 
-    /// `copy(x)` — universal shallow copy of an aggregate.
+    /// `copy(x)` universal shallow copy of an aggregate.
     fn lower_copy(
         &mut self,
         arg: &Spanned<Expression>,
