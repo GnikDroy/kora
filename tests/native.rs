@@ -29,10 +29,8 @@ fn run_native_program(files: &[(&str, &str)]) -> (String, String, i32) {
     })
     .expect("front-end");
 
-    let context = Context::create();
-    let llvm = kora::codegen::lower(&context, &program).expect("codegen");
     let binary = dir.join("main");
-    kora::codegen::link(&llvm, &binary).expect("build");
+    kora::backend::native(&program, &binary).expect("build");
 
     let out = Command::new(&binary).output().expect("run");
     std::fs::remove_dir_all(&dir).ok();
@@ -535,10 +533,8 @@ fn test_native_input_reads_lines_until_eof() {
         std::fs::read_to_string(path).ok()
     })
     .expect("front-end");
-    let context = Context::create();
-    let llvm = kora::codegen::lower(&context, &program).expect("codegen");
     let binary = dir.join("main");
-    kora::codegen::link(&llvm, &binary).expect("build");
+    kora::backend::native(&program, &binary).expect("build");
 
     let mut child = Command::new(&binary)
         .stdin(std::process::Stdio::piped())

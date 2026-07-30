@@ -26,8 +26,6 @@ impl Args {
     }
 }
 
-const NODE_DRIVER: &str = include_str!("../runtime/kora_node_runtime.js");
-
 pub fn run(args: &Args) -> Result<(), String> {
     let entry = args
         .input
@@ -51,10 +49,14 @@ pub fn run(args: &Args) -> Result<(), String> {
                     .to_string(),
             );
         }
-        emit_llvm(args, &program)?;
+        #[cfg(feature = "codegen")]
+        if args.emit_llvm {
+            let ir = kora::backend::llvm_ir(&program).map_err(|e| e.to_string())?;
+            write_artifact(args, "ll", &ir)?;
+        }
         if args.emit_js {
-            let mut js = kora::transpile(program, args.async_externs.iter().cloned().collect())?;
-            js.push_str(NODE_DRIVER);
+            let externs = args.async_externs.iter().cloned().collect();
+            let js = kora::backend::node_program(program, externs)?;
             return write_artifact(args, "js", &js);
         }
         return Ok(());
@@ -76,40 +78,12 @@ fn write_artifact(args: &Args, extension: &str, content: &str) -> Result<(), Str
 }
 
 #[cfg(feature = "codegen")]
-fn emit_llvm(args: &Args, program: &kora::CompiledProgram) -> Result<(), String> {
-    use inkwell::context::Context;
-
-    if !args.emit_llvm {
-        return Ok(());
-    }
-    let context = Context::create();
-    let llvm = kora::codegen::lower(&context, program).map_err(|e| e.to_string())?;
-    let ir = llvm.print_to_string().to_string();
-    if args.emit_js {
-        let path = args.input.with_extension("ll");
-        return std::fs::write(&path, ir)
-            .map_err(|e| format!("cannot write {}: {}", path.display(), e));
-    }
-    write_artifact(args, "ll", &ir)
-}
-
-#[cfg(not(feature = "codegen"))]
-fn emit_llvm(_args: &Args, _program: &kora::CompiledProgram) -> Result<(), String> {
-    Ok(())
-}
-
-#[cfg(feature = "codegen")]
 fn build(args: &Args, program: kora::CompiledProgram) -> Result<(), String> {
-    use inkwell::context::Context;
-
     let output = args
         .output
         .clone()
         .unwrap_or_else(|| args.input.with_extension(""));
-
-    let context = Context::create();
-    let llvm = kora::codegen::lower(&context, &program).map_err(|e| e.to_string())?;
-    kora::codegen::link(&llvm, &output).map_err(|e| e.to_string())
+    kora::backend::native(&program, &output).map_err(|e| e.to_string())
 }
 
 #[cfg(not(feature = "codegen"))]
