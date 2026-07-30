@@ -63,12 +63,18 @@ pub fn lower<'ctx>(
         frame: None,
     };
     let entry = program.program.modules.first().map(|m| m.id);
+    let root = program
+        .program
+        .sources
+        .first()
+        .and_then(|s| s.path.parent())
+        .unwrap_or_else(|| std::path::Path::new(""));
     for module in program.program.modules.iter() {
         let is_entry = Some(module.id) == entry;
         let prefix = if is_entry {
             String::new()
         } else {
-            mangle_prefix(&program.program.sources[module.id.0 as usize].path)
+            mangle_prefix(&program.program.sources[module.id.0 as usize].path, root)
         };
         codegen.declare_module(&module.module, &prefix, is_entry)?;
     }

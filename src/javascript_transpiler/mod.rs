@@ -56,6 +56,11 @@ pub(crate) fn function_names(
     program: &LoadedProgram,
 ) -> HashMap<NodeId, String> {
     let entry = program.modules.first().map(|m| m.id);
+    let root = program
+        .sources
+        .first()
+        .and_then(|s| s.path.parent())
+        .unwrap_or_else(|| std::path::Path::new(""));
     let mut by_symbol: HashMap<SymbolId, String> = HashMap::new();
     let mut by_node: HashMap<NodeId, String> = HashMap::new();
 
@@ -63,7 +68,7 @@ pub(crate) fn function_names(
         let prefix = if Some(module.id) == entry {
             String::new()
         } else {
-            mangle_prefix(&program.sources[module.id.0 as usize].path)
+            mangle_prefix(&program.sources[module.id.0 as usize].path, root)
         };
         for func in &module.module.functions {
             let name = if Some(module.id) == entry && func.node.name == "main" {
