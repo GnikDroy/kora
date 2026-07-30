@@ -11,6 +11,7 @@ function __kora_panic(message) {
 
 function __kora_runtime_equality_intrinsic(a, b) {
     if (a === b) return true;
+    if (a == null || b == null) return a == b;
     if (!Array.isArray(a) || !Array.isArray(b)) return a === b;
     if (a.length !== b.length) return false;
     for (let i = 0; i < a.length; i++) {
@@ -64,6 +65,14 @@ function __kora_runtime_check_len(n) {
     return n;
 }
 ";
+
+fn compares_structurally(t: Option<&Type>) -> bool {
+    match t {
+        Some(Type::Array(_)) => true,
+        Some(Type::Optional(inner)) => matches!(**inner, Type::Array(_)),
+        _ => false,
+    }
+}
 
 impl JavascriptTranspiler {
     #[rustfmt::skip]
@@ -377,6 +386,23 @@ impl ASTVisitor for JavascriptTranspiler {
             return;
         }
 
+        if matches!(op, BinaryOp::Equality | BinaryOp::NotEquality)
+            && !matches!(left.node, Expression::NoneLiteral)
+            && !matches!(right.node, Expression::NoneLiteral)
+            && (compares_structurally(self.types.get(&left.id))
+                || compares_structurally(self.types.get(&right.id)))
+        {
+            if matches!(op, BinaryOp::NotEquality) {
+                self.source.push('!');
+            }
+            self.source.push_str("__kora_runtime_equality_intrinsic(");
+            self.visit_expression(left);
+            self.source.push(',');
+            self.visit_expression(right);
+            self.source.push(')');
+            return;
+        }
+
         // Optional comparison: `x == none`, `x != none`, or two optionals.
         // Loose `==`/`!=` so a `none` (null) matches an uninitialized field
         // (undefined) from a bare `new Struct`.
@@ -393,20 +419,6 @@ impl ASTVisitor for JavascriptTranspiler {
                 "!="
             });
             self.operand(right);
-            return;
-        }
-
-        if matches!(op, BinaryOp::Equality | BinaryOp::NotEquality)
-            && matches!(self.types.get(&left.id), Some(Type::Array(_)))
-        {
-            if matches!(op, BinaryOp::NotEquality) {
-                self.source.push('!');
-            }
-            self.source.push_str("__kora_runtime_equality_intrinsic(");
-            self.visit_expression(left);
-            self.source.push(',');
-            self.visit_expression(right);
-            self.source.push(')');
             return;
         }
 

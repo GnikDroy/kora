@@ -17,5 +17,16 @@ pub(crate) fn mangle_prefix(path: &Path) -> String {
         })
         .collect();
     let joined = parts.join("$");
-    joined.strip_suffix(".kora").unwrap_or(&joined).to_string()
+    joined
+        .strip_suffix(".kora")
+        .unwrap_or(&joined)
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '$' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
 }

@@ -1,8 +1,11 @@
-export const EXTERNS = `
+export const RUNTIME_EXTERNS = `
 extern void __kora_write(s: string);
 extern int __kora_getchar();
 extern real __kora_random();
 extern void sleep(ms: int);
+`;
+
+export const CANVAS_EXTERNS = `
 extern bool is_key_down(key: string);
 extern void draw_clear();
 extern void set_color(c: string);
@@ -27,6 +30,8 @@ extern void restore();
 extern void translate(x: int, y: int);
 extern void rotate(a: real);
 `;
+
+export const EXTERNS = RUNTIME_EXTERNS + CANVAS_EXTERNS;
 
 // The subset of EXTERNS that blocks on a Promise.
 export const ASYNC_EXTERNS = ["__kora_getchar", "sleep"];

@@ -607,12 +607,12 @@ mod tests {
         let (symbols, module) = analyze(source);
         let mut checker = TypeChecker::new(&symbols);
         checker.visit_module(&module);
-        assert_eq!(
-            checker.check().is_ok(),
-            true,
+        let result = checker.check();
+        assert!(
+            result.is_ok(),
             "source_text: {}, errors: {:?}",
             source,
-            checker.check().unwrap_err()
+            result.unwrap_err()
         );
     }
 
@@ -648,13 +648,9 @@ mod tests {
         let (symbols, module) = analyze(source);
         let mut checker = TypeChecker::new(&symbols);
         checker.visit_module(&module);
-        assert_eq!(
-            checker.check().is_err() && checker.check().unwrap_err().len() == 4,
-            true,
-            "source_text: {}, errors: {:?}",
-            source,
-            checker.check().unwrap()
-        );
+        let result = checker.check();
+        assert!(result.is_err(), "source_text: {}", source);
+        assert_eq!(result.unwrap_err().len(), 4, "source_text: {}", source);
     }
 
     #[test]

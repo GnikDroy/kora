@@ -584,7 +584,7 @@ mod tests {
     #[test]
     fn test_real_literals() {
         // A trailing dot with no fractional digits is still a real.
-        let cases = [("3.14", 3.14), ("0.0", 0.0), ("3.", 3.0), ("42.5", 42.5)];
+        let cases = [("3.25", 3.25), ("0.0", 0.0), ("3.", 3.0), ("42.5", 42.5)];
         for (source, value) in cases {
             let toks = Lexer::lex(source).unwrap();
             assert_eq!(toks.len(), 1, "source: {}", source);

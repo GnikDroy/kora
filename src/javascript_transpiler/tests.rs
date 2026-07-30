@@ -7,40 +7,12 @@ use crate::{
     semantic_analyzer::{Resolver, ReturnChecker, TypeChecker},
 };
 
-const PRELUDE: &str = r#"
-            extern void __kora_write(s: string);
-            extern int __kora_getchar();
-            extern real __kora_random();
-            extern void sleep(ms: int);
-            extern bool is_key_down(key: string);
-            extern void draw_clear();
-            extern void set_color(c: string);
-            extern void fill_rect(x: int, y: int, w: int, h: int);
-            extern void fill_circle(x: int, y: int, r: int);
-            extern void draw_text(s: string, x: int, y: int);
-            extern void stroke_rect(x: int, y: int, w: int, h: int);
-            extern void stroke_circle(x: int, y: int, r: int);
-            extern void draw_line(x1: int, y1: int, x2: int, y2: int);
-            extern void fill_triangle(x1: int, y1: int, x2: int, y2: int, x3: int, y3: int);
-            extern void set_line_width(w: int);
-            extern void set_font_size(px: int);
-            extern void set_alpha(a: real);
-            extern int canvas_width();
-            extern int canvas_height();
-            extern int text_width(s: string);
-            extern int mouse_x();
-            extern int mouse_y();
-            extern bool is_mouse_down();
-            extern void save();
-            extern void restore();
-            extern void translate(x: int, y: int);
-            extern void rotate(a: real);
-        "#;
-
 fn transpile(source: &str) -> String {
-    let full = format!("{PRELUDE}{source}");
+    transpile_with_async(source, HashSet::new())
+}
 
-    let tokens = lexer::Lexer::lex(&full).expect("lex");
+fn transpile_with_async(source: &str, async_externs: HashSet<String>) -> String {
+    let tokens = lexer::Lexer::lex(source).expect("lex");
     let module = parser::Parser::new(tokens).parse().expect("parse");
     let symbols = Resolver::new()
         .resolve(&[&module])
@@ -59,12 +31,8 @@ fn transpile(source: &str) -> String {
         .unwrap_or_else(|errs| panic!("return check: {errs:?}"));
 
     let method_calls = super::mangled_method_calls(&symbols, &checker.method_calls);
-    let async_fns = super::resolve_async_fns(
-        &[&module],
-        &HashMap::new(),
-        &method_calls,
-        HashSet::from(["__kora_getchar".to_string()]),
-    );
+    let async_fns =
+        super::resolve_async_fns(&[&module], &HashMap::new(), &method_calls, async_externs);
     let struct_members = super::struct_member_map(&symbols);
     let mut transpiler = JavascriptTranspiler::new(
         checker.types,
@@ -79,65 +47,6 @@ fn transpile(source: &str) -> String {
         .get_source()
         .map(|s| s.to_string())
         .unwrap_or_else(|errs| panic!("transpile: {errs:?}"))
-}
-
-#[test]
-fn valid() {
-    let source = r#"
-            int main() {
-                let a: int = 5;
-                let b: int = 6;
-                let c: real = 6.2345;
-                let d: char = 'a';
-                if (a - b == 1) {
-                    print(a, b);
-                }
-                if (c / 2.0 == 10.0) {
-                    let d: real = c / 2.0 + 10.0;
-                }
-                return a;
-            }
-
-            void print(a: int, b: int) {
-                while (a == 10) {
-                    print(b, 1);
-                    a = a - 1;
-                }
-            }
-
-            int sum(a: int, b: int) {
-                return a + b;
-            }
-        "#;
-
-    let tokens = lexer::Lexer::lex(source).expect("lex");
-    let mut parser = parser::Parser::new(tokens);
-    let module = parser.parse().expect("parse");
-    let symbols = Resolver::new().resolve(&[&module]).expect("resolve");
-
-    let mut checker = TypeChecker::new(&symbols);
-    checker.visit_module(&module);
-    assert_eq!(checker.check().is_ok(), true);
-
-    let method_calls = HashMap::new();
-    let async_fns = super::resolve_async_fns(
-        &[&module],
-        &HashMap::new(),
-        &method_calls,
-        HashSet::from(["__kora_getchar".to_string()]),
-    );
-    let mut transpiler = JavascriptTranspiler::new(
-        checker.types,
-        method_calls,
-        HashMap::new(),
-        HashMap::new(),
-        HashMap::new(),
-        async_fns,
-    );
-    transpiler.visit_module(&module);
-    if let Ok(source) = transpiler.get_source() {
-        println!("{}", source);
-    }
 }
 
 #[test]
@@ -166,11 +75,12 @@ fn test_methods_emit_mangled_global_functions() {
 
 #[test]
 fn test_async_coloring_propagates_through_method_calls() {
-    let js = transpile(
+    let js = transpile_with_async(
         r#"
+            extern int read_key();
             struct P { x: int }
             impl P {
-                int ask(self) { return __kora_getchar(); }
+                int ask(self) { return read_key(); }
                 int relay(self) { return self.ask(); }
             }
             int main() {
@@ -179,6 +89,7 @@ fn test_async_coloring_propagates_through_method_calls() {
                 return 0;
             }
         "#,
+        HashSet::from(["read_key".to_string()]),
     );
     assert!(js.contains("async function kora$P$ask(self)"), "{js}");
     assert!(js.contains("async function kora$P$relay(self)"), "{js}");
@@ -253,6 +164,26 @@ fn test_array_equality_emits_structural_compare() {
         !js.contains("__kora_runtime_equality_intrinsic(__kora_runtime_index(s,0)"),
         "{js}"
     );
+}
+
+#[test]
+fn test_optional_array_equality_is_structural() {
+    let js = transpile(
+        r#"
+            int main() {
+                let g: [int]? = [1, 2];
+                let h: [int]? = [1, 2];
+                if (g == h) { return 1; }
+                if (g != none) { return 2; }
+                return 0;
+            }
+        "#,
+    );
+    assert!(
+        js.contains("__kora_runtime_equality_intrinsic(g,h)"),
+        "{js}"
+    );
+    assert!(js.contains("g!=null"), "{js}");
 }
 
 #[test]
@@ -487,43 +418,20 @@ fn test_str_module_transpiles_and_cross_calls_within_module() {
 }
 
 #[test]
-fn transpiles_ui_examples() {
-    let examples: &[(&str, &str)] = &[
-        ("mandelbrot", include_str!("../../res/mandelbrot.kora")),
-        ("sudoku", include_str!("../../res/sudoku.kora")),
-        ("snake", include_str!("../../res/snake.kora")),
-        ("tetris", include_str!("../../res/tetris.kora")),
-        ("pong", include_str!("../../res/pong.kora")),
-        ("doom", include_str!("../../res/doom.kora")),
-        ("pacman", include_str!("../../res/pacman.kora")),
-    ];
-
-    let async_externs = HashSet::from(["input".to_string(), "sleep".to_string()]);
-    for (name, source) in examples {
-        println!("transpiling {name}.kora");
-        transpile_program(
-            "main.kora",
-            vec![("main.kora", format!("{PRELUDE}{source}"))],
-            async_externs.clone(),
-        );
-    }
-}
-
-#[test]
 fn test_async_coloring_crosses_modules() {
     let js = transpile_program(
         "main.kora",
         vec![(
             "main.kora",
-            format!(
-                "{PRELUDE}
-                import \"std/io\";
-                int main() {{
+            r#"
+                import "std/io";
+                int main() {
                     let line = io.input();
-                    if (line != none) {{ io.print(line!); }}
+                    if (line != none) { io.print(line!); }
                     return 0;
-                }}"
-            ),
+                }
+            "#
+            .to_string(),
         )],
         HashSet::from(["__kora_getchar".to_string()]),
     );

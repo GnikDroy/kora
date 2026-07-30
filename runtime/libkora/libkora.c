@@ -45,11 +45,3 @@ double __kora_random(void) {
   }
   return drand48();
 }
-
-void print_int(long x) { printf("%ld\n", x); }
-
-void print_real(double x) { printf("%g\n", x); }
-
-void print_char(unsigned char c) { putchar(c); }
-
-void print_bool(_Bool b) { puts(b ? "true" : "false"); }

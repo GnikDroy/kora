@@ -17,6 +17,30 @@ string int_to_string(n: int) {
     return digits;
 }
 
+string real_to_string(x: real) {
+    let s = "";
+    if (x < 0.0) {
+        s.push('-');
+        x = -x;
+    }
+    let whole = x as int;
+    s = s + int_to_string(whole);
+    s.push('.');
+    let frac = x - (whole as real);
+    let digits = 0;
+    while (digits < 6) {
+        frac = frac * 10.0;
+        let d = frac as int;
+        s.push((d + 48) as char);
+        frac = frac - (d as real);
+        digits = digits + 1;
+    }
+    while (s[s.len() - 1] == '0' && s[s.len() - 2] != '.') {
+        s.pop();
+    }
+    return s;
+}
+
 string bool_to_string(b: bool) {
     if (b) {
         return "true";
