@@ -3,11 +3,10 @@ fn main() {
         return;
     }
     println!("cargo:rerun-if-changed=runtime/libkora");
-    println!("cargo:rerun-if-changed=runtime/bdwgc");
     cc::Build::new()
         .file("runtime/libkora/libkora.c")
-        .file("runtime/bdwgc/extra/gc.c")
-        .include("runtime/bdwgc/include")
+        .file("runtime/libkora/bdwgc/extra/gc.c")
+        .include("runtime/libkora/bdwgc/include")
         .define("NO_EXECUTE_PERMISSION", None)
         .define("GC_DISABLE_INCREMENTAL", None)
         .opt_level(2)
