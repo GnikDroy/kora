@@ -80,6 +80,7 @@ fn invalid_component(rel: &str) -> Option<String> {
 
 pub struct Loader<P> {
     provider: P,
+    base: PathBuf,
     ids: HashMap<PathBuf, SourceId>,
     requester: HashMap<SourceId, Span>,
     sources: Vec<SourceEntry>,
@@ -92,6 +93,7 @@ impl<P: Fn(&Path) -> Option<String>> Loader<P> {
     pub fn new(provider: P) -> Self {
         Loader {
             provider,
+            base: PathBuf::new(),
             ids: HashMap::new(),
             requester: HashMap::new(),
             sources: Vec::new(),
@@ -118,11 +120,21 @@ impl<P: Fn(&Path) -> Option<String>> Loader<P> {
         id
     }
 
+    fn is_std(path: &Path) -> bool {
+        path.to_str()
+            .is_some_and(|s| s == "std" || s.starts_with("std/"))
+    }
+
     fn process(&mut self, id: SourceId) {
         let path = self.sources[id.0 as usize].path.clone();
-        let Some(text) = (self.provider)(&path) else {
+        let request = if Self::is_std(&path) {
+            path.clone()
+        } else {
+            self.base.join(&path)
+        };
+        let Some(text) = (self.provider)(&request) else {
             self.errors.push(CompileErr::Load(LoadErr {
-                msg: format!("cannot find source `{}`", path.display()),
+                msg: format!("cannot find source `{}`", request.display()),
                 span: self.requester.get(&id).cloned(),
             }));
             return;
@@ -189,12 +201,17 @@ impl<P: Fn(&Path) -> Option<String>> Loader<P> {
     }
 
     pub fn load(mut self, entry: &str) -> Result<LoadedProgram, Vec<CompileErr>> {
-        match resolve_path(Path::new(""), entry) {
-            Some(path) => {
-                self.schedule(&path, None);
+        let entry_path = Path::new(entry);
+        match entry_path.file_name() {
+            Some(file) => {
+                self.base = entry_path
+                    .parent()
+                    .map(Path::to_path_buf)
+                    .unwrap_or_default();
+                self.schedule(Path::new(file), None);
             }
             None => self.errors.push(CompileErr::Load(LoadErr {
-                msg: format!("entry `{entry}` climbs above the root"),
+                msg: format!("`{entry}` does not name a source file"),
                 span: None,
             })),
         }
@@ -351,6 +368,22 @@ mod tests {
     }
 
     #[test]
+    fn test_entry_may_live_outside_the_working_directory() {
+        // Leading `..`s belong to the entry's base, not to import resolution.
+        let p = provider(vec![
+            (
+                "../lib/main.kora",
+                r#"import "util.kora"; int main() { return util.f(); }"#,
+            ),
+            ("../lib/util.kora", "int f() { return 0; }"),
+        ]);
+        let program = Loader::new(&p).load("../lib/main.kora").expect("load");
+        assert_eq!(program.modules.len(), 2);
+        assert_eq!(program.sources[0].path.to_str(), Some("main.kora"));
+        assert_eq!(program.sources[1].path.to_str(), Some("util.kora"));
+    }
+
+    #[test]
     fn test_std_namespace_is_absolute() {
         // std/* resolves to the same path regardless of the importer's location
         let p = provider(vec![
@@ -363,7 +396,7 @@ mod tests {
         ]);
         let program = Loader::new(&p).load("app/main.kora").expect("load");
         assert_eq!(program.modules.len(), 3);
-        let main = module_of(&program, "app/main.kora");
+        let main = module_of(&program, "main.kora");
         assert_eq!(main.imports[0].local_name, "conv");
         assert_eq!(
             program.sources[main.imports[0].target.0 as usize]
