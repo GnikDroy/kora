@@ -5,7 +5,7 @@ use std::path::Path;
 
 use crate::lexer::LexerErr;
 use crate::loader::{LoadErr, LoadedProgram, Loader};
-use crate::parser::{ASTVisitor, NodeId, ParseErr, Type};
+use crate::parser::{ASTVisitor, ExternFunction, NodeId, ParseErr, Type};
 use crate::semantic_analyzer::{
     ArrayMethod, Resolver, ReturnChecker, SymbolId, SymbolTable, TypeChecker, TypeErr,
 };
@@ -91,6 +91,34 @@ where
     }
     if let Err(errors) = return_checker.check() {
         analyze_errors.extend(errors.iter().cloned());
+    }
+
+    let mut extern_signatures: HashMap<&str, &ExternFunction> = HashMap::new();
+    for module in &program.modules {
+        for func in &module.module.extern_functions {
+            let signature = |f: &ExternFunction| {
+                (
+                    f.return_type.clone(),
+                    f.arguments
+                        .iter()
+                        .map(|a| a.node.typename.clone())
+                        .collect::<Vec<_>>(),
+                )
+            };
+            match extern_signatures.entry(func.node.name.as_str()) {
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    entry.insert(&func.node);
+                }
+                std::collections::hash_map::Entry::Occupied(entry) => {
+                    if signature(entry.get()) != signature(&func.node) {
+                        analyze_errors.push(TypeErr {
+                            msg: "extern redeclared with a different signature",
+                            span: func.span.clone(),
+                        });
+                    }
+                }
+            }
+        }
     }
 
     // The entry point has a fixed signature
@@ -263,6 +291,46 @@ mod tests {
         if let Err(errors) = result {
             panic!("unexpected errors: {errors:?}");
         }
+    }
+
+    #[test]
+    fn test_rejects_mismatched_extern_redeclaration() {
+        let sources = provider(vec![
+            (
+                "main.kora",
+                r#"import "a.kora"; extern int32 f(x: int32); int main() { return f(1); }"#,
+            ),
+            (
+                "a.kora",
+                "extern int64 f(x: int32);
+int g() { return f(2); }",
+            ),
+        ]);
+        let Err(errors) = compile("main.kora", sources) else {
+            panic!("mismatched extern redeclaration must be rejected");
+        };
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.to_string().contains("extern redeclared")),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
+    fn test_accepts_matching_extern_redeclaration() {
+        let sources = provider(vec![
+            (
+                "main.kora",
+                r#"import "a.kora"; extern int32 abs(x: int32); int main() { return abs(1); }"#,
+            ),
+            (
+                "a.kora",
+                "extern int32 abs(x: int32);
+int g() { return abs(2); }",
+            ),
+        ]);
+        assert!(compile("main.kora", sources).is_ok());
     }
 
     #[test]

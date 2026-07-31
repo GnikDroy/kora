@@ -1,6 +1,6 @@
 use super::JavascriptTranspiler;
 use super::error::TranspilerErr;
-use crate::mangle::mangle;
+use crate::mangle::mangle_method;
 use crate::parser::*;
 use crate::semantic_analyzer::ArrayMethod;
 
@@ -174,7 +174,7 @@ impl ASTVisitor for JavascriptTranspiler {
 
     fn visit_function(&mut self, func: &Spanned<Function>) {
         let name = match &self.current_impl {
-            Some(struct_name) => mangle(struct_name, &func.node.name),
+            Some(struct_name) => mangle_method(struct_name, &func.node.name),
             None => self
                 .function_names
                 .get(&func.id)

@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::mangle::mangle;
+use crate::mangle::mangle_method;
 use crate::parser::*;
 
 /// JavaScript is a colored language ;)
@@ -31,7 +31,7 @@ pub(crate) fn resolve_async_fns(
                 .chain(module.impls.iter().flat_map(|impl_| {
                     impl_.node.functions.iter().map(|f| {
                         (
-                            mangle(&impl_.node.struct_name.node, &f.node.name),
+                            mangle_method(&impl_.node.struct_name.node, &f.node.name),
                             called_names(&f.node.statement, function_names, method_calls),
                         )
                     })

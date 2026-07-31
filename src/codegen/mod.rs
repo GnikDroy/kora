@@ -26,7 +26,7 @@ use inkwell::types::{BasicType, BasicTypeEnum, StructType};
 use inkwell::values::{BasicValueEnum, FunctionValue, IntValue, PointerValue, ValueKind};
 
 use crate::frontend::CompiledProgram;
-use crate::mangle::{mangle, mangle_prefix};
+use crate::mangle::{mangle, mangle_method, mangle_prefix};
 use crate::parser::*;
 use crate::semantic_analyzer::{SymbolId, is_reference};
 
@@ -116,7 +116,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
             for func in impl_.node.functions.iter() {
                 self.declare_function(
                     func.id,
-                    &mangle(&impl_.node.struct_name.node, &func.node.name),
+                    &mangle_method(&impl_.node.struct_name.node, &func.node.name),
                     &func.node.return_type,
                     &func.node.arguments,
                 )?;

@@ -66,11 +66,11 @@ fn test_methods_emit_mangled_global_functions() {
             }
         "#,
     );
-    assert!(js.contains("function kora$P$get(self)"), "{js}");
-    assert!(js.contains("function kora$P$me(self)"), "{js}");
-    assert!(js.contains("function kora$P$set(self, v)"), "{js}");
-    assert!(js.contains("kora$P$set(p,3)"), "{js}");
-    assert!(js.contains("kora$P$get(kora$P$me(p))"), "{js}");
+    assert!(js.contains("function kora$$P$get(self)"), "{js}");
+    assert!(js.contains("function kora$$P$me(self)"), "{js}");
+    assert!(js.contains("function kora$$P$set(self, v)"), "{js}");
+    assert!(js.contains("kora$$P$set(p,3)"), "{js}");
+    assert!(js.contains("kora$$P$get(kora$$P$me(p))"), "{js}");
 }
 
 #[test]
@@ -91,11 +91,11 @@ fn test_async_coloring_propagates_through_method_calls() {
         "#,
         HashSet::from(["read_key".to_string()]),
     );
-    assert!(js.contains("async function kora$P$ask(self)"), "{js}");
-    assert!(js.contains("async function kora$P$relay(self)"), "{js}");
+    assert!(js.contains("async function kora$$P$ask(self)"), "{js}");
+    assert!(js.contains("async function kora$$P$relay(self)"), "{js}");
     assert!(js.contains("async function main()"), "{js}");
-    assert!(js.contains("(await kora$P$ask(self))"), "{js}");
-    assert!(js.contains("(await kora$P$relay(p))"), "{js}");
+    assert!(js.contains("(await kora$$P$ask(self))"), "{js}");
+    assert!(js.contains("(await kora$$P$relay(p))"), "{js}");
 }
 
 #[test]

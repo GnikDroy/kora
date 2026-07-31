@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet};
 
 use self::error::TranspilerErr;
 use crate::loader::LoadedProgram;
-use crate::mangle::{mangle, mangle_prefix};
+use crate::mangle::{mangle, mangle_method, mangle_prefix};
 use crate::parser::*;
 use crate::semantic_analyzer::{ArrayMethod, SymbolId, SymbolTable};
 
@@ -109,7 +109,7 @@ pub(crate) fn mangled_method_calls(
                 .structs
                 .iter()
                 .find(|(_, def)| def.methods.values().any(|m| m == sym))
-                .map(|(struct_name, _)| mangle(struct_name, method))
+                .map(|(struct_name, _)| mangle_method(struct_name, method))
                 .unwrap_or_else(|| method.clone());
             (*id, name)
         })

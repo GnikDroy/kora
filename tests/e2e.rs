@@ -612,6 +612,26 @@ fn test_std_math() {
 }
 
 #[test]
+fn test_method_symbols_cannot_collide_with_module_functions() {
+    let (_, _, code) = run_program(&[
+        (
+            "main.kora",
+            r#"
+                import "util.kora" u;
+                struct util { x: int }
+                impl util { int double(self) { return self.x + 1; } }
+                int main() {
+                    let s = new util { x: 1 };
+                    return s.double() * 10 + u.double(3);
+                }
+            "#,
+        ),
+        ("util.kora", "int double(x: int) { return x * 2; }"),
+    ]);
+    assert_eq!(code, 26);
+}
+
+#[test]
 fn test_diamond_imports() {
     let (_, _, code) = run_program(&[
         (

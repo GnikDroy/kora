@@ -8,6 +8,10 @@ pub(crate) fn mangle(prefix: &str, name: &str) -> String {
     }
 }
 
+pub(crate) fn mangle_method(struct_name: &str, name: &str) -> String {
+    format!("kora$${struct_name}${name}")
+}
+
 pub(crate) fn mangle_prefix(path: &Path, root: &Path) -> String {
     let rel = if path.is_absolute() == root.is_absolute() {
         relative_to(path, root)
