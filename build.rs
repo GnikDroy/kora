@@ -9,6 +9,8 @@ fn main() {
         .include("runtime/libkora/bdwgc/include")
         .define("NO_EXECUTE_PERMISSION", None)
         .define("GC_DISABLE_INCREMENTAL", None)
+        .flag("-ffunction-sections")
+        .flag("-fdata-sections")
         .opt_level(2)
         .flag_if_supported("-mmacosx-version-min=11.0")
         .warnings(false)

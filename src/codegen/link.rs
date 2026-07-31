@@ -21,10 +21,16 @@ pub fn link(llvm: &Module, output: &Path) -> Result<(), LinkErr> {
     let status = std::fs::write(&runtime_path, RUNTIME_LIB)
         .map_err(LinkErr::Io)
         .and_then(|_| {
+            let dead_strip = if cfg!(target_os = "macos") {
+                "-Wl,-dead_strip"
+            } else {
+                "-Wl,--gc-sections"
+            };
             Command::new("cc")
                 .arg(&object_path)
                 .arg(&runtime_path)
                 .arg("-lm")
+                .arg(dead_strip)
                 .arg("-o")
                 .arg(output)
                 .status()
