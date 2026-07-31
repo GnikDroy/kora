@@ -1,7 +1,9 @@
 import "std/libc";
 
+extern void __kora_write(buf: cstring, n: csize);
+
 void write(s: string) {
-    libc.write(1, s, s.len());
+    __kora_write(s, s.len());
 }
 
 void print(s: string) {

@@ -172,6 +172,7 @@ onmessage = async (e) => {
         msg.code + "\nreturn __kora_main();",
       );
       await fn(...Object.values(EXTERN_IMPLS));
+      fflush(null);
       postMessage({ type: "done" });
     } catch (err) {
       postMessage({ type: "error", message: String(err) });

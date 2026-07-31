@@ -25,7 +25,7 @@ extern void rotate(a: float64);
 `;
 
 // The subset of EXTERNS that blocks on a Promise.
-export const ASYNC_EXTERNS = ["getchar", "usleep"];
+export const ASYNC_EXTERNS = ["getchar", "__kora_sleep_ms"];
 
 const TERMINAL_THEMES = {
   light: {

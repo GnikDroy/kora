@@ -1,14 +1,13 @@
-extern clong write(fd: cint, buf: cstring, n: csize);
+extern cint putchar(c: cint);
 extern cint getchar();
 extern cint rand();
-extern cint usleep(us: cuint);
 
 extern opaque? fopen(path: cstring, mode: cstring);
 extern cint fclose(f: opaque);
 extern cint fgetc(f: opaque);
 extern cint fputc(c: cint, f: opaque);
 extern cint fputs(s: cstring, f: opaque);
-extern cint fflush(f: opaque);
+extern cint fflush(f: opaque?);
 extern clong ftell(f: opaque);
 extern cint fseek(f: opaque, offset: clong, whence: cint);
 extern cint remove(path: cstring);

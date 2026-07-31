@@ -440,24 +440,47 @@ fn test_str_module_transpiles_and_cross_calls_within_module() {
 }
 
 #[test]
+fn test_extern_guards_panic_when_the_host_lacks_them() {
+    let js = transpile(
+        r#"
+            extern void teleport(x: int64);
+            int main() {
+                teleport(9);
+                return 0;
+            }
+        "#,
+    );
+    assert!(
+        js.contains(
+            r#"var teleport = typeof teleport === "function" ? teleport : __kora_missing_extern("teleport");"#
+        ),
+        "{js}"
+    );
+    assert!(js.contains("function __kora_missing_extern("), "{js}");
+}
+
+#[test]
 fn test_qualified_extern_calls_emit_the_bare_name() {
     let js = transpile_program(
         "main.kora",
-        vec![(
-            "main.kora",
-            r#"
-                import "std/libc";
-                int main() {
-                    libc.usleep(5);
-                    return 0;
-                }
-            "#
-            .to_string(),
-        )],
-        HashSet::from(["usleep".to_string()]),
+        vec![
+            (
+                "main.kora",
+                r#"
+                    import "host.kora";
+                    int main() {
+                        host.ping(5);
+                        return 0;
+                    }
+                "#
+                .to_string(),
+            ),
+            ("host.kora", "extern void ping(x: int64);".to_string()),
+        ],
+        HashSet::from(["ping".to_string()]),
     );
-    assert!(js.contains("(await usleep(5))"), "{js}");
-    assert!(!js.contains("libc.usleep"), "{js}");
+    assert!(js.contains("(await ping(5))"), "{js}");
+    assert!(!js.contains("host.ping"), "{js}");
     assert!(js.contains("async function __kora_main()"), "{js}");
 }
 

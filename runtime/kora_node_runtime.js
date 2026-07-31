@@ -1,7 +1,21 @@
-function write(fd, buf, n) {
+let stdoutBuffer = [];
+
+function flushStdout() {
+  if (stdoutBuffer.length === 0) return;
+  require("node:fs").writeSync(1, Buffer.from(stdoutBuffer));
+  stdoutBuffer = [];
+}
+
+function __kora_write(buf, n) {
+  flushStdout();
   const text = Array.isArray(buf) ? buf.slice(0, Number(n)).join("") : String(buf);
-  require("node:fs").writeSync(fd, Buffer.from(text, "binary"));
-  return n;
+  require("node:fs").writeSync(1, Buffer.from(text, "binary"));
+}
+
+function putchar(c) {
+  stdoutBuffer.push(Number(c) & 0xff);
+  if (stdoutBuffer.length >= 4096) flushStdout();
+  return c;
 }
 
 function getchar() {
@@ -17,8 +31,8 @@ function rand() {
   return Math.floor(Math.random() * 2147483648);
 }
 
-function usleep(us) {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(us) / 1000);
+function __kora_sleep_ms(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(ms));
 }
 
 function sqrt(x) { return Math.sqrt(x); }
@@ -77,6 +91,7 @@ function fputs(s, f) {
 }
 
 function fflush(f) {
+  if (f === null || f === undefined) flushStdout();
   return 0;
 }
 
@@ -126,4 +141,5 @@ function exit(code) {
 
 (async () => {
   process.exitCode = await __kora_main();
+  flushStdout();
 })();

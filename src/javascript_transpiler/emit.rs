@@ -9,6 +9,10 @@ function __kora_panic(message) {
     throw new Error(message);
 }
 
+function __kora_missing_extern(name) {
+    return () => __kora_panic(\"extern '\" + name + \"' is not provided by this host\");
+}
+
 function __kora_runtime_equality_intrinsic(a, b) {
     if (a === b) return true;
     if (a == null || b == null) return a == b;
@@ -162,7 +166,12 @@ impl ASTVisitor for JavascriptTranspiler {
         self.emit_program(&[module]);
     }
 
-    fn visit_extern_function(&mut self, _: &Spanned<ExternFunction>) {}
+    fn visit_extern_function(&mut self, func: &Spanned<ExternFunction>) {
+        let name = &func.node.name;
+        self.source.push_str(&format!(
+            "var {name} = typeof {name} === \"function\" ? {name} : __kora_missing_extern(\"{name}\");"
+        ));
+    }
 
     fn visit_struct(&mut self, _: &Spanned<Struct>) {}
 

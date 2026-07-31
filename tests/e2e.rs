@@ -874,6 +874,33 @@ fn test_opaque_defaults_and_none() {
 }
 
 #[test]
+fn test_node_panics_on_missing_extern() {
+    let dir = temp_dir();
+    let entry = dir.join("main.kora");
+    std::fs::write(
+        &entry,
+        "extern void teleport();\nint main() { teleport(); return 0; }",
+    )
+    .unwrap();
+    let emitted = Command::new(env!("CARGO_BIN_EXE_kora"))
+        .arg("--emit-js")
+        .arg(&entry)
+        .output()
+        .expect("kora --emit-js");
+    assert!(emitted.status.success());
+
+    let out = exec(Command::new("node").arg(dir.join("main.js")), b"");
+    std::fs::remove_dir_all(&dir).ok();
+    assert_ne!(out.2, 0);
+    assert!(
+        out.1
+            .contains("extern 'teleport' is not provided by this host"),
+        "{}",
+        out.1
+    );
+}
+
+#[test]
 fn test_emit_js_output_runs_under_node() {
     let dir = temp_dir();
     let entry = dir.join("main.kora");

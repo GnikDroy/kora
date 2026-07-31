@@ -1,15 +1,9 @@
 import "std/libc";
 
+extern void __kora_sleep_ms(ms: clong);
+
 void sleep(ms: int) {
-    let left = ms;
-    while (left > 0) {
-        let chunk = left;
-        if (chunk > 500) {
-            chunk = 500;
-        }
-        libc.usleep(chunk * 1000);
-        left = left - chunk;
-    }
+    __kora_sleep_ms(ms);
 }
 
 int now() {

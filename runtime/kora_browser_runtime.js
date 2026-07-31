@@ -8,11 +8,31 @@ function useStdout() {
   }
 }
 
-function write(fd, buf, n) {
+let stdoutBuffer = [];
+
+function flushStdout() {
+  if (stdoutBuffer.length === 0) return;
+  useStdout();
+  postMessage({ type: "write", text: stdoutBuffer.join("") });
+  stdoutBuffer = [];
+}
+
+function __kora_write(buf, n) {
+  flushStdout();
   useStdout();
   const text = Array.isArray(buf) ? buf.slice(0, Number(n)).join("") : String(buf);
   postMessage({ type: "write", text });
-  return n;
+}
+
+function putchar(c) {
+  stdoutBuffer.push(String.fromCharCode(Number(c) & 0xff));
+  if (stdoutBuffer.length >= 4096) flushStdout();
+  return c;
+}
+
+function fflush(f) {
+  if (f === null || f === undefined) flushStdout();
+  return 0;
 }
 
 let inputBuffer = [];
@@ -33,8 +53,8 @@ function rand() {
   return Math.floor(Math.random() * 2147483648);
 }
 
-function usleep(us) {
-  return new Promise((resolve) => setTimeout(resolve, us / 1000));
+function __kora_sleep_ms(ms) {
+  return new Promise((resolve) => setTimeout(resolve, Number(ms)));
 }
 
 function sqrt(x) { return Math.sqrt(x); }
@@ -52,19 +72,8 @@ function log(x) { return Math.log(x); }
 function log2(x) { return Math.log2(x); }
 function time() { return Math.floor(Date.now() / 1000); }
 
-function notProvided(name) {
-  return () => {
-    throw new Error(`extern '${name}' is not provided by the browser host`);
-  };
-}
-
 const KORA_EXTERNS = {
-  write, getchar, rand, usleep,
+  __kora_write, putchar, fflush, getchar, rand, __kora_sleep_ms,
   sqrt, sin, cos, tan, atan, atan2, pow,
   floor, ceil, round, exp, log, log2, time,
-  ...Object.fromEntries(
-    ["fopen", "fclose", "fgetc", "fputc", "fputs", "fflush", "ftell", "fseek",
-     "remove", "rename", "getenv", "system", "exit"]
-      .map((n) => [n, notProvided(n)]),
-  ),
 };

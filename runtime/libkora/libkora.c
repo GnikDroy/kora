@@ -3,6 +3,7 @@
 #include <time.h>
 
 #include "array.h"
+#include "platform.h"
 
 extern long __kora_main(void);
 
