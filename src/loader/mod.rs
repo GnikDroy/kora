@@ -59,6 +59,25 @@ fn resolve_path(importer: &Path, rel: &str) -> Option<PathBuf> {
     Some(out)
 }
 
+fn invalid_component(rel: &str) -> Option<String> {
+    for component in Path::new(rel).components() {
+        let Component::Normal(name) = component else {
+            continue;
+        };
+        let name = name.to_string_lossy();
+        let name = name.strip_suffix(".kora").unwrap_or(&name);
+        let mut chars = name.chars();
+        let valid = chars
+            .next()
+            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+            && chars.all(|c| c.is_ascii_alphanumeric() || c == '_');
+        if !valid {
+            return Some(name.to_string());
+        }
+    }
+    None
+}
+
 pub struct Loader<P> {
     provider: P,
     ids: HashMap<PathBuf, SourceId>,
@@ -128,6 +147,13 @@ impl<P: Fn(&Path) -> Option<String>> Loader<P> {
 
         let mut imports = Vec::new();
         for import in &module.imports {
+            if let Some(component) = invalid_component(&import.node.path) {
+                self.errors.push(CompileErr::Load(LoadErr {
+                    msg: format!("import path component '{component}' must be a valid identifier"),
+                    span: Some(import.span.clone()),
+                }));
+                continue;
+            }
             // std/ is reserved
             let target_path = if import.node.path == "std" || import.node.path.starts_with("std/") {
                 PathBuf::from(&import.node.path)
@@ -289,6 +315,39 @@ mod tests {
         ]);
         let program = Loader::new(&p).load("app/main.kora").expect("load");
         assert_eq!(program.modules.len(), 3);
+    }
+
+    #[test]
+    fn test_import_components_must_be_identifiers() {
+        for bad in [
+            r#"import "my-lib.kora";"#,
+            r#"import "foo.bar/x.kora";"#,
+            r#"import "1st.kora";"#,
+            r#"import "a b/c.kora";"#,
+        ] {
+            let source: &'static str =
+                Box::leak(format!("{bad} int main() {{ return 0; }}").into_boxed_str());
+            let p = provider(vec![("main.kora", source)]);
+            let errors = Loader::new(&p).load("main.kora").unwrap_err();
+            assert!(
+                errors
+                    .iter()
+                    .any(|e| e.to_string().contains("must be a valid identifier")),
+                "{bad}: {errors:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_identifier_like_import_components_load() {
+        let p = provider(vec![
+            (
+                "main.kora",
+                r#"import "_util/v2.kora"; int main() { return 0; }"#,
+            ),
+            ("_util/v2.kora", "int f() { return 0; }"),
+        ]);
+        assert!(Loader::new(&p).load("main.kora").is_ok());
     }
 
     #[test]
