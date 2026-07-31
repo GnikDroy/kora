@@ -249,6 +249,15 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 let r = rhs.into_pointer_value();
                 return self.lower_array_binary(&operand_type, op, l, r, span);
             }
+            Type::Opaque => {
+                let eq = self.pointers_equal(lhs.into_pointer_value(), rhs.into_pointer_value());
+                let result = if op == NotEquality {
+                    self.builder.build_not(eq, "ne").unwrap()
+                } else {
+                    eq
+                };
+                result.into()
+            }
             _ => unreachable!("type checker rejects operators on other types"),
         };
         Ok(value)

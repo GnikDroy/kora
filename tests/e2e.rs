@@ -753,6 +753,26 @@ fn test_kora_names_cannot_interpose_host_symbols() {
 }
 
 #[test]
+fn test_opaque_defaults_and_none() {
+    let (_, _, code) = run(r#"
+            struct Handles { h: opaque, m: opaque? }
+            int main() {
+                let s = new Handles;
+                let t = new Handles;
+                let r = 0;
+                if (s.m == none) { r = r + 1; }
+                if (s.h == t.h) { r = r + 2; }
+                let m: opaque? = none;
+                if (m == s.m) { r = r + 4; }
+                let xs = new opaque[2];
+                if (xs[0] == xs[1] && xs == [s.h, t.h]) { r = r + 8; }
+                return r;
+            }
+        "#);
+    assert_eq!(code, 15);
+}
+
+#[test]
 fn test_emit_js_output_runs_under_node() {
     let dir = temp_dir();
     let entry = dir.join("main.kora");

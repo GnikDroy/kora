@@ -187,6 +187,28 @@ fn test_optional_array_equality_is_structural() {
 }
 
 #[test]
+fn test_opaque_emits_plain_values() {
+    let js = transpile(
+        r#"
+            extern opaque make();
+            struct S { h: opaque, m: opaque? }
+            int main() {
+                let a = make();
+                let b = make();
+                let s = new S;
+                let r = 0;
+                if (a == b) { r = r + 1; }
+                if (s.m == none) { r = r + 2; }
+                return r;
+            }
+        "#,
+    );
+    assert!(js.contains("a===b"), "{js}");
+    assert!(js.contains("({h:null,m:null})"), "{js}");
+    assert!(js.contains("s.m==null"), "{js}");
+}
+
+#[test]
 fn test_runtime_checks_emit_intrinsics() {
     let js = transpile(
         r#"

@@ -126,7 +126,7 @@ impl JavascriptTranspiler {
         match ty {
             Type::Struct(name) => self.emit_struct_zero(&name.node),
             Type::Array(_) => self.source.push_str("[]"),
-            Type::Optional(_) => self.source.push_str("null"),
+            Type::Optional(_) | Type::Opaque => self.source.push_str("null"),
             Type::Real => self.source.push_str("0.0"),
             Type::Bool => self.source.push_str("false"),
             Type::Char => self.source.push_str("\"\\0\""),

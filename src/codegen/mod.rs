@@ -15,6 +15,7 @@ pub use link::link;
 use std::collections::HashMap;
 
 use inkwell::AddressSpace;
+use inkwell::IntPredicate;
 use inkwell::attributes::{Attribute, AttributeLoc};
 use inkwell::basic_block::BasicBlock;
 use inkwell::builder::Builder;
@@ -245,6 +246,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
             Type::Real => Ok(self.context.f64_type().into()),
             Type::Bool => Ok(self.context.bool_type().into()),
             Type::Char => Ok(self.context.i8_type().into()),
+            Type::Opaque => Ok(self.context.ptr_type(AddressSpace::default()).into()),
             Type::Array(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
             Type::Optional(inner) => {
                 if is_reference(inner) {
@@ -260,6 +262,19 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 span: span.clone(),
             }),
         }
+    }
+
+    pub(super) fn pointers_equal(
+        &self,
+        a: PointerValue<'ctx>,
+        b: PointerValue<'ctx>,
+    ) -> IntValue<'ctx> {
+        let ty = self.context.i64_type();
+        let a = self.builder.build_ptr_to_int(a, ty, "a_addr").unwrap();
+        let b = self.builder.build_ptr_to_int(b, ty, "b_addr").unwrap();
+        self.builder
+            .build_int_compare(IntPredicate::EQ, a, b, "ptr_eq")
+            .unwrap()
     }
 
     fn gc_malloc(&mut self, size: IntValue<'ctx>, name: &str) -> PointerValue<'ctx> {

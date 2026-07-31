@@ -28,10 +28,22 @@ fn run_main_files(files: &[(&str, &str)]) -> i64 {
     extern "C" fn jit_panic(_message: *const i8) {
         panic!("__kora_panic reached in a JIT test");
     }
+    extern "C" fn jit_handle_a() -> *const u8 {
+        0xA0 as *const u8
+    }
+    extern "C" fn jit_handle_b() -> *const u8 {
+        0xB0 as *const u8
+    }
 
-    if let Some(f) = llvm.get_function("__kora_panic") {
-        let jit_panic = jit_panic as *const ();
-        engine.add_global_mapping(&f, jit_panic as usize);
+    let stand_ins = [
+        ("__kora_panic", jit_panic as *const ()),
+        ("make_handle_a", jit_handle_a as *const ()),
+        ("make_handle_b", jit_handle_b as *const ()),
+    ];
+    for (name, addr) in stand_ins {
+        if let Some(f) = llvm.get_function(name) {
+            engine.add_global_mapping(&f, addr as usize);
+        }
     }
 
     unsafe {
@@ -257,4 +269,30 @@ fn test_cross_module_calls() {
         ("lib.kora", "int triple(x: int) { return x * 3; }"),
     ]);
     assert_eq!(result, 21);
+}
+
+#[test]
+fn test_opaque_handles() {
+    let result = run_main(
+        r#"
+            extern opaque make_handle_a();
+            extern opaque make_handle_b();
+            opaque pick(h: opaque) { return h; }
+            int main() {
+                let a = make_handle_a();
+                let b = make_handle_b();
+                let r = 0;
+                if (a == make_handle_a()) { r = r + 1; }
+                if (a != b) { r = r + 2; }
+                if (pick(a) == a) { r = r + 4; }
+                let m: opaque? = none;
+                if (m == none) { r = r + 8; }
+                m = a;
+                if (m != none && m! == a) { r = r + 16; }
+                if (m == pick(a)) { r = r + 32; }
+                return r;
+            }
+        "#,
+    );
+    assert_eq!(result, 63);
 }

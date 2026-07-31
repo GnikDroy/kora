@@ -446,6 +446,9 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 };
                 value.into_int_value()
             }
+            Type::Opaque => {
+                self.pointers_equal(elem_a.into_pointer_value(), elem_b.into_pointer_value())
+            }
             Type::Optional(opt_inner) => {
                 self.is_optional_values_equal(opt_inner, elem_a, elem_b, span)?
             }

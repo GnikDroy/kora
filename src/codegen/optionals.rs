@@ -166,6 +166,9 @@ impl<'ctx> CodeGen<'ctx, '_> {
 
         let a = a.into_pointer_value();
         let b = b.into_pointer_value();
+        if matches!(inner, Type::Opaque) {
+            return Ok(self.pointers_equal(a, b));
+        }
         let a_null = self.builder.build_is_null(a, "a_null").unwrap();
         let b_null = self.builder.build_is_null(b, "b_null").unwrap();
         let either_null = self
