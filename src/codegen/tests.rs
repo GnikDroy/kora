@@ -47,6 +47,21 @@ fn run_main_files(files: &[(&str, &str)]) -> i64 {
     extern "C" fn jit_ret_half_f32() -> f32 {
         0.5
     }
+    extern "C" fn jit_echo_i8(x: i8) -> i8 {
+        x
+    }
+    extern "C" fn jit_echo_u8(x: u8) -> u8 {
+        x
+    }
+    extern "C" fn jit_echo_i16(x: i16) -> i16 {
+        x
+    }
+    extern "C" fn jit_echo_u16(x: u16) -> u16 {
+        x
+    }
+    extern "C" fn jit_flip_bool(x: bool) -> bool {
+        !x
+    }
 
     let stand_ins = [
         ("__kora_panic", jit_panic as *const ()),
@@ -56,6 +71,11 @@ fn run_main_files(files: &[(&str, &str)]) -> i64 {
         ("ret_max_u32", jit_ret_max_u32 as *const ()),
         ("echo_i32", jit_echo_i32 as *const ()),
         ("ret_half_f32", jit_ret_half_f32 as *const ()),
+        ("echo_i8", jit_echo_i8 as *const ()),
+        ("echo_u8", jit_echo_u8 as *const ()),
+        ("echo_i16", jit_echo_i16 as *const ()),
+        ("echo_u16", jit_echo_u16 as *const ()),
+        ("flip", jit_flip_bool as *const ()),
         ("kora", jit_echo_i32 as *const ()),
     ];
     for (name, addr) in stand_ins {
@@ -334,6 +354,46 @@ fn test_extern_scalar_marshalling() {
         "#,
     );
     assert_eq!(result, 15);
+}
+
+#[test]
+fn test_extern_narrow_int_marshalling() {
+    let result = run_main(
+        r#"
+            extern int8 echo_i8(x: int8);
+            extern uint8 echo_u8(x: uint8);
+            extern int16 echo_i16(x: int16);
+            extern uint16 echo_u16(x: uint16);
+            int main() {
+                let r = 0;
+                if (echo_i8(300) == 44) { r = r + 1; }
+                if (echo_i8(-1) == -1) { r = r + 2; }
+                if (echo_u8(-1) == 255) { r = r + 4; }
+                if (echo_i16(65543) == 7) { r = r + 8; }
+                if (echo_i16(-2) == -2) { r = r + 16; }
+                if (echo_u16(-1) == 65535) { r = r + 32; }
+                return r;
+            }
+        "#,
+    );
+    assert_eq!(result, 63);
+}
+
+#[test]
+fn test_extern_bool_marshalling() {
+    let result = run_main(
+        r#"
+            extern bool flip(b: bool);
+            int main() {
+                let r = 0;
+                if (flip(false)) { r = r + 1; }
+                if (!flip(true)) { r = r + 2; }
+                if (flip(1 == 2)) { r = r + 4; }
+                return r;
+            }
+        "#,
+    );
+    assert_eq!(result, 7);
 }
 
 #[test]

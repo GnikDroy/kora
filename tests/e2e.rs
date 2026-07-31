@@ -919,6 +919,206 @@ fn test_opaque_defaults_and_none() {
 }
 
 #[test]
+fn test_signed_division_and_modulo_negatives() {
+    let (_, _, code) = run(r#"
+            int main() {
+                let r = 0;
+                if ((-7) / 2 == -3) { r = r + 1; }
+                if ((-7) % 2 == -1) { r = r + 2; }
+                if (7 % (-2) == 1) { r = r + 4; }
+                if ((-7) % (-2) == -1) { r = r + 8; }
+                if (7 / (-2) == -3) { r = r + 16; }
+                return r;
+            }
+        "#);
+    assert_eq!(code, 31);
+}
+
+#[test]
+fn test_optional_payload_shapes() {
+    let (_, _, code) = run(r#"
+            struct Multi { a: int?, b: real?, c: char?, d: bool? }
+            int main() {
+                let m = new Multi;
+                let r = 0;
+                if (m.a == none && m.b == none && m.c == none && m.d == none) { r = r + 1; }
+                m.a = 5;
+                m.b = 2.5;
+                m.c = 'x';
+                m.d = true;
+                if (m.a! == 5 && m.b! == 2.5 && m.c! == 'x' && m.d!) { r = r + 2; }
+                m.d = false;
+                if (m.d != none && !m.d!) { r = r + 4; }
+                let br: real? = none;
+                br = 1.25;
+                if (br == 1.25) { r = r + 8; }
+                let bc: char? = 'q';
+                if (bc != none && bc! == 'q') { r = r + 16; }
+                let bb: bool? = false;
+                if (bb != none && bb == false) { r = r + 32; }
+                let xs: [int?] = [1, none, 3];
+                xs[0] = none;
+                xs[1] = 2;
+                if (xs[0] == none && xs[1]! == 2 && xs[2]! == 3) { r = r + 64; }
+                return r;
+            }
+        "#);
+    assert_eq!(code, 127);
+}
+
+#[test]
+fn test_real_special_values() {
+    let (stdout, _, code) = run(r#"
+            import "std/conv";
+            import "std/io";
+            int main() {
+                let z = 0.0;
+                let inf = 1.0 / z;
+                let nan = z / z;
+                let negz = -1.0 * 0.0;
+                let r = 0;
+                if (inf > 1000000000000.0) { r = r + 1; }
+                if (0.0 - inf < 0.0 - 1000000000000.0) { r = r + 2; }
+                if (nan != nan) { r = r + 4; }
+                if (!(nan == nan)) { r = r + 8; }
+                if (negz == 0.0) { r = r + 16; }
+                if (1.0 / negz < 0.0) { r = r + 32; }
+                if (inf == inf) { r = r + 64; }
+                io.print(conv.real_to_string(inf));
+                io.print(conv.real_to_string(0.0 - inf));
+                io.print(conv.real_to_string(nan));
+                return r;
+            }
+        "#);
+    assert_eq!(stdout, "inf\n-inf\nnan\n");
+    assert_eq!(code, 127);
+}
+
+#[test]
+fn test_bool_equality_and_chained_short_circuit() {
+    let (stdout, _, code) = run(r#"
+            import "std/conv";
+            import "std/io";
+            bool step(log: [int], id: int, v: bool) { log.push(id); return v; }
+            int main() {
+                let r = 0;
+                if (true == true && true != false) { r = r + 1; }
+                if ((1 < 2) == true) { r = r + 2; }
+                let log = new int[0];
+                if (step(log, 1, true) && step(log, 2, false) && step(log, 3, true)) { r = r + 100; }
+                if (step(log, 4, false) || step(log, 5, true) || step(log, 6, true)) { r = r + 4; }
+                let s = "";
+                for i | log { s = s + conv.int_to_string(i); }
+                io.print(s);
+                if (log.len() == 4) { r = r + 8; }
+                return r;
+            }
+        "#);
+    assert_eq!(stdout, "1245\n");
+    assert_eq!(code, 15);
+}
+
+#[test]
+fn test_mutual_recursion() {
+    let (_, _, code) = run(r#"
+            bool is_even(n: int) {
+                if (n == 0) { return true; }
+                return is_odd(n - 1);
+            }
+            bool is_odd(n: int) {
+                if (n == 0) { return false; }
+                return is_even(n - 1);
+            }
+            int main() {
+                let r = 0;
+                if (is_even(100)) { r = r + 1; }
+                if (is_odd(77)) { r = r + 2; }
+                if (!is_even(1)) { r = r + 4; }
+                return r;
+            }
+        "#);
+    assert_eq!(code, 7);
+}
+
+#[test]
+fn test_empty_string_and_growth() {
+    let (stdout, _, code) = run(r#"
+            import "std/io";
+            int main() {
+                let s = "";
+                let r = 0;
+                if (s.len() == 0) { r = r + 1; }
+                io.print(s);
+                let t = s + "x" + "";
+                if (t == "x" && t.len() == 1) { r = r + 2; }
+                let xs = new int[0];
+                for (let i = 0; i < 10000; i = i + 1) { xs.push(i); }
+                if (xs.len() == 10000 && xs[0] == 0 && xs[1234] == 1234 && xs[9999] == 9999) { r = r + 4; }
+                return r;
+            }
+        "#);
+    assert_eq!(stdout, "\n");
+    assert_eq!(code, 7);
+}
+
+#[test]
+fn test_negative_and_large_exit_codes() {
+    let (_, _, code) = run("int main() { return -1; }");
+    assert_eq!(code, 255);
+    let (_, _, code) = run("int main() { return 300; }");
+    assert_eq!(code, 44);
+}
+
+#[test]
+fn test_deep_early_return() {
+    let (_, _, code) = run(r#"
+            int find(grid: [[int]], want: int) {
+                for (let i = 0; i < grid.len(); i = i + 1) {
+                    for (let j = 0; j < grid[i].len(); j = j + 1) {
+                        if (grid[i][j] == want) {
+                            while (true) {
+                                return i * 10 + j;
+                            }
+                        }
+                    }
+                }
+                return -1;
+            }
+            int main() {
+                let inner_breaks = 0;
+                for (let i = 0; i < 3; i = i + 1) {
+                    for (let j = 0; j < 10; j = j + 1) {
+                        if (j == 1) { break; }
+                        inner_breaks = inner_breaks + 1;
+                    }
+                }
+                let grid = [[1, 2], [3, 4]];
+                return find(grid, 4) * 10 + inner_breaks + find(grid, 9) + 1;
+            }
+        "#);
+    assert_eq!(code, 113);
+}
+
+#[test]
+fn test_gc_survives_allocation_churn() {
+    let (_, stderr, code) = run_native_only(
+        r#"
+            struct Blob { data: [int], tag: int }
+            int main() {
+                let drift = 0;
+                for (let i = 0; i < 200000; i = i + 1) {
+                    let b = new Blob { data: new int[64], tag: i };
+                    b.data[63] = i;
+                    drift = drift + b.data[63] - b.tag;
+                }
+                return drift;
+            }
+        "#,
+    );
+    assert_eq!(code, 0, "{stderr}");
+}
+
+#[test]
 fn test_node_panics_on_missing_extern() {
     let dir = temp_dir();
     let entry = dir.join("main.kora");

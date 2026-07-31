@@ -235,7 +235,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                     Multiply => b.build_float_mul(l, r, "mul").unwrap().into(),
                     Divide   => b.build_float_div(l, r, "div").unwrap().into(),
                     Equality     => b.build_float_compare(FloatPredicate::OEQ, l, r, "eq").unwrap().into(),
-                    NotEquality  => b.build_float_compare(FloatPredicate::ONE, l, r, "ne").unwrap().into(),
+                    NotEquality  => b.build_float_compare(FloatPredicate::UNE, l, r, "ne").unwrap().into(),
                     Greater      => b.build_float_compare(FloatPredicate::OGT, l, r, "gt").unwrap().into(),
                     Less         => b.build_float_compare(FloatPredicate::OLT, l, r, "lt").unwrap().into(),
                     GreaterEqual => b.build_float_compare(FloatPredicate::OGE, l, r, "ge").unwrap().into(),
