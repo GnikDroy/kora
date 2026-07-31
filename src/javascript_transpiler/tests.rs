@@ -446,18 +446,18 @@ fn test_qualified_extern_calls_emit_the_bare_name() {
         vec![(
             "main.kora",
             r#"
-                import "std/time";
+                import "std/libc";
                 int main() {
-                    time.sleep(5);
+                    libc.usleep(5);
                     return 0;
                 }
             "#
             .to_string(),
         )],
-        HashSet::from(["sleep".to_string()]),
+        HashSet::from(["usleep".to_string()]),
     );
-    assert!(js.contains("(await sleep(5))"), "{js}");
-    assert!(!js.contains("time.sleep"), "{js}");
+    assert!(js.contains("(await usleep(5))"), "{js}");
+    assert!(!js.contains("libc.usleep"), "{js}");
     assert!(js.contains("async function __kora_main()"), "{js}");
 }
 
@@ -477,10 +477,10 @@ fn test_async_coloring_crosses_modules() {
             "#
             .to_string(),
         )],
-        HashSet::from(["__kora_getchar".to_string()]),
+        HashSet::from(["getchar".to_string()]),
     );
     assert!(js.contains("async function kora$std$io$input()"), "{js}");
-    assert!(js.contains("(await __kora_getchar())"), "{js}");
+    assert!(js.contains("(await getchar())"), "{js}");
     assert!(js.contains("async function __kora_main()"), "{js}");
     assert!(js.contains("(await kora$std$io$input())"), "{js}");
     assert!(js.contains("function kora$std$io$print("), "{js}");

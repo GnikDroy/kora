@@ -1,7 +1,10 @@
-extern float64 __kora_random();
+import "std/libc";
 
 real random() {
-    return __kora_random();
+    let hi = libc.rand() % 32768;
+    let mid = libc.rand() % 32768;
+    let lo = libc.rand() % 32768;
+    return (((hi * 32768 + mid) * 32768 + lo) as real) / 35184372088832.0;
 }
 
 int abs(n: int) {

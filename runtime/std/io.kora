@@ -1,8 +1,7 @@
-extern void __kora_write(s: cstring);
-extern int32 __kora_getchar();
+import "std/libc";
 
 void write(s: string) {
-    __kora_write(s);
+    libc.write(1, s, s.len());
 }
 
 void print(s: string) {
@@ -12,10 +11,10 @@ void print(s: string) {
 
 string? input() {
     let line = "";
-    let c = __kora_getchar();
+    let c = libc.getchar();
     while (c != -1 && c != ('\n' as int)) {
         line.push(c as char);
-        c = __kora_getchar();
+        c = libc.getchar();
     }
     if (c == -1 && line.len() == 0) {
         return none;

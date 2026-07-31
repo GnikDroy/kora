@@ -3,6 +3,7 @@
 use std::path::Path;
 
 const MODULES: &[(&str, &str)] = &[
+    ("std/libc", include_str!("../runtime/std/libc.kora")),
     ("std/conv", include_str!("../runtime/std/conv.kora")),
     ("std/io", include_str!("../runtime/std/io.kora")),
     ("std/term", include_str!("../runtime/std/term.kora")),

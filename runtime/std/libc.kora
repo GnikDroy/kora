@@ -1,0 +1,4 @@
+extern clong write(fd: cint, buf: cstring, n: csize);
+extern cint getchar();
+extern cint rand();
+extern cint usleep(us: cuint);
