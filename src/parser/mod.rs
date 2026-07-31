@@ -647,6 +647,10 @@ impl Parser {
             "Expected for: for (<init> <cond>; <step>) <statement>",
         )?;
 
+        if !matches!(self.peek()?.token, Token::Symbol(Symbol::LeftParen)) {
+            return self.parse_for_range_statement();
+        }
+
         self.pop_token(
             Token::Symbol(Symbol::LeftParen),
             "Expected (: for (<init> <cond>; <step>) <statement>",
@@ -679,6 +683,75 @@ impl Parser {
 
         let body = self.parse_statement()?;
         Ok(Statement::For(Box::new(init), cond, step, Box::new(body)))
+    }
+
+    /// for-range statement desugars to normal for loops.
+    /// { let $it = xs; for (let $i = 0; $i < $it.len(); $i = $i + 1) { let x = $it[$i]; <statement> } }
+    fn parse_for_range_statement(&mut self) -> Result<Statement, ParseErr> {
+        let var_start = self.current_start();
+        let variable = self.parse_identifier()?;
+        let var_span = self.span_from(var_start.clone());
+        self.pop_token(
+            Token::Symbol(Symbol::Pipe),
+            "Expected | after the loop variable: for <var> | <iterable> <statement>",
+        )?;
+        let iterable = self.parse_expression()?;
+        let body = self.parse_statement()?;
+        let span = self.span_from(var_start);
+
+        let n = iterable.id.index;
+        let it_name = format!("$it{n}");
+        let i_name = format!("$i{n}");
+
+        let it_binding = self.spanned(it_name.clone(), span.clone());
+        let let_it = self.spanned(Statement::Let(it_binding, None, iterable), span.clone());
+
+        let zero = self.spanned(Expression::IntegerLiteral(0), span.clone());
+        let i_binding = self.spanned(i_name.clone(), span.clone());
+        let let_i = self.spanned(Statement::Let(i_binding, None, zero), span.clone());
+
+        let i_ref = self.spanned(Expression::Identifier(i_name.clone()), span.clone());
+        let it_ref = self.spanned(Expression::Identifier(it_name.clone()), span.clone());
+        let len_access = self.spanned(
+            Expression::Access(Box::new(it_ref), "len".to_string()),
+            span.clone(),
+        );
+        let len_call = self.spanned(
+            Expression::Call(Box::new(len_access), Vec::new()),
+            span.clone(),
+        );
+        let cond = self.spanned(
+            Expression::Binary(Box::new(i_ref), BinaryOp::Less, Box::new(len_call)),
+            span.clone(),
+        );
+
+        let i_ref = self.spanned(Expression::Identifier(i_name.clone()), span.clone());
+        let one = self.spanned(Expression::IntegerLiteral(1), span.clone());
+        let next = self.spanned(
+            Expression::Binary(Box::new(i_ref), BinaryOp::Add, Box::new(one)),
+            span.clone(),
+        );
+        let i_ref = self.spanned(Expression::Identifier(i_name.clone()), span.clone());
+        let step = self.spanned(
+            Expression::Binary(Box::new(i_ref), BinaryOp::Assign, Box::new(next)),
+            span.clone(),
+        );
+
+        let it_ref = self.spanned(Expression::Identifier(it_name), span.clone());
+        let i_ref = self.spanned(Expression::Identifier(i_name), span.clone());
+        let element = self.spanned(
+            Expression::ArrayIndex(Box::new(it_ref), Box::new(i_ref)),
+            span.clone(),
+        );
+        let var_binding = self.spanned(variable, var_span.clone());
+        let let_element = self.spanned(Statement::Let(var_binding, None, element), var_span);
+
+        let inner = self.spanned(Statement::Compound(vec![let_element, body]), span.clone());
+        let for_loop = self.spanned(
+            Statement::For(Box::new(let_i), cond, step, Box::new(inner)),
+            span.clone(),
+        );
+        Ok(Statement::Compound(vec![let_it, for_loop]))
     }
 
     fn parse_break_statement(&mut self) -> Result<Statement, ParseErr> {
@@ -1494,6 +1567,10 @@ mod tests {
                 "for (let i: int = 0; i < 10; i = i + 1) { i; }",
                 "for (; true; x) ;",
                 "for (x; x == y; f(x)) { break; continue; }",
+                "for x | xs { f(x); }",
+                "for c | \"hi\" g(c);",
+                "for x | a | b ;",
+                "for x | f() { break; continue; }",
             ],
             &[
                 "for",
@@ -1501,6 +1578,10 @@ mod tests {
                 "for (;;) ;",
                 "for (; true; x)",
                 "for (; true; x;) ;",
+                "for x xs { }",
+                "for | xs { }",
+                "for x | ;",
+                "for (x | xs) { }",
             ],
             Parser::parse_for_statement,
         )

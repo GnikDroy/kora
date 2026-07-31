@@ -618,6 +618,45 @@ fn test_std_math() {
 }
 
 #[test]
+fn test_for_range_loops() {
+    let (stdout, _, code) = run(r#"
+            import "std/conv";
+            import "std/io";
+            struct P { x: int }
+            int main() {
+                let total = 0;
+                for x | [1, 2, 3, 4] {
+                    if (x == 2) { continue; }
+                    if (x == 4) { break; }
+                    total = total + x;
+                }
+                let nested = 0;
+                for row | [[10, 20], [30]] {
+                    for v | row {
+                        nested = nested + v;
+                    }
+                }
+                for c | "ab" io.write([c]);
+                io.write("\n");
+                let ps = [new P { x: 1 }, new P { x: 2 }];
+                for p | ps {
+                    p.x = p.x * 10;
+                }
+                io.print(conv.int_to_string(ps[0].x + ps[1].x));
+                let xs = [1];
+                let walked = 0;
+                for x | xs {
+                    walked = walked + 1;
+                    if (xs.len() < 3) { xs.push(0); }
+                }
+                return total * 50 + nested / 10 + walked;
+            }
+        "#);
+    assert_eq!(stdout, "ab\n30\n");
+    assert_eq!(code, 209);
+}
+
+#[test]
 fn test_std_time_now() {
     let (_, _, code) = run(r#"
             import "std/time";

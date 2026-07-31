@@ -112,6 +112,25 @@ mod tests {
     }
 
     #[test]
+    fn test_for_range_statement_types() {
+        check_cases(&[
+            (
+                "int main() { let s = 0; for x | [1, 2, 3] { s = s + x; } return s; }",
+                true,
+            ),
+            (
+                r#"int main() { let n = 0; for c | "hi" { if (c == 'h') { n = n + 1; } } return n; }"#,
+                true,
+            ),
+            (
+                "int main() { for row | [[1], [2]] { for v | row { return v; } } return 0; }",
+                true,
+            ),
+            ("int main() { for x | 5 { } return 0; }", false),
+        ]);
+    }
+
+    #[test]
     fn test_bare_return_matrix() {
         check_cases(&[
             (

@@ -192,6 +192,7 @@ statement   = ";"
             | "if" "(" expr ")" statement [ "else" statement ]
             | "while" "(" expr ")" statement
             | "for" "(" forinit expr ";" expr ")" statement
+            | "for" ident "|" expr statement
             | block ;
 forinit     = ";" | expr ";" | "let" ident [ ":" type ] "=" expr ";" ;
 block       = "{" { statement } "}" ;
