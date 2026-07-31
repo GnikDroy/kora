@@ -23,6 +23,7 @@ pub enum Keyword {
     Continue,
     Import,
     None,
+    Opaque,
 }
 
 impl TryFrom<&str> for Keyword {
@@ -53,6 +54,7 @@ impl TryFrom<&str> for Keyword {
             "continue" => Ok(Keyword::Continue),
             "import" => Ok(Keyword::Import),
             "none"   => Ok(Keyword::None),
+            "opaque" => Ok(Keyword::Opaque),
             _ => Err(()),
         }
     }

@@ -77,6 +77,9 @@ pub fn binary_result(left: &Type, op: &BinaryOp, right: &Type) -> Option<Type> {
         (Char, GreaterEqual, Char) => Some(Bool),
         (Char, LessEqual, Char)    => Some(Bool),
 
+        (Opaque, Equality, Opaque)    => Some(Bool),
+        (Opaque, NotEquality, Opaque) => Some(Bool),
+
         (l @ Array(_), Equality | NotEquality, r) if l == r && is_comparable(l) => Some(Bool),
         (l @ Array(_), Add, r) if l == r => Some(l.clone()),
         _ => None,
@@ -117,14 +120,14 @@ pub fn is_cast_possible(from: &Type, to: &Type) -> bool {
 
 pub fn is_comparable(ty: &Type) -> bool {
     match ty {
-        Type::Int | Type::Real | Type::Bool | Type::Char => true,
+        Type::Int | Type::Real | Type::Bool | Type::Char | Type::Opaque => true,
         Type::Array(inner) | Type::Optional(inner) => is_comparable(inner),
         Type::Struct(_) | Type::Function(_, _) => false,
     }
 }
 
 pub fn is_reference(ty: &Type) -> bool {
-    matches!(ty, Type::Array(_) | Type::Struct(_))
+    matches!(ty, Type::Array(_) | Type::Struct(_) | Type::Opaque)
 }
 
 pub fn is_scalar(ty: &Type) -> bool {

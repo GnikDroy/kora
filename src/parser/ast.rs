@@ -146,6 +146,7 @@ pub struct IdentifierTypePair {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Type {
     Int,
+    Opaque,
     Real,
     Bool,
     Char,

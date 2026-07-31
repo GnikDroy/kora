@@ -766,6 +766,7 @@ impl Parser {
             Token::Keyword(Keyword::Real) => Ok(Type::Real),
             Token::Keyword(Keyword::Char) => Ok(Type::Char),
             Token::Keyword(Keyword::Bool) => Ok(Type::Bool),
+            Token::Keyword(Keyword::Opaque) => Ok(Type::Opaque),
             Token::Keyword(Keyword::String) => Ok(Type::Array(Box::new(Type::Char))),
             Token::Identifier(name) => Ok(Type::Struct(self.spanned(name, span))),
             Token::Symbol(Symbol::LeftBracket) => {
@@ -1253,6 +1254,9 @@ mod tests {
                 "[int?]",
                 "Node?",
                 "string?",
+                "opaque",
+                "opaque?",
+                "[opaque]",
             ],
             &[
                 "", "2000", "{0}", "[int", "]", "void", "[void]", "int??", "?int",

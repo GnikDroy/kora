@@ -355,6 +355,7 @@ impl TypeChecker<'_> {
                 }
                 let ok = match typename {
                     Type::Struct(name) => self.struct_is_default_constructible(&name.node),
+                    Type::Opaque => true,
                     other => builtins::is_scalar(other),
                 };
                 if !ok {
@@ -1231,6 +1232,65 @@ mod tests {
                 r#"int main() { let a: int? = 1; let b: real? = 2.0; if (a == b) { } return 0; }"#,
                 false,
             ),
+        ]);
+    }
+
+    #[test]
+    fn test_opaque() {
+        check_cases(&[
+            (
+                r#"extern opaque make();
+                   extern void use_handle(h: opaque);
+                   opaque pass(h: opaque) { return h; }
+                   struct S { h: opaque, m: opaque? }
+                   int main() {
+                       let a = make();
+                       use_handle(pass(a));
+                       let s = new S { h: a, m: none };
+                       s.m = a;
+                       let xs = [a, make()];
+                       let ys = new opaque[3];
+                       let r = 0;
+                       if (a == a && a != make()) { r = r + 1; }
+                       if (s.m != none && s.m! == a) { r = r + 2; }
+                       if (xs == ys) { r = r + 4; }
+                       return r;
+                   }"#,
+                true,
+            ),
+            (
+                "extern opaque? maybe(); int main() { if (maybe() == none) { return 1; } return 0; }",
+                true,
+            ),
+            (
+                "extern opaque make(); int main() { let h = make(); return h + h; }",
+                false,
+            ),
+            (
+                "extern opaque make(); int main() { let h = make(); return h as int; }",
+                false,
+            ),
+            (
+                "extern opaque make(); int main() { return 5 as opaque; }",
+                false,
+            ),
+            (
+                "extern opaque make(); int main() { let x = make()[0]; return 0; }",
+                false,
+            ),
+            (
+                "extern opaque make(); int main() { let x = make().field; return 0; }",
+                false,
+            ),
+            (
+                "extern opaque make(); int main() { let c = copy(make()); return 0; }",
+                false,
+            ),
+            (
+                "extern opaque make(); int main() { if (make() < make()) { return 1; } return 0; }",
+                false,
+            ),
+            ("int main() { let h: opaque = none; return 0; }", false),
         ]);
     }
 

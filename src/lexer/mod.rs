@@ -487,6 +487,8 @@ mod tests {
             ("break", Keyword::Break),
             ("continue", Keyword::Continue),
             ("import", Keyword::Import),
+            ("none", Keyword::None),
+            ("opaque", Keyword::Opaque),
         ];
         for (source, keyword) in cases {
             let toks = Lexer::lex(source).unwrap();
