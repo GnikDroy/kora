@@ -24,6 +24,7 @@ pub fn link(llvm: &Module, output: &Path) -> Result<(), LinkErr> {
             Command::new("cc")
                 .arg(&object_path)
                 .arg(&runtime_path)
+                .arg("-lm")
                 .arg("-o")
                 .arg(output)
                 .status()
