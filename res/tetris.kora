@@ -1,3 +1,4 @@
+import "std/time";
 import "std/conv";
 import "std/math";
 
@@ -328,12 +329,12 @@ int main() {
 
     game.spawn();
     game.render();
-    sleep(800);
+    time.sleep(800);
 
     while (game.alive && !is_key_down("q")) {
         game.tick();
         if (game.alive) { game.render(); }
-        sleep(40);
+        time.sleep(40);
     }
 
     game_over(game.score);

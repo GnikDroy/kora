@@ -1,3 +1,4 @@
+import "std/time";
 import "std/conv";
 import "std/math";
 
@@ -364,7 +365,7 @@ int main() {
         world.handle_input();
         world.update();
         world.render();
-        sleep(30);
+        time.sleep(30);
     }
 
     world.render();

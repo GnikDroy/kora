@@ -1,3 +1,4 @@
+import "std/time";
 import "std/conv";
 import "std/math";
 
@@ -136,13 +137,13 @@ int main() {
 
     game.place_food();
     game.render();
-    sleep(1000);
+    time.sleep(1000);
 
     while (game.alive && !is_key_down("q")) {
         game.steer();
         game.step();
         if (game.alive) { game.render(); }
-        sleep(100);
+        time.sleep(100);
     }
 
     game_over(game.score);

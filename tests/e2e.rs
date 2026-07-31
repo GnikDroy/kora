@@ -6,8 +6,6 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use inkwell::context::Context;
-
 static NEXT_DIR: AtomicUsize = AtomicUsize::new(0);
 
 fn temp_dir() -> PathBuf {
@@ -76,6 +74,39 @@ fn run_program(files: &[(&str, &str)]) -> (String, String, i32) {
 
 fn run(source: &str) -> (String, String, i32) {
     run_program(&[("main.kora", source)])
+}
+
+fn run_native_only(source: &str) -> (String, String, i32) {
+    let dir = temp_dir();
+    let program = frontend(&dir, &[("main.kora", source)]);
+    let binary = dir.join("main");
+    kora::backend::native(&program, &binary).expect("build");
+    let out = exec(&mut Command::new(&binary), b"");
+    std::fs::remove_dir_all(&dir).ok();
+    out
+}
+
+#[test]
+fn test_native_libc_bindings() {
+    let (_, stderr, code) = run_native_only(
+        r#"
+            extern cint abs(x: cint);
+            extern cint atoi(s: cstring);
+            extern csize strlen(s: cstring);
+            extern cstring? getenv(name: cstring);
+            int main() {
+                let r = 0;
+                if (abs(0 - 42) == 42) { r = r + 1; }
+                if (atoi("123") == 123) { r = r + 2; }
+                if (strlen("hello") == 5) { r = r + 4; }
+                if (getenv("KORA_E2E_DEFINITELY_UNSET") == none) { r = r + 8; }
+                let path = getenv("PATH");
+                if (path != none && path!.len() > 0) { r = r + 16; }
+                return r;
+            }
+        "#,
+    );
+    assert_eq!(code, 31, "{stderr}");
 }
 
 #[test]
@@ -486,23 +517,6 @@ fn test_input_reads_lines_until_eof() {
 }
 
 #[test]
-fn test_native_scalar_optional_extern_is_rejected() {
-    let dir = temp_dir();
-    let program = frontend(
-        &dir,
-        &[("main.kora", "extern int? bad();\nint main() { return 0; }")],
-    );
-    let context = Context::create();
-    let err = kora::codegen::lower(&context, &program).unwrap_err();
-    std::fs::remove_dir_all(&dir).ok();
-    assert!(
-        err.to_string()
-            .contains("scalar optionals cannot cross the extern boundary"),
-        "{err}"
-    );
-}
-
-#[test]
 fn test_multi_module() {
     let (_, _, code) = run_program(&[
         (
@@ -629,11 +643,11 @@ fn test_clear_sleep_random() {
             import "std/term";
             import "std/io";
             import "std/math";
-            extern void sleep(ms: int);
+            import "std/time";
             int main() {
                 term.clear();
                 io.print("fresh");
-                sleep(50);
+                time.sleep(50);
                 let a = math.random();
                 let b = math.random();
                 let r = 0;

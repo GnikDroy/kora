@@ -1,4 +1,4 @@
-extern real __kora_random();
+extern float64 __kora_random();
 
 real random() {
     return __kora_random();

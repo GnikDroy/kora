@@ -77,7 +77,7 @@ fn test_methods_emit_mangled_global_functions() {
 fn test_async_coloring_propagates_through_method_calls() {
     let js = transpile_with_async(
         r#"
-            extern int read_key();
+            extern int32 read_key();
             struct P { x: int }
             impl P {
                 int ask(self) { return read_key(); }
@@ -437,6 +437,28 @@ fn test_str_module_transpiles_and_cross_calls_within_module() {
         "{js}"
     );
     assert!(js.contains("kora$std$str$contains("), "{js}");
+}
+
+#[test]
+fn test_qualified_extern_calls_emit_the_bare_name() {
+    let js = transpile_program(
+        "main.kora",
+        vec![(
+            "main.kora",
+            r#"
+                import "std/time";
+                int main() {
+                    time.sleep(5);
+                    return 0;
+                }
+            "#
+            .to_string(),
+        )],
+        HashSet::from(["sleep".to_string()]),
+    );
+    assert!(js.contains("(await sleep(5))"), "{js}");
+    assert!(!js.contains("time.sleep"), "{js}");
+    assert!(js.contains("async function __kora_main()"), "{js}");
 }
 
 #[test]

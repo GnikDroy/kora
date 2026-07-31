@@ -1,3 +1,4 @@
+import "std/time";
 import "std/conv";
 
 # Mandelbrot set: the classic escape-time fractal, rendered pixel-by-pixel to
@@ -55,7 +56,7 @@ int main() {
             fill_rect(px, py, 1, 1);
         }
         # Yield every few rows so the image reveals progressively.
-        if (py % 24 == 0) { sleep(0); }
+        if (py % 24 == 0) { time.sleep(0); }
     }
     return 0;
 }

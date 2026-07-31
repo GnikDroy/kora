@@ -164,14 +164,22 @@ member      = ident ":" type ;
 impl        = "impl" ident "{" { method } "}" ;
 method      = rettype ident "(" "self" [ "," [ param { "," param } [ "," ] ] ] ")" block ;
 
-extern      = "extern" rettype ident "(" params ")" ";" ;
+extern      = "extern" ( "void" | externtype ) ident "(" externparams ")" ";" ;
+externparams= [ externparam { "," externparam } [ "," ] ] ;
+externparam = ident ":" externtype ;
+externtype  = "int8" | "int16" | "int32" | "int64"       (* C types only *)
+            | "uint8" | "uint16" | "uint32" | "uint64"
+            | "float32" | "float64" | "bool" | "char"
+            | "cint" | "cuint" | "clong" | "culong" | "csize"
+            | ( "cstring" | "opaque" ) [ "?" ] ;
+
 function    = rettype ident "(" params ")" block ;
 rettype     = "void" | type ;
 params      = [ param { "," param } [ "," ] ] ;
 param       = ident ":" type ;
 
 type        = basetype [ "?" ] ;                (* "?" makes it optional *)
-basetype    = "int" | "real" | "char" | "bool" | "string"
+basetype    = "int" | "real" | "char" | "bool" | "string" | "opaque"
             | ident                      (* struct name *)
             | "[" type "]" ;
 

@@ -1236,6 +1236,40 @@ mod tests {
     }
 
     #[test]
+    fn test_extern_ctype_projection() {
+        check_cases(&[
+            (
+                "extern int32 f(x: int8); int main() { return f(300); }",
+                true,
+            ),
+            (
+                "extern float32 g(x: float32); int main() { let y: real = g(1.5); return 0; }",
+                true,
+            ),
+            (
+                r#"extern cstring h(s: cstring); int main() { let t: string = h("x"); return t.len(); }"#,
+                true,
+            ),
+            (
+                r#"extern cstring? e(n: cstring); int main() { if (e("p") == none) { return 1; } return 0; }"#,
+                true,
+            ),
+            (
+                r#"extern csize strlen(s: cstring); int main() { return strlen("abc"); }"#,
+                true,
+            ),
+            (
+                "extern int32 f(); int main() { let x: real = f(); return 0; }",
+                false,
+            ),
+            (
+                "extern void f(x: float32); int main() { f(1); return 0; }",
+                false,
+            ),
+        ]);
+    }
+
+    #[test]
     fn test_opaque() {
         check_cases(&[
             (

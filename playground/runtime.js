@@ -1,37 +1,28 @@
-export const RUNTIME_EXTERNS = `
-extern void __kora_write(s: string);
-extern int __kora_getchar();
-extern real __kora_random();
-extern void sleep(ms: int);
-`;
-
 export const CANVAS_EXTERNS = `
-extern bool is_key_down(key: string);
+extern bool is_key_down(key: cstring);
 extern void draw_clear();
-extern void set_color(c: string);
-extern void fill_rect(x: int, y: int, w: int, h: int);
-extern void fill_circle(x: int, y: int, r: int);
-extern void draw_text(s: string, x: int, y: int);
-extern void stroke_rect(x: int, y: int, w: int, h: int);
-extern void stroke_circle(x: int, y: int, r: int);
-extern void draw_line(x1: int, y1: int, x2: int, y2: int);
-extern void fill_triangle(x1: int, y1: int, x2: int, y2: int, x3: int, y3: int);
-extern void set_line_width(w: int);
-extern void set_font_size(px: int);
-extern void set_alpha(a: real);
-extern int canvas_width();
-extern int canvas_height();
-extern int text_width(s: string);
-extern int mouse_x();
-extern int mouse_y();
+extern void set_color(c: cstring);
+extern void fill_rect(x: int64, y: int64, w: int64, h: int64);
+extern void fill_circle(x: int64, y: int64, r: int64);
+extern void draw_text(s: cstring, x: int64, y: int64);
+extern void stroke_rect(x: int64, y: int64, w: int64, h: int64);
+extern void stroke_circle(x: int64, y: int64, r: int64);
+extern void draw_line(x1: int64, y1: int64, x2: int64, y2: int64);
+extern void fill_triangle(x1: int64, y1: int64, x2: int64, y2: int64, x3: int64, y3: int64);
+extern void set_line_width(w: int64);
+extern void set_font_size(px: int64);
+extern void set_alpha(a: float64);
+extern int64 canvas_width();
+extern int64 canvas_height();
+extern int64 text_width(s: cstring);
+extern int64 mouse_x();
+extern int64 mouse_y();
 extern bool is_mouse_down();
 extern void save();
 extern void restore();
-extern void translate(x: int, y: int);
-extern void rotate(a: real);
+extern void translate(x: int64, y: int64);
+extern void rotate(a: float64);
 `;
-
-export const EXTERNS = RUNTIME_EXTERNS + CANVAS_EXTERNS;
 
 // The subset of EXTERNS that blocks on a Promise.
 export const ASYNC_EXTERNS = ["__kora_getchar", "sleep"];

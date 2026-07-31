@@ -105,11 +105,57 @@ pub struct Struct {
     pub members: Vec<Spanned<IdentifierTypePair>>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum ExternType {
+    Int8,
+    Int16,
+    Int32,
+    Int64,
+    UInt8,
+    UInt16,
+    UInt32,
+    UInt64,
+    Float32,
+    Float64,
+    Bool,
+    Char,
+    CString,
+    Opaque,
+    CInt,
+    CUInt,
+    CLong,
+    CULong,
+    CSize,
+    Optional(Box<ExternType>),
+}
+
+impl ExternType {
+    pub fn projection(&self) -> Type {
+        use ExternType::*;
+        match self {
+            Int8 | Int16 | Int32 | Int64 | UInt8 | UInt16 | UInt32 | UInt64 | CInt | CUInt
+            | CLong | CULong | CSize => Type::Int,
+            Float32 | Float64 => Type::Real,
+            ExternType::Bool => Type::Bool,
+            ExternType::Char => Type::Char,
+            CString => Type::Array(Box::new(Type::Char)),
+            ExternType::Opaque => Type::Opaque,
+            Optional(inner) => Type::Optional(Box::new(inner.projection())),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ExternParameter {
+    pub typename: ExternType,
+    pub name: String,
+}
+
 #[derive(Debug)]
 pub struct ExternFunction {
-    pub return_type: Option<Type>,
+    pub return_type: Option<ExternType>,
     pub name: String,
-    pub arguments: Vec<Spanned<IdentifierTypePair>>,
+    pub arguments: Vec<Spanned<ExternParameter>>,
 }
 
 #[derive(Debug)]
@@ -120,15 +166,24 @@ pub struct Function {
     pub statement: Spanned<Statement>,
 }
 
-impl ExternFunction {
+impl Function {
     pub fn get_type(&self) -> Type {
         get_type(&self.return_type, &self.arguments)
     }
 }
 
-impl Function {
+impl ExternFunction {
     pub fn get_type(&self) -> Type {
-        get_type(&self.return_type, &self.arguments)
+        let args = self
+            .arguments
+            .iter()
+            .map(|arg| arg.node.typename.projection())
+            .collect();
+        let ret = self
+            .return_type
+            .as_ref()
+            .map(|ty| Box::new(ty.projection()));
+        Type::Function(ret, args)
     }
 }
 

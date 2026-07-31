@@ -35,10 +35,28 @@ fn run_main_files(files: &[(&str, &str)]) -> i64 {
         0xB0 as *const u8
     }
 
+    extern "C" fn jit_ret_neg_i32() -> i32 {
+        -7
+    }
+    extern "C" fn jit_ret_max_u32() -> u32 {
+        u32::MAX
+    }
+    extern "C" fn jit_echo_i32(x: i32) -> i32 {
+        x
+    }
+    extern "C" fn jit_ret_half_f32() -> f32 {
+        0.5
+    }
+
     let stand_ins = [
         ("__kora_panic", jit_panic as *const ()),
         ("make_handle_a", jit_handle_a as *const ()),
         ("make_handle_b", jit_handle_b as *const ()),
+        ("ret_neg_i32", jit_ret_neg_i32 as *const ()),
+        ("ret_max_u32", jit_ret_max_u32 as *const ()),
+        ("echo_i32", jit_echo_i32 as *const ()),
+        ("ret_half_f32", jit_ret_half_f32 as *const ()),
+        ("kora", jit_echo_i32 as *const ()),
     ];
     for (name, addr) in stand_ins {
         if let Some(f) = llvm.get_function(name) {
@@ -295,4 +313,37 @@ fn test_opaque_handles() {
         "#,
     );
     assert_eq!(result, 63);
+}
+
+#[test]
+fn test_extern_scalar_marshalling() {
+    let result = run_main(
+        r#"
+            extern int32 ret_neg_i32();
+            extern uint32 ret_max_u32();
+            extern int32 echo_i32(x: int32);
+            extern float32 ret_half_f32();
+            int main() {
+                let r = 0;
+                if (ret_neg_i32() == -7) { r = r + 1; }
+                if (ret_max_u32() == 4294967295) { r = r + 2; }
+                if (echo_i32(4294967296 + 5) == 5) { r = r + 4; }
+                if (ret_half_f32() == 0.5) { r = r + 8; }
+                return r;
+            }
+        "#,
+    );
+    assert_eq!(result, 15);
+}
+
+#[test]
+fn test_thunk_names_cannot_collide_with_mangled_functions() {
+    let result = run_main(
+        r#"
+            extern int32 kora(x: int32);
+            int thunk() { return 2; }
+            int main() { return kora(40) + thunk(); }
+        "#,
+    );
+    assert_eq!(result, 42);
 }

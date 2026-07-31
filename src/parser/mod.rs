@@ -848,6 +848,75 @@ impl Parser {
         Ok(self.spanned(Import { path, alias }, span))
     }
 
+    fn parse_extern_typename(&mut self) -> Result<ExternType, ParseErr> {
+        let token = self.pop()?;
+        let base = match &token.token {
+            Token::Identifier(name) => match name.as_str() {
+                "int8" => Ok(ExternType::Int8),
+                "int16" => Ok(ExternType::Int16),
+                "int32" => Ok(ExternType::Int32),
+                "int64" => Ok(ExternType::Int64),
+                "uint8" => Ok(ExternType::UInt8),
+                "uint16" => Ok(ExternType::UInt16),
+                "uint32" => Ok(ExternType::UInt32),
+                "uint64" => Ok(ExternType::UInt64),
+                "float32" => Ok(ExternType::Float32),
+                "float64" => Ok(ExternType::Float64),
+                "cstring" => Ok(ExternType::CString),
+                "cint" => Ok(ExternType::CInt),
+                "cuint" => Ok(ExternType::CUInt),
+                "clong" => Ok(ExternType::CLong),
+                "culong" => Ok(ExternType::CULong),
+                "csize" => Ok(ExternType::CSize),
+                _ => Err(()),
+            },
+            Token::Keyword(Keyword::Bool) => Ok(ExternType::Bool),
+            Token::Keyword(Keyword::Char) => Ok(ExternType::Char),
+            Token::Keyword(Keyword::Opaque) => Ok(ExternType::Opaque),
+            _ => Err(()),
+        }
+        .map_err(|_| ParseErr {
+            msg: "Extern signatures use C types: int8..int64, uint8..uint64, float32, \
+                  float64, bool, char, cstring, opaque, or cint/cuint/clong/culong/csize",
+            token: Some(token.clone()),
+        })?;
+
+        if let Ok(next) = self.peek()
+            && matches!(next.token, Token::Symbol(Symbol::Question))
+        {
+            let question = self.pop()?;
+            if !matches!(base, ExternType::CString | ExternType::Opaque) {
+                return Err(ParseErr {
+                    msg: "Only pointer types can be optional in extern signatures: cstring? or opaque?",
+                    token: Some(question),
+                });
+            }
+            return Ok(ExternType::Optional(Box::new(base)));
+        }
+        Ok(base)
+    }
+
+    fn parse_extern_return_type(&mut self) -> Result<Option<ExternType>, ParseErr> {
+        if matches!(self.peek()?.token, Token::Keyword(Keyword::Void)) {
+            self.pop()?;
+            Ok(None)
+        } else {
+            Ok(Some(self.parse_extern_typename()?))
+        }
+    }
+
+    fn parse_extern_parameter(&mut self) -> Result<Spanned<ExternParameter>, ParseErr> {
+        let start = self.current_start();
+        let name = self.parse_identifier()?;
+        self.pop_token(
+            Token::Symbol(Symbol::Colon),
+            "Expected colon after identifier: <identifier> : <ctype>",
+        )?;
+        let typename = self.parse_extern_typename()?;
+        let span = self.span_from(start);
+        Ok(self.spanned(ExternParameter { name, typename }, span))
+    }
+
     fn parse_extern_function(&mut self) -> Result<Spanned<ExternFunction>, ParseErr> {
         let start = self.current_start();
         self.pop_token(
@@ -855,9 +924,14 @@ impl Parser {
             "Expected function declaration",
         )?;
 
-        let return_type = self.parse_return_type()?;
+        let return_type = self.parse_extern_return_type()?;
         let name = self.parse_identifier()?;
-        let arguments = self.parse_function_parameters()?;
+        let arguments = self.parse_generic_delimited(
+            Token::Symbol(Symbol::LeftParen),
+            Token::Symbol(Symbol::RightParen),
+            Token::Symbol(Symbol::Comma),
+            Parser::parse_extern_parameter,
+        )?;
 
         self.pop_token(
             Token::Symbol(Symbol::Semicolon),
@@ -1119,7 +1193,7 @@ mod tests {
     #[test]
     fn test_parse_module() {
         test_parser(
-            &["", "int main(){}", "extern int a(); int b(){} int c(){}"],
+            &["", "int main(){}", "extern int64 a(); int b(){} int c(){}"],
             &[
                 "i",
                 "int main()",
@@ -1518,16 +1592,25 @@ mod tests {
     fn test_parse_extern_function() {
         test_parser(
             &[
-                "extern int main();",
-                "extern bool main();",
-                "extern int main(a: int, b : int, c: int);",
-                "extern [bool] main();",
+                "extern int32 f();",
+                "extern bool f();",
+                "extern void f();",
+                "extern int64 f(a: cint, b : uint8, c: csize);",
+                "extern float32 sinf(x: float32);",
+                "extern cstring? getenv(name: cstring);",
+                "extern opaque? fopen(path: cstring, mode: cstring);",
             ],
             &[
-                "extern int main(){}",
-                "extern int ();",
-                "extern int main(c: int;",
-                "extern int main(a: int)",
+                "extern int32 f(){}",
+                "extern int32 ();",
+                "extern int32 f(c: int32;",
+                "extern int32 f(a: int32)",
+                "extern int f();",
+                "extern real f();",
+                "extern string f();",
+                "extern [bool] f();",
+                "extern int32? f();",
+                "extern S f(s: S);",
             ],
             Parser::parse_extern_function,
         );

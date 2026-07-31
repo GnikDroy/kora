@@ -28,12 +28,12 @@ void sleep(long ms) {
   nanosleep(&duration, NULL);
 }
 
-void __kora_write(const KoraArray *s) {
-  fwrite(s->buf, 1, s->len, stdout);
+void __kora_write(const char *s) {
+  fputs(s, stdout);
   fflush(stdout);
 }
 
-long __kora_getchar(void) { return getchar(); }
+int __kora_getchar(void) { return getchar(); }
 
 double __kora_random(void) {
   static int seeded = 0;

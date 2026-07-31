@@ -57,6 +57,13 @@ KoraArray *__kora_array_lit(const void *data, long len, long elem_size) {
   return a;
 }
 
+KoraArray *__kora_array_from_cstring(const char *s) {
+  if (s == NULL) {
+    return NULL;
+  }
+  return __kora_array_lit(s, (long)strlen(s), 1);
+}
+
 void __kora_array_push(KoraArray *a, const void *elem, long elem_size) {
   ensure_capacity(a, a->len + 1, elem_size);
   memcpy(slot(a, a->len, elem_size), elem, elem_size);

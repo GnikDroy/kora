@@ -1,3 +1,4 @@
+import "std/time";
 import "std/conv";
 
 # Pong. Your paddle is on the left: ArrowUp / ArrowDown to move. The right
@@ -134,7 +135,7 @@ int main() {
     let ai = new Paddle { x: screen_width() - 20 - paddle_width(), y: middle, score: 0 };
 
     render(ball, player, ai);
-    sleep(800);
+    time.sleep(800);
 
     while (!is_key_down("q") && player.score < 11 && ai.score < 11) {
         if (is_key_down("ArrowUp"))   { player.nudge(-7); }
@@ -157,7 +158,7 @@ int main() {
         }
 
         render(ball, player, ai);
-        sleep(16);
+        time.sleep(16);
     }
 
     render_result(player, ai);

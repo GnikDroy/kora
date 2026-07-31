@@ -2,6 +2,7 @@ mod aggregates;
 mod arrays;
 mod errors;
 mod expression;
+mod externs;
 mod link;
 mod optionals;
 mod statement;
@@ -101,27 +102,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
         is_entry: bool,
     ) -> Result<(), CodegenErr> {
         for func in module.extern_functions.iter() {
-            // The C ABI of a by-value struct {i8, T} is compiler/platform dependent.
-            // only reference optionals (pointers) should cross C.
-            // C also doesn't have optionals. extern really shouldn't be using optionals for scalars.
-            let scalar_optional =
-                |ty: &Type| matches!(ty, Type::Optional(inner) if !is_reference(inner));
-            let arguments = func.node.arguments.iter();
-            if arguments.clone().any(|p| scalar_optional(&p.node.typename))
-                || func.node.return_type.as_ref().is_some_and(scalar_optional)
-            {
-                return Err(CodegenErr {
-                    msg: "scalar optionals cannot cross the extern boundary",
-                    span: func.span.clone(),
-                });
-            }
-            drop(arguments);
-            self.declare_function(
-                func.id,
-                &func.node.name,
-                &func.node.return_type,
-                &func.node.arguments,
-            )?;
+            self.declare_extern_function(func);
         }
         for func in module.functions.iter() {
             let name = if is_entry && func.node.name == "main" {
@@ -294,7 +275,12 @@ impl<'ctx> CodeGen<'ctx, '_> {
     }
 
     fn panic_if(&mut self, failed: IntValue<'ctx>, message: &'static str) {
-        let function = self.frame().function;
+        let function = self
+            .builder
+            .get_insert_block()
+            .unwrap()
+            .get_parent()
+            .unwrap();
         let panic_block = self.context.append_basic_block(function, "panic");
         let cont_block = self.context.append_basic_block(function, "cont");
         self.builder

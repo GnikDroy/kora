@@ -9,7 +9,7 @@ import {
 } from "./editor.js";
 import {
   ASYNC_EXTERNS,
-  EXTERNS,
+  CANVAS_EXTERNS,
   appendOutput,
   clearOutput,
   fitTerminal,
@@ -199,7 +199,7 @@ export async function run() {
 
     let compiled;
     try {
-      compiled = transpile(getSource() + EXTERNS, ASYNC_EXTERNS);
+      compiled = transpile(getSource() + CANVAS_EXTERNS, ASYNC_EXTERNS);
     } catch (err) {
       setCompileErrors(String(err));
       appendOutput(String(err));

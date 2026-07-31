@@ -420,13 +420,7 @@ pub fn walk_function<V: ASTVisitor>(visitor: &mut V, func: &Spanned<Function>) {
 
 pub fn walk_extern_function<V: ASTVisitor>(visitor: &mut V, func: &Spanned<ExternFunction>) {
     visitor.visit_enter_scope();
-    if let Some(return_type) = &func.node.return_type {
-        visitor.visit_typename(return_type);
-    }
     visitor.visit_identifier(&func.node.name);
-    for arg in func.node.arguments.iter() {
-        visitor.visit_identifier_type_pair(arg);
-    }
     visitor.visit_exit_scope();
 }
 

@@ -11,7 +11,7 @@ use crate::semantic_analyzer::ArrayMethod;
 
 impl<'ctx> CodeGen<'ctx, '_> {
     /// { i64 len, i64 cap, ptr buf }
-    fn array_header_type(&mut self) -> StructType<'ctx> {
+    pub(super) fn array_header_type(&mut self) -> StructType<'ctx> {
         if let Some(ty) = self.struct_types.get("k.array") {
             return *ty;
         }

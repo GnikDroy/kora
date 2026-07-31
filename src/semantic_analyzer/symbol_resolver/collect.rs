@@ -72,12 +72,6 @@ impl<'a> GlobalsCollector<'a> {
     fn collect_function_signatures(&mut self, module: &Module) -> Scope {
         let mut scope = Scope::new();
         for func in module.extern_functions.iter() {
-            if let Some(return_type) = &func.node.return_type {
-                check_typename(self.table, self.errors, return_type);
-            }
-            for arg in func.node.arguments.iter() {
-                check_typename(self.table, self.errors, &arg.node.typename);
-            }
             let id =
                 self.table
                     .add_symbol(func.id, func.node.name.clone(), Some(func.node.get_type()));
@@ -216,7 +210,7 @@ mod tests {
     fn test_rejects_duplicate_globals() {
         let cases = [
             r#"int f() { return 0; } int f() { return 1; } int main() { return 0; }"#,
-            r#"extern int g(a: int); int g(a: int) { return a; } int main() { return 0; }"#,
+            r#"extern int64 g(a: int64); int g(a: int) { return a; } int main() { return 0; }"#,
             r#"struct P { x: int } struct P { y: int } int main() { return 0; }"#,
             r#"struct P { x: int, x: int } int main() { return 0; }"#,
         ];
@@ -229,7 +223,7 @@ mod tests {
     fn test_rejects_intrinsic_global() {
         for source in [
             r#"int copy(a: int) { return a; } int main() { return 0; }"#,
-            r#"extern int copy(a: int); int main() { return 0; }"#,
+            r#"extern int64 copy(a: int64); int main() { return 0; }"#,
         ] {
             let errors = resolve(source).expect_err(source);
             assert!(

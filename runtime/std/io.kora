@@ -1,5 +1,5 @@
-extern void __kora_write(s: string);
-extern int __kora_getchar();
+extern void __kora_write(s: cstring);
+extern int32 __kora_getchar();
 
 void write(s: string) {
     __kora_write(s);

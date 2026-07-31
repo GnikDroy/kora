@@ -260,7 +260,7 @@ mod tests {
     #[test]
     fn test_resolves_a_valid_program() {
         let source = r#"
-            extern void print(b: [char], a: int);
+            extern void print(b: cstring, a: int64);
             int main() {
                 let a: int = 5;
                 if (a - a) { print("Hello World", a); }
