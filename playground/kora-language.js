@@ -6,7 +6,13 @@ export function registerKoraLanguage(monaco) {
       "return", "let", "if", "else", "while", "for", "break", "continue",
       "extern", "as", "struct", "impl", "new", "import", "self",
     ],
-    typeKeywords: ["void", "int", "real", "char", "bool", "string"],
+    typeKeywords: [
+      "void", "int", "real", "char", "bool", "string", "opaque",
+      "int8", "int16", "int32", "int64",
+      "uint8", "uint16", "uint32", "uint64",
+      "float32", "float64", "cstring",
+      "cint", "cuint", "clong", "culong", "csize",
+    ],
     constants: ["true", "false", "none"],
     operators: [
       "=", "==", "!=", "&&", "||", ">", "<", ">=", "<=", "+", "-", "*",
@@ -34,7 +40,7 @@ export function registerKoraLanguage(monaco) {
         }],
         { include: "@whitespace" },
         [/[{}()\[\]]/, "@brackets"],
-        [/\d+\.\d+/, "number.float"],
+        [/\d+\.\d*/, "number.float"],
         [/\d+/, "number"],
         [/@symbols/, {
           cases: { "@operators": "operator", "@default": "" },
