@@ -1,0 +1,13 @@
+import "std/libc";
+
+int run(cmd: string) {
+    let status = libc.system(cmd);
+    if (status < 0) {
+        return -1;
+    }
+    return (status / 256) % 256;
+}
+
+void exit(code: int) {
+    libc.exit(code);
+}

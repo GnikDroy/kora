@@ -11,3 +11,7 @@ void sleep(ms: int) {
         left = left - chunk;
     }
 }
+
+int now() {
+    return libc.time(none);
+}

@@ -605,10 +605,77 @@ fn test_std_math() {
                 if (math.absf(math.sin(1.0) - 0.8414709848) < 0.000001) { r = r + 8; }
                 if (math.absf(math.atan2(1.0, 1.0) * 4.0 - 3.1415926536) < 0.000001) { r = r + 16; }
                 if (math.absf(math.powf(2.0, 10.0) - 1024.0) < 0.000001) { r = r + 32; }
+                if (math.absf(math.exp(1.0) - 2.7182818285) < 0.000001) { r = r + 64; }
+                if (math.absf(math.log(math.exp(3.0)) - 3.0) < 0.000001) { r = r + 128; }
+                if (math.floorf(2.7) == 2.0 && math.ceilf(2.3) == 3.0) { r = r + 256; }
+                if (math.roundf(-2.5) == -3.0 && math.roundf(2.5) == 3.0) { r = r + 512; }
+                if (math.absf(math.log2(1024.0) - 10.0) < 0.000001) { r = r + 1024; }
+                if (r == 2047) { return 255; }
+                return 0;
+            }
+        "#);
+    assert_eq!(code, 255);
+}
+
+#[test]
+fn test_std_time_now() {
+    let (_, _, code) = run(r#"
+            import "std/time";
+            int main() {
+                let t = time.now();
+                if (t > 1500000000) { return 1; }
+                return 0;
+            }
+        "#);
+    assert_eq!(code, 1);
+}
+
+#[test]
+fn test_fs_round_trip() {
+    let (_, stderr, code) = run(r#"
+            import "std/fs";
+            int main() {
+                let path = "/tmp/kora_e2e_fs_test.txt";
+                let r = 0;
+                let w = fs.open(path, "w");
+                if (w == none) { return 0; }
+                w!.write("alpha
+beta
+");
+                w!.close();
+
+                let f = fs.open(path, "r");
+                if (f == none) { return 0; }
+                if (f!.read_line() == "alpha") { r = r + 1; }
+                if (f!.tell() == 6) { r = r + 2; }
+                f!.seek(0);
+                if (f!.read_all() == "alpha
+beta
+") { r = r + 4; }
+                if (f!.read_char() == none) { r = r + 8; }
+                f!.close();
+
+                if (fs.remove(path)) { r = r + 16; }
+                if (fs.open(path, "r") == none) { r = r + 32; }
+                if (fs.remove(path) == false) { r = r + 64; }
                 return r;
             }
         "#);
-    assert_eq!(code, 63);
+    assert_eq!(code, 127, "{stderr}");
+}
+
+#[test]
+fn test_proc_run() {
+    let (_, stderr, code) = run(r#"
+            import "std/proc";
+            int main() {
+                let r = 0;
+                if (proc.run("exit 7") == 7) { r = r + 1; }
+                if (proc.run("true") == 0) { r = r + 2; }
+                return r;
+            }
+        "#);
+    assert_eq!(code, 3, "{stderr}");
 }
 
 #[test]

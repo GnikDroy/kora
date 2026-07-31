@@ -1,0 +1,74 @@
+import "std/libc";
+
+struct File {
+    handle: opaque,
+}
+
+impl File {
+    char? read_char(self) {
+        let c = libc.fgetc(self.handle);
+        if (c == -1) {
+            return none;
+        }
+        return c as char;
+    }
+
+    string? read_line(self) {
+        let line = "";
+        let c = libc.fgetc(self.handle);
+        while (c != -1 && c != ('\n' as int)) {
+            line.push(c as char);
+            c = libc.fgetc(self.handle);
+        }
+        if (c == -1 && line.len() == 0) {
+            return none;
+        }
+        return line;
+    }
+
+    string read_all(self) {
+        let text = "";
+        let c = libc.fgetc(self.handle);
+        while (c != -1) {
+            text.push(c as char);
+            c = libc.fgetc(self.handle);
+        }
+        return text;
+    }
+
+    void write(self, s: string) {
+        libc.fputs(s, self.handle);
+    }
+
+    void flush(self) {
+        libc.fflush(self.handle);
+    }
+
+    void close(self) {
+        libc.fclose(self.handle);
+    }
+
+    int tell(self) {
+        return libc.ftell(self.handle);
+    }
+
+    void seek(self, offset: int) {
+        libc.fseek(self.handle, offset, 0);
+    }
+}
+
+File? open(path: string, mode: string) {
+    let handle = libc.fopen(path, mode);
+    if (handle == none) {
+        return none;
+    }
+    return new File { handle: handle! };
+}
+
+bool remove(path: string) {
+    return libc.remove(path) == 0;
+}
+
+bool rename(from: string, to: string) {
+    return libc.rename(from, to) == 0;
+}
