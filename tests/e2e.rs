@@ -610,7 +610,13 @@ fn test_std_math() {
                 if (math.floorf(2.7) == 2.0 && math.ceilf(2.3) == 3.0) { r = r + 256; }
                 if (math.roundf(-2.5) == -3.0 && math.roundf(2.5) == 3.0) { r = r + 512; }
                 if (math.absf(math.log2(1024.0) - 10.0) < 0.000001) { r = r + 1024; }
-                if (r == 2047) { return 255; }
+                if (math.absf(math.hypot(3.0, 4.0) - 5.0) < 0.000001
+                    && math.absf(math.cbrt(27.0) - 3.0) < 0.000001) { r = r + 2048; }
+                if (math.fmod(7.5, 2.0) == 1.5 && math.truncf(-2.7) == -2.0) { r = r + 4096; }
+                if (math.absf(math.log10(1000.0) - 3.0) < 0.000001) { r = r + 8192; }
+                if (math.absf(math.asin(math.sin(0.5)) - 0.5) < 0.000001) { r = r + 16384; }
+                if (math.absf(math.tanh(0.0)) < 0.000001 && math.cosh(0.0) == 1.0) { r = r + 32768; }
+                if (r == 65535) { return 255; }
                 return 0;
             }
         "#);

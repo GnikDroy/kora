@@ -1,11 +1,12 @@
 const FILES = [
-  "mandelbrot.kora",
-  "sudoku.kora",
-  "snake.kora",
-  "tetris.kora",
-  "pong.kora",
-  "doom.kora",
-  "pacman.kora",
+  "playground/mandelbrot.kora",
+  "cli/sudoku.kora",
+  "cli/calc.kora",
+  "playground/snake.kora",
+  "playground/tetris.kora",
+  "playground/pong.kora",
+  "playground/doom.kora",
+  "playground/pacman.kora",
 ];
 
 const models = {};
@@ -18,7 +19,7 @@ let monacoRef = null;
 
 const isDirty = (name) =>
   models[name] && models[name].getValue() !== originals[name];
-const stem = (name) => name.replace(/\.kora$/, "");
+const stem = (name) => name.replace(/^.*\//, "").replace(/\.kora$/, "");
 
 export async function loadSources() {
   await Promise.all(FILES.map(async (name) => {

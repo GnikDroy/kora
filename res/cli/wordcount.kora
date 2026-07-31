@@ -1,0 +1,27 @@
+import "std/conv";
+import "std/io";
+import "std/str";
+
+# wc: lines, words, and characters read from stdin.
+
+int main() {
+    let lines = 0;
+    let words = 0;
+    let chars = 0;
+    let line = io.input();
+    while (line != none) {
+        lines = lines + 1;
+        chars = chars + line!.len() + 1;
+        for w | str.split(line!, ' ') {
+            if (w.len() > 0) {
+                words = words + 1;
+            }
+        }
+        line = io.input();
+    }
+    io.print(
+        conv.int_to_string(lines) + " "
+        + conv.int_to_string(words) + " "
+        + conv.int_to_string(chars));
+    return 0;
+}

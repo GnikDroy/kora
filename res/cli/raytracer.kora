@@ -1,0 +1,195 @@
+import "std/conv";
+import "std/fs";
+import "std/io";
+import "std/math";
+
+struct Vec {
+    x: real,
+    y: real,
+    z: real,
+}
+
+impl Vec {
+    Vec plus(self, o: Vec) {
+        return new Vec { x: self.x + o.x, y: self.y + o.y, z: self.z + o.z };
+    }
+
+    Vec minus(self, o: Vec) {
+        return new Vec { x: self.x - o.x, y: self.y - o.y, z: self.z - o.z };
+    }
+
+    Vec scale(self, k: real) {
+        return new Vec { x: self.x * k, y: self.y * k, z: self.z * k };
+    }
+
+    real dot(self, o: Vec) {
+        return self.x * o.x + self.y * o.y + self.z * o.z;
+    }
+
+    Vec unit(self) {
+        return self.scale(1.0 / math.sqrtf(self.dot(self)));
+    }
+
+    Vec reflect(self, normal: Vec) {
+        return self.minus(normal.scale(2.0 * self.dot(normal)));
+    }
+}
+
+Vec vec(x: real, y: real, z: real) {
+    return new Vec { x: x, y: y, z: z };
+}
+
+struct Sphere {
+    center: Vec,
+    radius: real,
+    color: Vec,
+    mirror: real,
+    checker: bool,
+}
+
+# Distance along the ray to the nearest hit, or none for a miss.
+real? hit(s: Sphere, origin: Vec, dir: Vec) {
+    let oc = origin.minus(s.center);
+    let b = oc.dot(dir);
+    let c = oc.dot(oc) - s.radius * s.radius;
+    let disc = b * b - c;
+    if (disc < 0.0) {
+        return none;
+    }
+    let sq = math.sqrtf(disc);
+    let t = -b - sq;
+    if (t > 0.001) {
+        return t;
+    }
+    t = -b + sq;
+    if (t > 0.001) {
+        return t;
+    }
+    return none;
+}
+
+Vec trace(spheres: [Sphere], origin: Vec, dir: Vec, depth: int) {
+    let best: real? = none;
+    let nearest: Sphere? = none;
+    for s | spheres {
+        let t = hit(s, origin, dir);
+        if (t != none && (best == none || t! < best!)) {
+            best = t;
+            nearest = s;
+        }
+    }
+    if (best == none) {
+        let k = 0.5 * (dir.y + 1.0);
+        return vec(1.0, 1.0, 1.0).scale(1.0 - k).plus(vec(0.45, 0.65, 1.0).scale(k));
+    }
+
+    let s = nearest!;
+    let point = origin.plus(dir.scale(best!));
+    let normal = point.minus(s.center).unit();
+    let sun = vec(-0.6, 1.0, 0.4).unit();
+
+    let surface = s.color;
+    if (s.checker) {
+        let cx = math.floorf(point.x) as int;
+        let cz = math.floorf(point.z) as int;
+        let tile = 1.0;
+        if ((cx + cz) % 2 == 0) {
+            tile = 0.35;
+        }
+        let fade = math.clampf((best! - 6.0) / 30.0, 0.0, 1.0);
+        surface = surface.scale(tile * (1.0 - fade) + 0.675 * fade);
+    }
+
+    let lit = 1.0;
+    for blocker | spheres {
+        if (hit(blocker, point, sun) != none) {
+            lit = 0.0;
+        }
+    }
+
+    let diffuse = math.maxf(normal.dot(sun), 0.0);
+    let shade = 0.15 + 0.85 * diffuse * lit;
+    let base = surface.scale(shade);
+    if (s.mirror > 0.0 && depth > 0) {
+        let bounced = trace(spheres, point, dir.reflect(normal).unit(), depth - 1);
+        return base.scale(1.0 - s.mirror).plus(bounced.scale(s.mirror));
+    }
+    return base;
+}
+
+int byte_of(v: real) {
+    let g = math.sqrtf(math.clampf(v, 0.0, 1.0));
+    return math.clamp((g * 255.999) as int, 0, 255);
+}
+
+int main() {
+    let width = 800;
+    let height = 600;
+    let spheres = [
+        new Sphere { center: vec(0.0, -1000.5, -4.0), radius: 1000.0, color: vec(0.85, 0.85, 0.8), mirror: 0.0, checker: true },
+        new Sphere { center: vec(-2.1, 0.5, -4.6), radius: 1.0, color: vec(0.9, 0.25, 0.2), mirror: 0.08, checker: false },
+        new Sphere { center: vec(0.0, 0.5, -3.6), radius: 1.0, color: vec(0.9, 0.9, 0.9), mirror: 0.85, checker: false },
+        new Sphere { center: vec(2.1, 0.5, -4.6), radius: 1.0, color: vec(0.25, 0.4, 0.9), mirror: 0.25, checker: false },
+    ];
+
+    let pi = math.atan(1.0) * 4.0;
+    let step = 2.0 * pi / 16.0;
+    let third_turn = 2.0 * pi / 3.0;
+    for (let i = 0; i < 16; i = i + 1) {
+        let a = (i as real) * step;
+        let x = math.sin(a) * 4.4;
+        let z = -4.8 + math.cos(a) * 2.6;
+        let radius = 0.2 + 0.06 * math.sin(a * 3.0);
+        let mirror = 0.05;
+        if (i % 3 == 0) {
+            mirror = 0.45;
+        }
+        spheres.push(new Sphere {
+            center: vec(x, -0.5 + radius, z),
+            radius: radius,
+            color: vec(
+                0.55 + 0.45 * math.sin(a * 2.0),
+                0.55 + 0.45 * math.sin(a * 2.0 + third_turn),
+                0.55 + 0.45 * math.sin(a * 2.0 + third_turn * 2.0)),
+            mirror: mirror,
+            checker: false,
+        });
+    }
+
+    let out = fs.open("raytrace.ppm", "w");
+    if (out == none) {
+        io.print("cannot open raytrace.ppm for writing");
+        return 1;
+    }
+    let f = out!;
+    f.write("P3\n" + conv.int_to_string(width) + " " + conv.int_to_string(height) + "\n255\n");
+
+    let origin = vec(0.0, 0.6, 1.5);
+    let aspect = (width as real) / (height as real);
+
+    # 2x2 supersampling
+    let grid = 2;
+    for (let y = 0; y < height; y = y + 1) {
+        for (let x = 0; x < width; x = x + 1) {
+            let color = vec(0.0, 0.0, 0.0);
+            for (let sy = 0; sy < grid; sy = sy + 1) {
+                for (let sx = 0; sx < grid; sx = sx + 1) {
+                    let px = (x as real) + ((sx as real) + 0.5) / (grid as real);
+                    let py = (y as real) + ((sy as real) + 0.5) / (grid as real);
+                    let u = ((2.0 * px / (width as real)) - 1.0) * aspect;
+                    let v = 1.0 - 2.0 * py / (height as real);
+                    let dir = vec(u * 0.7, v * 0.7 - 0.12, -1.0).unit();
+                    color = color.plus(trace(spheres, origin, dir, 3));
+                }
+            }
+            color = color.scale(1.0 / ((grid * grid) as real));
+            f.write(
+                conv.int_to_string(byte_of(color.x)) + " "
+                + conv.int_to_string(byte_of(color.y)) + " "
+                + conv.int_to_string(byte_of(color.z)) + "\n");
+        }
+    }
+    f.close();
+    io.print("wrote raytrace.ppm (" + conv.int_to_string(width) + "x" + conv.int_to_string(height) + ")");
+    return 0;
+}

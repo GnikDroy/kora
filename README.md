@@ -127,9 +127,11 @@ int main() {
 }
 ```
 
-For bigger programs, the [`res/`](res/) folder has this Sudoku solver plus
-playable versions of Snake, Tetris, Pong, Pacman, Doom, and a Mandelbrot
-renderer.
+For sample programs, [`res/cli/`](res/cli/) has terminal programs (this Sudoku
+solver, a ray tracer that renders to a PPM file, a calculator REPL, and
+a word counter) and
+[`res/playground/`](res/playground/) has playable versions of Snake, Tetris,
+Pong, Pacman, Doom, and a Mandelbrot renderer.
 
 ## Try it locally
 

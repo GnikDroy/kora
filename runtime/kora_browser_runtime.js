@@ -71,9 +71,23 @@ function exp(x) { return Math.exp(x); }
 function log(x) { return Math.log(x); }
 function log2(x) { return Math.log2(x); }
 function time() { return Math.floor(Date.now() / 1000); }
+function log10(x) { return Math.log10(x); }
+function asin(x) { return Math.asin(x); }
+function acos(x) { return Math.acos(x); }
+function sinh(x) { return Math.sinh(x); }
+function cosh(x) { return Math.cosh(x); }
+function tanh(x) { return Math.tanh(x); }
+function hypot(x, y) { return Math.hypot(x, y); }
+function cbrt(x) { return Math.cbrt(x); }
+function trunc(x) { return Math.trunc(x); }
+function fmod(x, y) { return x % y; }
+function fabs(x) { return Math.abs(x); }
+function fmin(x, y) { return Math.min(x, y); }
+function fmax(x, y) { return Math.max(x, y); }
 
 const KORA_EXTERNS = {
   __kora_write, putchar, fflush, getchar, rand, __kora_sleep_ms,
   sqrt, sin, cos, tan, atan, atan2, pow,
-  floor, ceil, round, exp, log, log2, time,
+  floor, ceil, round, exp, log, log2, log10, time,
+  asin, acos, sinh, cosh, tanh, hypot, cbrt, trunc, fmod, fabs, fmin, fmax,
 };

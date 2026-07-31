@@ -1,0 +1,252 @@
+import "std/conv";
+import "std/io";
+import "std/math";
+import "std/str";
+
+struct Calc {
+    src: string,
+    pos: int,
+    err: string?,
+    names: [string],
+    values: [real],
+}
+
+impl Calc {
+    void fail(self, message: string) {
+        if (self.err == none) {
+            self.err = message;
+        }
+    }
+
+    char peek(self) {
+        if (self.pos >= self.src.len()) {
+            return '\0';
+        }
+        return self.src[self.pos];
+    }
+
+    void advance(self) {
+        self.pos = self.pos + 1;
+    }
+
+    void skip_spaces(self) {
+        while (self.peek() == ' ') {
+            self.advance();
+        }
+    }
+
+    bool eat(self, c: char) {
+        self.skip_spaces();
+        if (self.peek() == c) {
+            self.advance();
+            return true;
+        }
+        return false;
+    }
+
+    bool at_digit(self) {
+        return self.peek() >= '0' && self.peek() <= '9';
+    }
+
+    bool at_letter(self) {
+        let c = self.peek();
+        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
+    }
+
+    real number(self) {
+        let v = 0.0;
+        while (self.at_digit()) {
+            v = v * 10.0 + (((self.peek() as int) - 48) as real);
+            self.advance();
+        }
+        if (self.peek() == '.') {
+            self.advance();
+            let place = 0.1;
+            while (self.at_digit()) {
+                v = v + (((self.peek() as int) - 48) as real) * place;
+                place = place * 0.1;
+                self.advance();
+            }
+        }
+        return v;
+    }
+
+    string name(self) {
+        let n = "";
+        while (self.at_letter() || self.at_digit()) {
+            n.push(self.peek());
+            self.advance();
+        }
+        return n;
+    }
+
+    real? lookup(self, n: string) {
+        let i = 0;
+        while (i < self.names.len()) {
+            if (self.names[i] == n) {
+                return self.values[i];
+            }
+            i = i + 1;
+        }
+        return none;
+    }
+
+    void assign(self, n: string, v: real) {
+        let i = 0;
+        while (i < self.names.len()) {
+            if (self.names[i] == n) {
+                self.values[i] = v;
+                return;
+            }
+            i = i + 1;
+        }
+        self.names.push(n);
+        self.values.push(v);
+    }
+
+    real call(self, n: string, arg: real) {
+        if (n == "sin") { return math.sin(arg); }
+        if (n == "cos") { return math.cos(arg); }
+        if (n == "tan") { return math.tan(arg); }
+        if (n == "sqrt") { return math.sqrtf(arg); }
+        if (n == "exp") { return math.exp(arg); }
+        if (n == "log") { return math.log(arg); }
+        if (n == "abs") { return math.absf(arg); }
+        if (n == "floor") { return math.floorf(arg); }
+        if (n == "ceil") { return math.ceilf(arg); }
+        self.fail("unknown function `" + n + "`");
+        return 0.0;
+    }
+
+    real atom(self) {
+        self.skip_spaces();
+        if (self.eat('(')) {
+            let v = self.sum();
+            if (!self.eat(')')) {
+                self.fail("expected `)`");
+            }
+            return v;
+        }
+        if (self.at_digit() || self.peek() == '.') {
+            return self.number();
+        }
+        if (self.at_letter()) {
+            let n = self.name();
+            if (self.eat('(')) {
+                let arg = self.sum();
+                if (!self.eat(')')) {
+                    self.fail("expected `)`");
+                }
+                return self.call(n, arg);
+            }
+            let v = self.lookup(n);
+            if (v == none) {
+                self.fail("unknown variable `" + n + "`");
+                return 0.0;
+            }
+            return v!;
+        }
+        self.fail("unexpected input");
+        return 0.0;
+    }
+
+    real unary(self) {
+        if (self.eat('-')) {
+            return -self.unary();
+        }
+        return self.atom();
+    }
+
+    real power(self) {
+        let base = self.unary();
+        if (self.eat('^')) {
+            return math.powf(base, self.power());
+        }
+        return base;
+    }
+
+    real prod(self) {
+        let v = self.power();
+        let more = true;
+        while (more) {
+            if (self.eat('*')) {
+                v = v * self.power();
+            } else if (self.eat('/')) {
+                v = v / self.power();
+            } else {
+                more = false;
+            }
+        }
+        return v;
+    }
+
+    real sum(self) {
+        let v = self.prod();
+        let more = true;
+        while (more) {
+            if (self.eat('+')) {
+                v = v + self.prod();
+            } else if (self.eat('-')) {
+                v = v - self.prod();
+            } else {
+                more = false;
+            }
+        }
+        return v;
+    }
+
+    void run_line(self, line: string) {
+        self.src = line;
+        self.pos = 0;
+        self.err = none;
+
+        # assignment; everything else evaluates.
+        let target = "";
+        if (self.at_letter()) {
+            let n = self.name();
+            if (self.eat('=')) {
+                target = n;
+            } else {
+                self.pos = 0;
+            }
+        }
+
+        let v = self.sum();
+        self.skip_spaces();
+        if (self.err == none && self.pos < self.src.len()) {
+            self.fail("unexpected trailing input");
+        }
+        if (self.err != none) {
+            io.print("error: " + self.err!);
+            return;
+        }
+        if (target.len() > 0) {
+            self.assign(target, v);
+            io.print(target + " = " + conv.real_to_string(v));
+        } else {
+            io.print(conv.real_to_string(v));
+        }
+    }
+}
+
+int main() {
+    let calc = new Calc { src: "", pos: 0, err: none, names: [], values: [] };
+    calc.assign("pi", 3.141592653589793);
+    calc.assign("e", 2.718281828459045);
+
+    io.print("kora calc: expressions, x = ..., quit to exit");
+    io.write("> ");
+    let line = io.input();
+    while (line != none) {
+        let trimmed = str.trim(line!);
+        if (trimmed == "quit") {
+            return 0;
+        }
+        if (trimmed.len() > 0) {
+            calc.run_line(trimmed);
+        }
+        io.write("> ");
+        line = io.input();
+    }
+    return 0;
+}

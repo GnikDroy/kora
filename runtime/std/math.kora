@@ -168,3 +168,43 @@ real atan(x: real) {
 real atan2(y: real, x: real) {
     return libc.atan2(y, x);
 }
+
+real log10(x: real) {
+    return libc.log10(x);
+}
+
+real asin(x: real) {
+    return libc.asin(x);
+}
+
+real acos(x: real) {
+    return libc.acos(x);
+}
+
+real sinh(x: real) {
+    return libc.sinh(x);
+}
+
+real cosh(x: real) {
+    return libc.cosh(x);
+}
+
+real tanh(x: real) {
+    return libc.tanh(x);
+}
+
+real hypot(x: real, y: real) {
+    return libc.hypot(x, y);
+}
+
+real cbrt(x: real) {
+    return libc.cbrt(x);
+}
+
+real truncf(x: real) {
+    return libc.trunc(x);
+}
+
+real fmod(x: real, y: real) {
+    return libc.fmod(x, y);
+}

@@ -18,6 +18,15 @@ string int_to_string(n: int) {
 }
 
 string real_to_string(x: real) {
+    if (x != x) {
+        return "nan";
+    }
+    if (x * 0.5 == x && x != 0.0) {
+        if (x > 0.0) {
+            return "inf";
+        }
+        return "-inf";
+    }
     let s = "";
     if (x < 0.0) {
         s.push('-');
