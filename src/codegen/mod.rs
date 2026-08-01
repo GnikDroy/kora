@@ -118,7 +118,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
             for func in impl_.node.functions.iter() {
                 self.declare_function(
                     func.id,
-                    &mangle_method(&impl_.node.struct_name.node, &func.node.name),
+                    &mangle_method(&impl_.node.struct_ref.name.node, &func.node.name),
                     &func.node.return_type,
                     &func.node.arguments,
                 )?;

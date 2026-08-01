@@ -88,7 +88,7 @@ impl<'a> GlobalsCollector<'a> {
 
     fn collect_methods(&mut self, module: &Module) {
         for impl_ in module.impls.iter() {
-            let struct_name = &impl_.node.struct_name;
+            let struct_name = &impl_.node.struct_ref.name;
             if !self.table.struct_exists(&struct_name.node) {
                 self.errors.push(TypeErr {
                     msg: "impl block for an undefined struct",

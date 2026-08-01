@@ -86,19 +86,19 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 Ok(self.builder.build_load(ty, ptr, member).unwrap())
             }
             Expression::StructLiteral(typename, fields) => {
-                let Type::Struct(name) = typename else {
+                let Type::Struct(sr) = typename else {
                     unreachable!("struct literals always carry a struct type");
                 };
-                let struct_type = self.struct_type(&name.node, span)?;
+                let struct_type = self.struct_type(&sr.name.node, span)?;
                 let object = self.gc_malloc(struct_type.size_of().unwrap(), "new");
                 for (field, value) in fields.iter() {
                     let member = self
                         .program
                         .symbols
-                        .struct_member(&name.node, &field.node)
+                        .struct_member(&sr.name.node, &field.node)
                         .unwrap();
                     let value = self.lower_expression_expecting(value, &member)?;
-                    let index = self.struct_member_index(&name.node, &field.node);
+                    let index = self.struct_member_index(&sr.name.node, &field.node);
                     let ptr = self
                         .builder
                         .build_struct_gep(struct_type, object, index, &field.node)
@@ -109,8 +109,8 @@ impl<'ctx> CodeGen<'ctx, '_> {
             }
             Expression::Construct(typename, size) => match (typename, size) {
                 (_, Some(size)) => self.lower_array_construct(typename, size, span),
-                (Type::Struct(name), None) => {
-                    let default = self.struct_constructor(&name.node, span)?;
+                (Type::Struct(sr), None) => {
+                    let default = self.struct_constructor(&sr.name.node, span)?;
                     let call = self.builder.build_call(default, &[], "new").unwrap();
                     Ok(self.call_value(call))
                 }
@@ -415,8 +415,8 @@ impl<'ctx> CodeGen<'ctx, '_> {
         span: &Span,
     ) -> Result<BasicValueEnum<'ctx>, CodegenErr> {
         match self.program.types[&arg.id].clone() {
-            Type::Struct(name) => {
-                let struct_type = self.struct_type(&name.node, span)?;
+            Type::Struct(sr) => {
+                let struct_type = self.struct_type(&sr.name.node, span)?;
                 let size = struct_type.size_of().unwrap();
                 let source = self.lower_expression(arg)?.into_pointer_value();
                 let copy = self.gc_malloc(size, "copy");

@@ -230,15 +230,15 @@ fn validate(program: &LoadedProgram, ctx: &InstantiateCtx) -> Vec<InstantiateErr
 
     for module in program.modules.iter() {
         for imp in module.module.impls.iter() {
-            if let Some(def) = ctx.generic_structs.get(&imp.node.struct_name.node) {
+            if let Some(def) = ctx.generic_structs.get(&imp.node.struct_ref.name.node) {
                 let expected = def.decl.node.type_params.len();
                 error(
                     &mut errors,
                     format!(
                         "impl for `{}` must declare the struct's {expected} type parameter(s), found 0",
-                        imp.node.struct_name.node
+                        imp.node.struct_ref.name.node
                     ),
-                    &imp.node.struct_name.span,
+                    &imp.node.struct_ref.name.span,
                 );
             }
         }

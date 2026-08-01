@@ -185,8 +185,8 @@ impl<'ctx> CodeGen<'ctx, '_> {
             .unwrap()
             .into_pointer_value();
 
-        if let Type::Struct(name) = typename {
-            let constructor = self.struct_constructor(&name.node, span)?;
+        if let Type::Struct(sr) = typename {
+            let constructor = self.struct_constructor(&sr.name.node, span)?;
             let buf = self.array_buf(array);
             let function = self.frame().function;
             let slot_index = self.entry_alloca(self.context.i64_type().into(), "i");

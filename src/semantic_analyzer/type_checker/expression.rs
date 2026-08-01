@@ -213,8 +213,8 @@ impl TypeChecker<'_> {
             && self.symbols.symbol_id_of_use(f.id).is_none()
         {
             match self.get_expression_type(obj)? {
-                Type::Struct(struct_name) => {
-                    if let Some(method) = self.symbols.struct_method(&struct_name.node, member) {
+                Type::Struct(sr) => {
+                    if let Some(method) = self.symbols.struct_method(&sr.name.node, member) {
                         return self.get_method_call_return_type(f, method, args, span);
                     }
                 }
@@ -276,9 +276,9 @@ impl TypeChecker<'_> {
     ) -> Result<Type, TypeErr> {
         let left_type = self.get_expression_type(left)?;
         match left_type {
-            Type::Struct(name) => self
+            Type::Struct(sr) => self
                 .symbols
-                .struct_member(&name.node, member)
+                .struct_member(&sr.name.node, member)
                 .ok_or(TypeErr {
                     msg: "Invalid member for struct",
                     span: span.clone(),
@@ -330,7 +330,7 @@ impl TypeChecker<'_> {
         let members: Vec<Type> = members.iter().map(|(_, ty)| ty.clone()).collect();
         visiting.push(name.to_string());
         let ok = members.iter().all(|ty| match ty {
-            Type::Struct(inner) => self.struct_has_default(&inner.node, visiting),
+            Type::Struct(inner) => self.struct_has_default(&inner.name.node, visiting),
             Type::Function(_, _) => false,
             _ => true,
         });
@@ -354,7 +354,7 @@ impl TypeChecker<'_> {
                     });
                 }
                 let ok = match typename {
-                    Type::Struct(name) => self.struct_is_default_constructible(&name.node),
+                    Type::Struct(sr) => self.struct_is_default_constructible(&sr.name.node),
                     Type::Opaque => true,
                     other => builtins::is_scalar(other),
                 };
@@ -367,7 +367,7 @@ impl TypeChecker<'_> {
                 Ok(Type::Array(Box::new(typename.clone())))
             }
             _ => match typename {
-                Type::Struct(name) if self.struct_is_default_constructible(&name.node) => {
+                Type::Struct(sr) if self.struct_is_default_constructible(&sr.name.node) => {
                     Ok(typename.clone())
                 }
                 Type::Struct(_) => Err(TypeErr {
@@ -393,7 +393,7 @@ impl TypeChecker<'_> {
         fields: &[(Spanned<String>, Spanned<Expression>)],
         span: &Span,
     ) -> Result<Type, TypeErr> {
-        let Type::Struct(name) = typename else {
+        let Type::Struct(sr) = typename else {
             return Err(TypeErr {
                 msg: "Only structs can be constructed with field initializers",
                 span: span.clone(),
@@ -406,7 +406,7 @@ impl TypeChecker<'_> {
                     span: field.span.clone(),
                 });
             }
-            let Some(field_type) = self.symbols.struct_member(&name.node, &field.node) else {
+            let Some(field_type) = self.symbols.struct_member(&sr.name.node, &field.node) else {
                 return Err(TypeErr {
                     msg: "Invalid member for struct",
                     span: field.span.clone(),
@@ -419,7 +419,7 @@ impl TypeChecker<'_> {
                 });
             }
         }
-        if Some(fields.len()) != self.symbols.struct_member_count(&name.node) {
+        if Some(fields.len()) != self.symbols.struct_member_count(&sr.name.node) {
             return Err(TypeErr {
                 msg: "Struct literal must initialize every member",
                 span: span.clone(),

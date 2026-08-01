@@ -972,7 +972,7 @@ impl Parser {
                 if self.peek_is(Token::Symbol(Symbol::Less)) {
                     Ok(Type::Generic(name, self.parse_type_arguments()?))
                 } else {
-                    Ok(Type::Struct(name))
+                    Ok(Type::Struct(StructRef::unresolved(name)))
                 }
             }
             Token::Symbol(Symbol::LeftBracket) => {
@@ -1209,13 +1209,13 @@ impl Parser {
         let self_span = self.span_from(start);
         let name = Spanned::new(struct_name.node.clone(), struct_name.span.clone());
         let self_type = if type_params.is_empty() {
-            Type::Struct(name)
+            Type::Struct(StructRef::unresolved(name))
         } else {
             let args = type_params
                 .iter()
                 .map(|p| {
                     let param = Spanned::new(p.node.clone(), p.span.clone());
-                    Type::Struct(param)
+                    Type::Struct(StructRef::unresolved(param))
                 })
                 .collect();
             Type::Generic(name, args)
@@ -1307,7 +1307,7 @@ impl Parser {
 
         if type_params.is_empty() {
             let imp = Impl {
-                struct_name,
+                struct_ref: StructRef::unresolved(struct_name),
                 functions,
             };
             Ok(ImplDecl::Concrete(Spanned::new(imp, span)))

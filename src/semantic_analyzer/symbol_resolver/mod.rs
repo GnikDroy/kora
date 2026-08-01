@@ -13,11 +13,11 @@ use crate::parser::Type;
 /// collection and resolution passes.
 pub(super) fn check_typename(table: &SymbolTable, errors: &mut Vec<TypeErr>, ty: &Type) {
     match ty {
-        Type::Struct(name) => {
-            if !table.struct_exists(&name.node) {
+        Type::Struct(sr) => {
+            if !table.struct_exists(&sr.name.node) {
                 errors.push(TypeErr {
                     msg: "Undefined type",
-                    span: name.span.clone(),
+                    span: sr.name.span.clone(),
                 });
             }
         }

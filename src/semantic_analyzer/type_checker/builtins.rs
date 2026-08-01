@@ -149,14 +149,14 @@ pub fn strip_optional(ty: &Type) -> &Type {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parser::{NodeId, Span, Spanned};
+    use crate::parser::{NodeId, Span, Spanned, StructRef};
 
     fn struct_ty(name: &str) -> Type {
-        Type::Struct(Spanned::with_id(
+        Type::Struct(StructRef::unresolved(Spanned::with_id(
             name.to_string(),
             Span::default(),
             NodeId::default(),
-        ))
+        )))
     }
 
     fn array(inner: Type) -> Type {

@@ -238,11 +238,11 @@ impl<'p> Instantiator<'p> {
             Type::Opaque => "opaque".to_string(),
             Type::Array(inner) => format!("[{}]", self.display_type(inner)),
             Type::Optional(inner) => format!("{}?", self.display_type(inner)),
-            Type::Struct(name) => self
+            Type::Struct(sr) => self
                 .instance_displays
-                .get(&name.node)
+                .get(&sr.name.node)
                 .cloned()
-                .unwrap_or_else(|| name.node.clone()),
+                .unwrap_or_else(|| sr.name.node.clone()),
             Type::Generic(name, args) => self.display_instance(&name.node, args),
             Type::Function(_, _) => "fn".to_string(),
         }
@@ -436,11 +436,11 @@ mod tests {
             Type::Array(Box::new(Type::Char))
         );
         let imp = &program.modules[0].module.impls[0];
-        assert_eq!(imp.node.struct_name.node, "pair$$int$$arr_char");
+        assert_eq!(imp.node.struct_ref.name.node, "pair$$int$$arr_char");
         let method = &imp.node.functions[0];
         assert!(matches!(
             &method.node.arguments[0].node.typename,
-            Type::Struct(name) if name.node == "pair$$int$$arr_char"
+            Type::Struct(sr) if sr.name.node == "pair$$int$$arr_char"
         ));
         assert_eq!(method.node.return_type, Some(Type::Int));
     }
@@ -495,7 +495,7 @@ mod tests {
             .unwrap();
         assert!(matches!(
             &uses.node.members[0].node.typename,
-            Type::Struct(name) if name.node == "box$$int"
+            Type::Struct(sr) if sr.name.node == "box$$int"
         ));
     }
 
@@ -514,7 +514,7 @@ mod tests {
         let node = &program.modules[0].module.structs[0];
         assert!(matches!(
             &node.node.members[1].node.typename,
-            Type::Optional(inner) if matches!(&**inner, Type::Struct(n) if n.node == "node$$int")
+            Type::Optional(inner) if matches!(&**inner, Type::Struct(sr) if sr.name.node == "node$$int")
         ));
     }
 

@@ -107,8 +107,50 @@ pub struct Import {
 /// methods as ordinary functions.
 #[derive(Debug, Clone)]
 pub struct Impl {
-    pub struct_name: Spanned<String>,
+    pub struct_ref: StructRef,
     pub functions: Vec<Spanned<Function>>,
+}
+
+/// A mention of a struct. `target` identifies the declaration it refers to;
+/// user-written mentions carry `None` and resolve by name, while types the
+/// instantiate pass creates carry the instance declaration's id.
+#[derive(Debug, Clone)]
+pub struct StructRef {
+    pub name: Spanned<String>,
+    pub target: Option<NodeId>,
+}
+
+impl StructRef {
+    pub fn unresolved(name: Spanned<String>) -> StructRef {
+        StructRef { name, target: None }
+    }
+}
+
+impl PartialEq for StructRef {
+    fn eq(&self, other: &Self) -> bool {
+        match (self.target, other.target) {
+            (Some(a), Some(b)) => a == b,
+            (None, None) => self.name.node == other.name.node,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for StructRef {}
+
+impl Hash for StructRef {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self.target {
+            Some(id) => {
+                1u8.hash(state);
+                id.hash(state);
+            }
+            None => {
+                0u8.hash(state);
+                self.name.node.hash(state);
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -242,7 +284,7 @@ pub enum Type {
     Char,
     Array(Box<Type>),
     Optional(Box<Type>),
-    Struct(Spanned<String>),
+    Struct(StructRef),
     Generic(Spanned<String>, Vec<Type>),
     Function(Option<Box<Type>>, Vec<Type>),
 }

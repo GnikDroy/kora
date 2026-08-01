@@ -41,11 +41,11 @@ impl<'ctx> CodeGen<'ctx, '_> {
         member: &str,
         span: &Span,
     ) -> Result<PointerValue<'ctx>, CodegenErr> {
-        let Type::Struct(struct_name) = self.program.types[&obj.id].clone() else {
+        let Type::Struct(sr) = self.program.types[&obj.id].clone() else {
             unreachable!("type checker rejects member access on non-structs");
         };
-        let struct_type = self.struct_type(&struct_name.node, span)?;
-        let index = self.struct_member_index(&struct_name.node, member);
+        let struct_type = self.struct_type(&sr.name.node, span)?;
+        let index = self.struct_member_index(&sr.name.node, member);
         let obj = self.lower_expression(obj)?.into_pointer_value();
         Ok(self
             .builder
@@ -77,7 +77,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
         for (index, (member, member_type)) in members.iter().enumerate() {
             let value = match member_type {
                 Type::Struct(inner) => {
-                    let inner_default = self.struct_constructor(&inner.node, span)?;
+                    let inner_default = self.struct_constructor(&inner.name.node, span)?;
                     let call = self.builder.build_call(inner_default, &[], "new").unwrap();
                     self.call_value(call)
                 }

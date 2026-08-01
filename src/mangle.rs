@@ -61,7 +61,7 @@ fn encode_type(ty: &Type) -> String {
         Type::Opaque => "opaque".to_string(),
         Type::Array(inner) => format!("arr_{}", encode_type(inner)),
         Type::Optional(inner) => format!("opt_{}", encode_type(inner)),
-        Type::Struct(name) => name.node.clone(),
+        Type::Struct(sr) => sr.name.node.clone(),
         Type::Generic(name, _) => name.node.clone(),
         Type::Function(_, _) => "fn".to_string(),
     }
