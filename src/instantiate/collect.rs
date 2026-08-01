@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use super::InstantiateErr;
 use crate::loader::LoadedProgram;
 use crate::parser::{GenericFunction, GenericImpl, GenericStruct, Span, Spanned};
+use crate::semantic_analyzer::is_intrinsic;
 
 pub(super) struct GenericStructDef {
     pub(super) module: usize,
@@ -193,6 +194,13 @@ fn validate(program: &LoadedProgram, ctx: &InstantiateCtx) -> Vec<InstantiateErr
                 &def.decl.span,
             );
         }
+        if is_intrinsic(name) {
+            error(
+                &mut errors,
+                "Cannot declare a name reserved for a compiler intrinsic".to_string(),
+                &def.decl.span,
+            );
+        }
         check_params(&mut errors, &def.decl.node.type_params);
         let expected = def.decl.node.type_params.len();
         for (_, imp) in &def.impls {
@@ -215,6 +223,13 @@ fn validate(program: &LoadedProgram, ctx: &InstantiateCtx) -> Vec<InstantiateErr
             error(
                 &mut errors,
                 format!("function `{name}` is declared multiple times"),
+                &def.decl.span,
+            );
+        }
+        if is_intrinsic(name) {
+            error(
+                &mut errors,
+                "Cannot declare a name reserved for a compiler intrinsic".to_string(),
                 &def.decl.span,
             );
         }

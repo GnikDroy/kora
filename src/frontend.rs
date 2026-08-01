@@ -95,7 +95,7 @@ where
     let provider = |path: &Path| crate::stdlib::source(path).or_else(|| provider(path));
     let mut program = Loader::new(provider).load(entry)?;
 
-    let generic_notes = crate::instantiate::Instantiator::new(&mut program)
+    let instances = crate::instantiate::Instantiator::new(&mut program)
         .run()
         .map_err(|errors| {
             errors
@@ -105,8 +105,8 @@ where
         })?;
 
     let symbols = Resolver::new()
-        .resolve_program(&program)
-        .map_err(|errors| annotate_generic_errors(errors, &generic_notes))?;
+        .resolve_program(&program, &instances)
+        .map_err(|errors| annotate_generic_errors(errors, &instances.notes))?;
 
     let mut analyze_errors = Vec::new();
 
@@ -177,7 +177,7 @@ where
     }
 
     if !analyze_errors.is_empty() {
-        return Err(annotate_generic_errors(analyze_errors, &generic_notes));
+        return Err(annotate_generic_errors(analyze_errors, &instances.notes));
     }
 
     Ok(CompiledProgram {
@@ -186,7 +186,7 @@ where
         types,
         method_calls,
         array_method_calls,
-        origins: InstanceOrigins::new(),
+        origins: instances.origins,
     })
 }
 

@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use super::super::errors::TypeErr;
 use super::check_typename;
 use super::scope::Scope;
@@ -7,11 +9,20 @@ use crate::parser::*;
 pub(super) struct GlobalsCollector<'a> {
     table: &'a mut SymbolTable,
     errors: &'a mut Vec<TypeErr>,
+    fn_instances: &'a HashSet<NodeId>,
 }
 
 impl<'a> GlobalsCollector<'a> {
-    pub(super) fn new(table: &'a mut SymbolTable, errors: &'a mut Vec<TypeErr>) -> Self {
-        GlobalsCollector { table, errors }
+    pub(super) fn new(
+        table: &'a mut SymbolTable,
+        errors: &'a mut Vec<TypeErr>,
+        fn_instances: &'a HashSet<NodeId>,
+    ) -> Self {
+        GlobalsCollector {
+            table,
+            errors,
+            fn_instances,
+        }
     }
 
     pub(super) fn collect(&mut self, modules: &[&Module]) -> Vec<Scope> {
@@ -91,7 +102,9 @@ impl<'a> GlobalsCollector<'a> {
             let id =
                 self.table
                     .add_symbol(func.id, func.node.name.clone(), Some(func.node.get_type()));
-            self.bind(&mut scope, func.node.name.clone(), id, &func.span);
+            if !self.fn_instances.contains(&func.id) {
+                self.bind(&mut scope, func.node.name.clone(), id, &func.span);
+            }
         }
         scope
     }

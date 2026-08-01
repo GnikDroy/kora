@@ -56,7 +56,7 @@ pub(super) mod test_support {
     }
 
     pub(crate) fn resolve_program(program: &LoadedProgram) -> Result<SymbolTable, Vec<TypeErr>> {
-        Resolver::new().resolve_program(program)
+        Resolver::new().resolve_program(program, &crate::instantiate::Instantiated::default())
     }
 
     pub(crate) fn load_program(

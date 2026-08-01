@@ -37,7 +37,7 @@ fn scaffold_impl(imp: &Spanned<GenericImpl>) -> Spanned<Impl> {
     imp
 }
 
-fn scaffold_function(func: &Spanned<GenericFunction>) -> Spanned<Function> {
+pub(super) fn scaffold_function(func: &Spanned<GenericFunction>) -> Spanned<Function> {
     let mut func = Spanned::new(
         Function {
             return_type: func.node.return_type.clone(),
@@ -242,10 +242,10 @@ impl Instantiator<'_> {
         &mut self,
         module: usize,
         generic: &str,
-        instance: &str,
+        decl: &mut Spanned<Function>,
         args: &[Type],
         chain: &mut Chain,
-    ) -> Spanned<Function> {
+    ) {
         let def = &self.generic_fns[&(module, generic.to_string())];
         let params: Vec<String> = def
             .decl
@@ -254,11 +254,8 @@ impl Instantiator<'_> {
             .iter()
             .map(|p| p.node.clone())
             .collect();
-        let mut decl = scaffold_function(&def.decl);
-        decl.node.name = instance.to_string();
         let subst: TypeSubstitutions = params.into_iter().zip(args.iter().cloned()).collect();
-        self.concretize_function(module, &subst, &mut decl, chain);
-        decl
+        self.concretize_function(module, &subst, decl, chain);
     }
 
     pub(super) fn concretize_program(&mut self) {
@@ -436,7 +433,8 @@ impl Instantiator<'_> {
                 for arg in args.iter_mut() {
                     self.concretize_type(subst, arg, &span, chain);
                 }
-                replacement = self.resolve_type_application(module, callee, args, &span, chain);
+                replacement =
+                    self.resolve_type_application(module, expr.id, callee, args, &span, chain);
             }
         }
         if let Some(node) = replacement {
@@ -520,6 +518,7 @@ impl Instantiator<'_> {
     fn resolve_type_application(
         &mut self,
         module: usize,
+        mention: NodeId,
         callee: &Spanned<Expression>,
         args: &[Type],
         span: &Span,
@@ -534,8 +533,9 @@ impl Instantiator<'_> {
                     );
                     return None;
                 }
-                let instance = self.instantiate_function(module, name, args, span, chain)?;
-                Some(Expression::Identifier(instance))
+                let decl = self.instantiate_function(module, name, args, span, chain)?;
+                self.resolutions.insert(mention, decl);
+                Some(Expression::Identifier(name.clone()))
             }
             Expression::Access(inner, member) => {
                 let Expression::Identifier(alias) = &inner.node else {
@@ -556,8 +556,9 @@ impl Instantiator<'_> {
                     );
                     return None;
                 }
-                let instance = self.instantiate_function(target, member, args, span, chain)?;
-                Some(Expression::Access(inner.clone(), instance))
+                let decl = self.instantiate_function(target, member, args, span, chain)?;
+                self.resolutions.insert(mention, decl);
+                Some(Expression::Access(inner.clone(), member.clone()))
             }
             _ => {
                 self.error(

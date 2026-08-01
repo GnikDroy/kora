@@ -1,10 +1,11 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::super::errors::TypeErr;
 use super::check_typename;
 use super::collect::GlobalsCollector;
 use super::scope::{ImportMap, Scopes};
 use super::table::{SymbolId, SymbolTable, is_intrinsic};
+use crate::instantiate::Instantiated;
 use crate::loader::LoadedProgram;
 use crate::parser::*;
 
@@ -14,6 +15,8 @@ pub struct Resolver {
     scopes: Scopes,
     errors: Vec<TypeErr>,
     loop_depth: usize,
+    resolutions: HashMap<NodeId, NodeId>,
+    fn_instances: HashSet<NodeId>,
 }
 
 impl Resolver {
@@ -23,10 +26,14 @@ impl Resolver {
 
     pub fn resolve(self, modules: &[&Module]) -> Result<SymbolTable, Vec<TypeErr>> {
         let imports = modules.iter().map(|_| ImportMap::new()).collect();
-        self.run(modules, imports)
+        self.run(modules, imports, &Instantiated::default())
     }
 
-    pub fn resolve_program(self, program: &LoadedProgram) -> Result<SymbolTable, Vec<TypeErr>> {
+    pub fn resolve_program(
+        self,
+        program: &LoadedProgram,
+        instances: &Instantiated,
+    ) -> Result<SymbolTable, Vec<TypeErr>> {
         let modules: Vec<&Module> = program.modules.iter().map(|m| &m.module).collect();
         let index: HashMap<SourceId, usize> = program
             .modules
@@ -48,15 +55,20 @@ impl Resolver {
                     .collect()
             })
             .collect();
-        self.run(&modules, imports)
+        self.run(&modules, imports, instances)
     }
 
     fn run(
         mut self,
         modules: &[&Module],
         imports: Vec<ImportMap>,
+        instances: &Instantiated,
     ) -> Result<SymbolTable, Vec<TypeErr>> {
-        let globals = GlobalsCollector::new(&mut self.table, &mut self.errors).collect(modules);
+        self.resolutions = instances.resolutions.clone();
+        self.fn_instances = instances.fn_instances.clone();
+        let globals =
+            GlobalsCollector::new(&mut self.table, &mut self.errors, &self.fn_instances)
+                .collect(modules);
         self.scopes = Scopes::new(globals, imports);
         for (index, module) in modules.iter().enumerate() {
             self.scopes.enter_source(index);
@@ -216,6 +228,11 @@ impl ASTVisitor for Resolver {
     }
 
     fn visit_expression(&mut self, expr: &Spanned<Expression>) {
+        if let Some(&decl) = self.resolutions.get(&expr.id) {
+            let symbol = self.table.declarations[&decl];
+            self.table.uses.insert(expr.id, symbol);
+            return;
+        }
         match &expr.node {
             Expression::Identifier(name) if !is_intrinsic(name) => match self.scopes.lookup(name) {
                 Some(id) => {
