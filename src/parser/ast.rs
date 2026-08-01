@@ -34,9 +34,14 @@ impl Default for SourceId {
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct NodeId {
-    pub source: SourceId,
-    pub index: u32,
+pub struct NodeId(pub(crate) u64);
+
+impl NodeId {
+    pub fn fresh() -> NodeId {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        NodeId(NEXT.fetch_add(1, Ordering::Relaxed))
+    }
 }
 
 /// An AST node annotated with where it was written and a stable `NodeId`.
@@ -52,6 +57,10 @@ pub struct Spanned<T> {
 impl<T> Spanned<T> {
     pub fn new(node: T, span: Span, id: NodeId) -> Self {
         Spanned { node, span, id }
+    }
+
+    pub fn fresh(node: T, span: Span) -> Self {
+        Spanned::new(node, span, NodeId::fresh())
     }
 }
 

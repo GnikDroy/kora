@@ -12,7 +12,6 @@ pub struct Parser {
     tokens: Vec<TokenInfo>,
     last_end: Position,
     source: SourceId,
-    next_index: u32,
 }
 
 impl Parser {
@@ -26,17 +25,7 @@ impl Parser {
             tokens,
             last_end: Position::default(),
             source,
-            next_index: 0,
         }
-    }
-
-    fn spanned<T>(&mut self, node: T, span: Span) -> Spanned<T> {
-        let id = NodeId {
-            source: self.source,
-            index: self.next_index,
-        };
-        self.next_index += 1;
-        Spanned::new(node, span, id)
     }
 
     fn peek(&mut self) -> Result<&TokenInfo, ParseErr> {
@@ -308,7 +297,7 @@ impl Parser {
             })
         })?;
         let span = self.span_from(start);
-        Ok(self.spanned(node, span))
+        Ok(Spanned::fresh(node, span))
     }
 
     fn parselet_infix_function_call(
@@ -435,7 +424,7 @@ impl Parser {
                         let start = term.span.start.clone();
                         let node = self.parselet_infix_operators(operator, term)?;
                         let span = self.span_from(start);
-                        term = self.spanned(node, span);
+                        term = Spanned::fresh(node, span);
                         continue;
                     }
                 }
@@ -463,7 +452,7 @@ impl Parser {
         let start = self.current_start();
         let name = self.parse_identifier()?;
         let span = self.span_from(start);
-        Ok(self.spanned(name, span))
+        Ok(Spanned::fresh(name, span))
     }
 
     fn parse_field_initializer(
@@ -489,7 +478,7 @@ impl Parser {
 
         let typename = self.parse_typename()?;
         let span = self.span_from(start);
-        Ok(self.spanned(IdentifierTypePair { name, typename }, span))
+        Ok(Spanned::fresh(IdentifierTypePair { name, typename }, span))
     }
 
     fn parse_generic_delimited<T>(
@@ -702,7 +691,7 @@ impl Parser {
             _ => self.parse_simple_statement(),
         }?;
         let init_span = self.span_from(init_start);
-        let init = self.spanned(init, init_span);
+        let init = Spanned::fresh(init, init_span);
 
         let cond = self.parse_expression()?;
 
@@ -736,54 +725,54 @@ impl Parser {
         let body = self.parse_statement()?;
         let span = self.span_from(var_start);
 
-        let n = iterable.id.index;
+        let n = iterable.id.0;
         let it_name = format!("$it{n}");
         let i_name = format!("$i{n}");
 
-        let it_binding = self.spanned(it_name.clone(), span.clone());
-        let let_it = self.spanned(Statement::Let(it_binding, None, iterable), span.clone());
+        let it_binding = Spanned::fresh(it_name.clone(), span.clone());
+        let let_it = Spanned::fresh(Statement::Let(it_binding, None, iterable), span.clone());
 
-        let zero = self.spanned(Expression::IntegerLiteral(0), span.clone());
-        let i_binding = self.spanned(i_name.clone(), span.clone());
-        let let_i = self.spanned(Statement::Let(i_binding, None, zero), span.clone());
+        let zero = Spanned::fresh(Expression::IntegerLiteral(0), span.clone());
+        let i_binding = Spanned::fresh(i_name.clone(), span.clone());
+        let let_i = Spanned::fresh(Statement::Let(i_binding, None, zero), span.clone());
 
-        let i_ref = self.spanned(Expression::Identifier(i_name.clone()), span.clone());
-        let it_ref = self.spanned(Expression::Identifier(it_name.clone()), span.clone());
-        let len_access = self.spanned(
+        let i_ref = Spanned::fresh(Expression::Identifier(i_name.clone()), span.clone());
+        let it_ref = Spanned::fresh(Expression::Identifier(it_name.clone()), span.clone());
+        let len_access = Spanned::fresh(
             Expression::Access(Box::new(it_ref), "len".to_string()),
             span.clone(),
         );
-        let len_call = self.spanned(
+        let len_call = Spanned::fresh(
             Expression::Call(Box::new(len_access), Vec::new()),
             span.clone(),
         );
-        let cond = self.spanned(
+        let cond = Spanned::fresh(
             Expression::Binary(Box::new(i_ref), BinaryOp::Less, Box::new(len_call)),
             span.clone(),
         );
 
-        let i_ref = self.spanned(Expression::Identifier(i_name.clone()), span.clone());
-        let one = self.spanned(Expression::IntegerLiteral(1), span.clone());
-        let next = self.spanned(
+        let i_ref = Spanned::fresh(Expression::Identifier(i_name.clone()), span.clone());
+        let one = Spanned::fresh(Expression::IntegerLiteral(1), span.clone());
+        let next = Spanned::fresh(
             Expression::Binary(Box::new(i_ref), BinaryOp::Add, Box::new(one)),
             span.clone(),
         );
-        let i_ref = self.spanned(Expression::Identifier(i_name.clone()), span.clone());
-        let step = self.spanned(
+        let i_ref = Spanned::fresh(Expression::Identifier(i_name.clone()), span.clone());
+        let step = Spanned::fresh(
             Expression::Binary(Box::new(i_ref), BinaryOp::Assign, Box::new(next)),
             span.clone(),
         );
 
-        let it_ref = self.spanned(Expression::Identifier(it_name), span.clone());
-        let i_ref = self.spanned(Expression::Identifier(i_name), span.clone());
-        let element = self.spanned(
+        let it_ref = Spanned::fresh(Expression::Identifier(it_name), span.clone());
+        let i_ref = Spanned::fresh(Expression::Identifier(i_name), span.clone());
+        let element = Spanned::fresh(
             Expression::ArrayIndex(Box::new(it_ref), Box::new(i_ref)),
             span.clone(),
         );
-        let let_element = self.spanned(Statement::Let(variable, None, element), var_span);
+        let let_element = Spanned::fresh(Statement::Let(variable, None, element), var_span);
 
-        let inner = self.spanned(Statement::Compound(vec![let_element, body]), span.clone());
-        let for_loop = self.spanned(
+        let inner = Spanned::fresh(Statement::Compound(vec![let_element, body]), span.clone());
+        let for_loop = Spanned::fresh(
             Statement::For(Box::new(let_i), cond, step, Box::new(inner)),
             span.clone(),
         );
@@ -835,7 +824,7 @@ impl Parser {
             _ => self.parse_simple_statement(),
         }?;
         let span = self.span_from(start);
-        Ok(self.spanned(node, span))
+        Ok(Spanned::fresh(node, span))
     }
 
     fn parse_array_typename(&mut self) -> Result<Type, ParseErr> {
@@ -969,7 +958,7 @@ impl Parser {
             Token::Keyword(Keyword::Opaque) => Ok(Type::Opaque),
             Token::Keyword(Keyword::String) => Ok(Type::Array(Box::new(Type::Char))),
             Token::Identifier(name) => {
-                let name = self.spanned(name, span);
+                let name = Spanned::fresh(name, span);
                 if self.peek_is(Token::Symbol(Symbol::Less)) {
                     Ok(Type::Generic(name, self.parse_type_arguments()?))
                 } else {
@@ -1048,7 +1037,7 @@ impl Parser {
             "Expected semicolon ; to end import declaration",
         )?;
         let span = self.span_from(start);
-        Ok(self.spanned(Import { path, alias }, span))
+        Ok(Spanned::fresh(Import { path, alias }, span))
     }
 
     fn parse_extern_typename(&mut self) -> Result<ExternType, ParseErr> {
@@ -1115,7 +1104,7 @@ impl Parser {
         )?;
         let typename = self.parse_extern_typename()?;
         let span = self.span_from(start);
-        Ok(self.spanned(ExternParameter { name, typename }, span))
+        Ok(Spanned::fresh(ExternParameter { name, typename }, span))
     }
 
     fn parse_extern_function(&mut self) -> Result<Spanned<ExternFunction>, ParseErr> {
@@ -1140,7 +1129,7 @@ impl Parser {
         )?;
 
         let span = self.span_from(start);
-        Ok(self.spanned(
+        Ok(Spanned::fresh(
             ExternFunction {
                 return_type,
                 name,
@@ -1176,7 +1165,7 @@ impl Parser {
             statement,
         };
         let span = self.span_from(start);
-        Ok(self.spanned(function, span))
+        Ok(Spanned::fresh(function, span))
     }
 
     fn parse_method_parameters(
@@ -1198,20 +1187,20 @@ impl Parser {
             });
         }
         let self_span = self.span_from(start);
-        let name = self.spanned(struct_name.node.clone(), struct_name.span.clone());
+        let name = Spanned::fresh(struct_name.node.clone(), struct_name.span.clone());
         let self_type = if type_params.is_empty() {
             Type::Struct(name)
         } else {
             let args = type_params
                 .iter()
                 .map(|p| {
-                    let param = self.spanned(p.node.clone(), p.span.clone());
+                    let param = Spanned::fresh(p.node.clone(), p.span.clone());
                     Type::Struct(param)
                 })
                 .collect();
             Type::Generic(name, args)
         };
-        let mut arguments = vec![self.spanned(
+        let mut arguments = vec![Spanned::fresh(
             IdentifierTypePair {
                 name: "self".to_string(),
                 typename: self_type,
@@ -1274,7 +1263,7 @@ impl Parser {
             statement,
         };
         let span = self.span_from(start);
-        Ok(self.spanned(function, span))
+        Ok(Spanned::fresh(function, span))
     }
 
     fn parse_impl(&mut self) -> Result<Spanned<Impl>, ParseErr> {
@@ -1297,7 +1286,7 @@ impl Parser {
         self.pop()?;
 
         let span = self.span_from(start);
-        Ok(self.spanned(
+        Ok(Spanned::fresh(
             Impl {
                 struct_name,
                 type_params,
@@ -1322,7 +1311,7 @@ impl Parser {
             Parser::parse_identifier_type_pair,
         )?;
         let span = self.span_from(start);
-        Ok(self.spanned(
+        Ok(Spanned::fresh(
             Struct {
                 name,
                 type_params,
@@ -1448,7 +1437,7 @@ mod tests {
     }
 
     #[test]
-    fn test_node_ids_are_unique_per_source() {
+    fn test_node_ids_are_unique_across_parsers() {
         let toks_a = lexer::Lexer::lex("int a(){ return 1; }").expect("lex");
         let ma = Parser::with_source(toks_a, SourceId(1))
             .parse()
@@ -1459,10 +1448,11 @@ mod tests {
             .parse()
             .expect("parse b");
 
-        let id_a = ma.functions[0].id;
-        let id_b = mb.functions[0].id;
-        assert_eq!(id_a.index, id_b.index);
-        assert_ne!(id_a, id_b);
+        assert_ne!(ma.functions[0].id, mb.functions[0].id);
+        assert_ne!(
+            ma.functions[0].node.statement.id,
+            mb.functions[0].node.statement.id
+        );
     }
 
     #[test]
