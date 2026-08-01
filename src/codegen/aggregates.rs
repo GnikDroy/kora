@@ -79,12 +79,9 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 Type::Struct(inner) => {
                     let inner_default = self.struct_constructor(&inner.node, span)?;
                     let call = self.builder.build_call(inner_default, &[], "new").unwrap();
-                    let ValueKind::Basic(value) = call.try_as_basic_value() else {
-                        unreachable!();
-                    };
-                    value
+                    self.call_value(call)
                 }
-                Type::Array(_) => self.array_new(member_type, span)?,
+                Type::Array(elem) => self.array_new(elem, span)?,
                 _ => continue, // GC_malloc zeros scalers
             };
             let field = self

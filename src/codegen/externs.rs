@@ -117,10 +117,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
         match &func.return_type {
             None => self.builder.build_return(None).unwrap(),
             Some(ty) => {
-                let raw = match call.try_as_basic_value() {
-                    super::ValueKind::Basic(value) => value,
-                    _ => unreachable!("non-void extern returns a value"),
-                };
+                let raw = self.call_value(call);
                 let value = self.marshal_return(ty, raw);
                 self.builder.build_return(Some(&value)).unwrap()
             }
@@ -264,9 +261,6 @@ impl<'ctx> CodeGen<'ctx, '_> {
             .builder
             .build_call(helper, &[raw.into()], "kstr")
             .unwrap();
-        let super::ValueKind::Basic(value) = call.try_as_basic_value() else {
-            unreachable!();
-        };
-        value.into_pointer_value()
+        self.call_value(call).into_pointer_value()
     }
 }

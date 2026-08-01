@@ -99,12 +99,9 @@ impl<'ctx> CodeGen<'ctx, '_> {
 
     pub(super) fn array_new(
         &mut self,
-        array_type: &Type,
+        elem: &Type,
         span: &Span,
     ) -> Result<BasicValueEnum<'ctx>, CodegenErr> {
-        let Type::Array(elem) = array_type else {
-            unreachable!();
-        };
         let (_, size) = self.type_layout(elem, span)?;
         let zero = self.context.i64_type().const_zero();
         Ok(self

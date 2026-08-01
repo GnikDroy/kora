@@ -23,7 +23,9 @@ use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module as LlvmModule;
 use inkwell::types::{BasicType, BasicTypeEnum, StructType};
-use inkwell::values::{BasicValueEnum, FunctionValue, IntValue, PointerValue, ValueKind};
+use inkwell::values::{
+    BasicValueEnum, CallSiteValue, FunctionValue, IntValue, PointerValue, ValueKind,
+};
 
 use crate::frontend::CompiledProgram;
 use crate::mangle::{mangle, mangle_method, mangle_prefix};
@@ -272,9 +274,13 @@ impl<'ctx> CodeGen<'ctx, '_> {
             .builder
             .build_call(malloc, &[size.into()], name)
             .unwrap();
+        self.call_value(call).into_pointer_value()
+    }
+
+    fn call_value(&self, call: CallSiteValue<'ctx>) -> BasicValueEnum<'ctx> {
         match call.try_as_basic_value() {
-            ValueKind::Basic(value) => value.into_pointer_value(),
-            ValueKind::Instruction(_) => unreachable!("GC_malloc returns a pointer"),
+            ValueKind::Basic(value) => value,
+            ValueKind::Instruction(_) => unreachable!("the callee returns a value"),
         }
     }
 

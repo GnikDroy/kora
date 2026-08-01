@@ -42,7 +42,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 Ok(value)
             }
             Expression::Binary(left, op @ (BinaryOp::And | BinaryOp::Or), right) => {
-                self.lower_short_circuit(left, *op, right)
+                self.lower_short_circuit(left, *op == BinaryOp::And, right)
             }
             Expression::Binary(left, op, right) => self.lower_binary(left, *op, right, span),
             Expression::Unary(op, operand) => {
@@ -112,10 +112,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 (Type::Struct(name), None) => {
                     let default = self.struct_constructor(&name.node, span)?;
                     let call = self.builder.build_call(default, &[], "new").unwrap();
-                    match call.try_as_basic_value() {
-                        ValueKind::Basic(value) => Ok(value),
-                        ValueKind::Instruction(_) => unreachable!(),
-                    }
+                    Ok(self.call_value(call))
                 }
                 _ => unreachable!("type checker rejects bare `new` on non-structs"),
             },
@@ -269,7 +266,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
     fn lower_short_circuit(
         &mut self,
         left: &Spanned<Expression>,
-        op: BinaryOp,
+        is_and: bool,
         right: &Spanned<Expression>,
     ) -> Result<BasicValueEnum<'ctx>, CodegenErr> {
         let function = self.frame().function;
@@ -279,21 +276,17 @@ impl<'ctx> CodeGen<'ctx, '_> {
         let rhs_block = self.context.append_basic_block(function, "sc_rhs");
         let merge_block = self.context.append_basic_block(function, "sc_merge");
 
-        let short_value = match op {
-            // false && _ == false; true || _ == true
-            BinaryOp::And => {
-                self.builder
-                    .build_conditional_branch(lhs, rhs_block, merge_block)
-                    .unwrap();
-                self.context.bool_type().const_int(0, false)
-            }
-            BinaryOp::Or => {
-                self.builder
-                    .build_conditional_branch(lhs, merge_block, rhs_block)
-                    .unwrap();
-                self.context.bool_type().const_int(1, false)
-            }
-            _ => unreachable!(),
+        // false && _ == false; true || _ == true
+        let short_value = if is_and {
+            self.builder
+                .build_conditional_branch(lhs, rhs_block, merge_block)
+                .unwrap();
+            self.context.bool_type().const_int(0, false)
+        } else {
+            self.builder
+                .build_conditional_branch(lhs, merge_block, rhs_block)
+                .unwrap();
+            self.context.bool_type().const_int(1, false)
         };
 
         self.builder.position_at_end(rhs_block);
