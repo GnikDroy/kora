@@ -21,6 +21,12 @@ pub(super) fn check_typename(table: &SymbolTable, errors: &mut Vec<TypeErr>, ty:
                 });
             }
         }
+        Type::Generic(name, _) => {
+            errors.push(TypeErr {
+                msg: "generic type was not instantiated",
+                span: name.span.clone(),
+            });
+        }
         Type::Array(inner) | Type::Optional(inner) => check_typename(table, errors, inner),
         Type::Function(return_type, args) => {
             if let Some(return_type) = return_type {

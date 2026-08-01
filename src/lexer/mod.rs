@@ -343,7 +343,7 @@ impl Lexer {
                 '"' => Lexer::consume_string_literal,
                 '\'' => Lexer::consume_char_literal,
                 '#' => Lexer::consume_comment,
-                '=' | '!' | '>' | '<' | '&' | '|' => Lexer::consume_double_symbol,
+                '=' | '!' | '>' | '<' | '&' | '|' | ':' => Lexer::consume_double_symbol,
                 'A'..='Z' | 'a'..='z' | '_' => Lexer::consume_identifier_and_keyword,
                 c if Symbol::try_from(c).is_ok() => Lexer::consume_single_symbol,
                 _ => Lexer::consume_nothing_with_error,
@@ -375,7 +375,7 @@ mod tests {
         let source = concat!(
             "return let if else while void int real char bool true false extern as struct impl new import",
             " ( ) { } [ ] ; : , + - / % = > < ! . & | ^",
-            " == >= <= != || && << >>",
+            " == >= <= != || && << >> ::",
             " 42 3.1415",
             " \"字\"",
             " 'a' '\\'' '\\\\'",
@@ -386,6 +386,30 @@ mod tests {
             result.is_ok() && source.split(' ').count() == result.as_ref().unwrap().len(),
             "result: {:?}",
             result
+        );
+    }
+
+    #[test]
+    fn test_double_colon() {
+        let toks = Lexer::lex(": :: ::: ::::").unwrap();
+        let symbols: Vec<Symbol> = toks
+            .iter()
+            .filter_map(|t| match t.token {
+                Token::Symbol(s) => Some(s),
+                _ => None,
+            })
+            .collect();
+        use Symbol::{Colon, DoubleColon};
+        assert_eq!(
+            symbols,
+            vec![
+                Colon,
+                DoubleColon,
+                DoubleColon,
+                Colon,
+                DoubleColon,
+                DoubleColon,
+            ]
         );
     }
 

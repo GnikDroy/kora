@@ -93,15 +93,17 @@ pub struct Import {
 /// Methods for a struct. Each function's first argument is the synthesized
 /// `self` parameter, typed as the impl'd struct, so downstream passes treat
 /// methods as ordinary functions.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Impl {
     pub struct_name: Spanned<String>,
+    pub type_params: Vec<Spanned<String>>,
     pub functions: Vec<Spanned<Function>>,
 }
 
 #[derive(Debug, Clone)]
 pub struct Struct {
     pub name: String,
+    pub type_params: Vec<Spanned<String>>,
     pub members: Vec<Spanned<IdentifierTypePair>>,
 }
 
@@ -158,10 +160,11 @@ pub struct ExternFunction {
     pub arguments: Vec<Spanned<ExternParameter>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Function {
     pub return_type: Option<Type>,
     pub name: String,
+    pub type_params: Vec<Spanned<String>>,
     pub arguments: Vec<Spanned<IdentifierTypePair>>,
     pub statement: Spanned<Statement>,
 }
@@ -208,10 +211,11 @@ pub enum Type {
     Array(Box<Type>),
     Optional(Box<Type>),
     Struct(Spanned<String>),
+    Generic(Spanned<String>, Vec<Type>),
     Function(Option<Box<Type>>, Vec<Type>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Statement {
     Empty,
     Simple(Spanned<Expression>),
@@ -234,7 +238,7 @@ pub enum Statement {
     Compound(Vec<Spanned<Statement>>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expression {
     IntegerLiteral(isize),
     CharLiteral(u8),
@@ -253,6 +257,7 @@ pub enum Expression {
     Access(Box<Spanned<Expression>>, String),
     Construct(Type, Option<Box<Spanned<Expression>>>),
     StructLiteral(Type, Vec<(Spanned<String>, Spanned<Expression>)>),
+    TypeApplication(Box<Spanned<Expression>>, Vec<Type>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -281,7 +286,7 @@ pub enum BinaryOp {
 
 impl BinaryOp {}
 
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum UnaryOp {
     Not,
     Negate,
@@ -307,6 +312,7 @@ pub enum InfixOperator {
     ArrayIndex,
     Access,
     Unwrap,
+    TypeApplication,
 }
 
 impl TryFrom<Token> for InfixOperator {
@@ -340,6 +346,7 @@ impl TryFrom<Token> for InfixOperator {
             Token::Symbol(Symbol::LeftBracket)        => Ok(ArrayIndex),
             Token::Symbol(Symbol::Dot)                => Ok(Access),
             Token::Symbol(Symbol::Exclam)             => Ok(Unwrap),
+            Token::Symbol(Symbol::DoubleColon)        => Ok(TypeApplication),
             _ => Err(()),
         }
     }
@@ -369,7 +376,8 @@ impl InfixOperator {
             InfixOperator::FunctionCall
             | InfixOperator::ArrayIndex
             | InfixOperator::Access
-            | InfixOperator::Unwrap => 202,
+            | InfixOperator::Unwrap
+            | InfixOperator::TypeApplication => 202,
         }
     }
 
@@ -400,7 +408,8 @@ impl InfixOperator {
             InfixOperator::FunctionCall
             | InfixOperator::ArrayIndex
             | InfixOperator::Access
-            | InfixOperator::Unwrap => true,
+            | InfixOperator::Unwrap
+            | InfixOperator::TypeApplication => true,
         }
     }
 

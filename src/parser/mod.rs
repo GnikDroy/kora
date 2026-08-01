@@ -55,6 +55,10 @@ impl Parser {
         Ok(token)
     }
 
+    fn peek_is(&mut self, token: Token) -> bool {
+        self.peek().map(|t| t.token == token).unwrap_or(false)
+    }
+
     fn current_start(&self) -> Position {
         self.tokens
             .last()
@@ -382,7 +386,39 @@ impl Parser {
             InfixOperator::ArrayIndex => self.parselet_infix_array_index(op, term),
             InfixOperator::Access => self.parselet_infix_access(op, term),
             InfixOperator::Unwrap => self.parselet_infix_unwrap(op, term),
+            InfixOperator::TypeApplication => self.parselet_infix_type_application(op, term),
         }
+    }
+
+    fn parselet_infix_type_application(
+        &mut self,
+        _: InfixOperator,
+        term: Spanned<Expression>,
+    ) -> Result<Expression, ParseErr> {
+        let is_named = match &term.node {
+            Expression::Identifier(_) => true,
+            Expression::Access(inner, _) => matches!(inner.node, Expression::Identifier(_)),
+            _ => false,
+        };
+        if !is_named {
+            return Err(ParseErr {
+                msg: "Type arguments can only follow a function name: f::<type, ...> or module.f::<type, ...>",
+                token: Some(self.peek()?.clone()),
+            });
+        }
+        self.pop_token(
+            Token::Symbol(Symbol::DoubleColon),
+            "Expected :: to supply type arguments: f::<type, ...>(...)",
+        )?;
+        let token = self.peek()?;
+        if token.token != Token::Symbol(Symbol::Less) {
+            return Err(ParseErr {
+                msg: "Expected < after :: to supply type arguments: f::<type, ...>(...)",
+                token: Some(token.clone()),
+            });
+        }
+        let args = self.parse_type_arguments()?;
+        Ok(Expression::TypeApplication(Box::new(term), args))
     }
 
     fn pratt_parser(
@@ -423,13 +459,17 @@ impl Parser {
         }
     }
 
+    fn parse_spanned_identifier(&mut self) -> Result<Spanned<String>, ParseErr> {
+        let start = self.current_start();
+        let name = self.parse_identifier()?;
+        let span = self.span_from(start);
+        Ok(self.spanned(name, span))
+    }
+
     fn parse_field_initializer(
         &mut self,
     ) -> Result<(Spanned<String>, Spanned<Expression>), ParseErr> {
-        let start = self.current_start();
-        let name = self.parse_identifier()?;
-        let name_span = self.span_from(start);
-        let name = self.spanned(name, name_span);
+        let name = self.parse_spanned_identifier()?;
         self.pop_token(
             Token::Symbol(Symbol::Colon),
             "Expected colon after struct literal field: <field>: <expr>",
@@ -556,10 +596,7 @@ impl Parser {
             "Expected let: let <identifier>[: <type>] = <expression>;",
         )?;
 
-        let start = self.current_start();
-        let name = self.parse_identifier()?;
-        let span = self.span_from(start);
-        let name = self.spanned(name, span);
+        let name = self.parse_spanned_identifier()?;
 
         let typename = match self.peek() {
             Ok(token) if token.token == Token::Symbol(Symbol::Colon) => {
@@ -689,8 +726,8 @@ impl Parser {
     /// { let $it = xs; for (let $i = 0; $i < $it.len(); $i = $i + 1) { let x = $it[$i]; <statement> } }
     fn parse_for_range_statement(&mut self) -> Result<Statement, ParseErr> {
         let var_start = self.current_start();
-        let variable = self.parse_identifier()?;
-        let var_span = self.span_from(var_start.clone());
+        let variable = self.parse_spanned_identifier()?;
+        let var_span = variable.span.clone();
         self.pop_token(
             Token::Symbol(Symbol::Pipe),
             "Expected | after the loop variable: for <var> | <iterable> <statement>",
@@ -743,8 +780,7 @@ impl Parser {
             Expression::ArrayIndex(Box::new(it_ref), Box::new(i_ref)),
             span.clone(),
         );
-        let var_binding = self.spanned(variable, var_span.clone());
-        let let_element = self.spanned(Statement::Let(var_binding, None, element), var_span);
+        let let_element = self.spanned(Statement::Let(variable, None, element), var_span);
 
         let inner = self.spanned(Statement::Compound(vec![let_element, body]), span.clone());
         let for_loop = self.spanned(
@@ -827,6 +863,97 @@ impl Parser {
         }
     }
 
+    /// `>>` and `>=` lex as single tokens; in type-argument position the first
+    /// `>` closes the list, so the fused token is split back in two.
+    fn split_fused_greater(&mut self) {
+        let rest = match self.tokens.last().map(|t| &t.token) {
+            Some(Token::Symbol(Symbol::GreaterGreater)) => Symbol::Greater,
+            Some(Token::Symbol(Symbol::GreaterEqual)) => Symbol::Equal,
+            _ => return,
+        };
+        let fused = self.tokens.pop().unwrap();
+        let mut split = fused.start.clone();
+        split.col += 1;
+        self.tokens.push(TokenInfo {
+            token: Token::Symbol(rest),
+            start: split.clone(),
+            end: fused.end,
+        });
+        self.tokens.push(TokenInfo {
+            token: Token::Symbol(Symbol::Greater),
+            start: fused.start,
+            end: split,
+        });
+    }
+
+    fn parse_type_arguments(&mut self) -> Result<Vec<Type>, ParseErr> {
+        // This function mimics parse_generic_delimited
+        // We cannot use the same function because self.split_fused_greater()
+        // has to be called at the top of the loop.
+        // We require > and not >>  as ending of type parameter.
+
+        self.pop_token(
+            Token::Symbol(Symbol::Less),
+            "Expected < to start type arguments: <type, ...>",
+        )?;
+
+        let mut args = vec![];
+        let mut expecting_separator = false;
+        while !self.tokens.is_empty() {
+            self.split_fused_greater();
+            let token = self.peek()?;
+            if token.token == Token::Symbol(Symbol::Greater) {
+                if args.is_empty() {
+                    return Err(ParseErr {
+                        msg: "Type argument list cannot be empty: <type, ...>",
+                        token: Some(token.clone()),
+                    });
+                }
+                self.pop()?;
+                return Ok(args);
+            } else if token.token == Token::Symbol(Symbol::Comma) && !expecting_separator {
+                return Err(ParseErr {
+                    msg: "Expected item, found separator.",
+                    token: Some(token.clone()),
+                });
+            } else if token.token != Token::Symbol(Symbol::Comma) && expecting_separator {
+                return Err(ParseErr {
+                    msg: "Expected separator, found something else.",
+                    token: Some(token.clone()),
+                });
+            } else if token.token == Token::Symbol(Symbol::Comma) {
+                self.pop()?;
+            } else {
+                args.push(self.parse_typename()?);
+            }
+            expecting_separator = !expecting_separator;
+        }
+
+        Err(ParseErr {
+            msg: "Cannot parse multiple items. Ending token not found.",
+            token: self.tokens.last().cloned(),
+        })
+    }
+
+    fn parse_type_params(&mut self) -> Result<Vec<Spanned<String>>, ParseErr> {
+        if !self.peek_is(Token::Symbol(Symbol::Less)) {
+            return Ok(vec![]);
+        }
+        let params = self.parse_generic_delimited(
+            Token::Symbol(Symbol::Less),
+            Token::Symbol(Symbol::Greater),
+            Token::Symbol(Symbol::Comma),
+            Parser::parse_spanned_identifier,
+        )?;
+        if params.is_empty() {
+            return Err(ParseErr {
+                msg: "Type parameter list cannot be empty: <T, ...>",
+                token: self.tokens.last().cloned(),
+            });
+        }
+        Ok(params)
+    }
+
     fn parse_typename(&mut self) -> Result<Type, ParseErr> {
         let token = self.pop()?;
         let span = Span {
@@ -841,7 +968,14 @@ impl Parser {
             Token::Keyword(Keyword::Bool) => Ok(Type::Bool),
             Token::Keyword(Keyword::Opaque) => Ok(Type::Opaque),
             Token::Keyword(Keyword::String) => Ok(Type::Array(Box::new(Type::Char))),
-            Token::Identifier(name) => Ok(Type::Struct(self.spanned(name, span))),
+            Token::Identifier(name) => {
+                let name = self.spanned(name, span);
+                if self.peek_is(Token::Symbol(Symbol::Less)) {
+                    Ok(Type::Generic(name, self.parse_type_arguments()?))
+                } else {
+                    Ok(Type::Struct(name))
+                }
+            }
             Token::Symbol(Symbol::LeftBracket) => {
                 self.tokens.push(token);
                 self.parse_array_typename()
@@ -852,13 +986,9 @@ impl Parser {
             }),
         }?;
 
-        if let Ok(next) = self.peek()
-            && matches!(next.token, Token::Symbol(Symbol::Question))
-        {
+        if self.peek_is(Token::Symbol(Symbol::Question)) {
             self.pop()?;
-            if let Ok(next) = self.peek()
-                && matches!(next.token, Token::Symbol(Symbol::Question))
-            {
+            if self.peek_is(Token::Symbol(Symbol::Question)) {
                 return Err(ParseErr {
                     msg: "Nested optionals are not supported: write T?, not T??",
                     token: Some(self.peek()?.clone()),
@@ -954,9 +1084,7 @@ impl Parser {
             token: Some(token.clone()),
         })?;
 
-        if let Ok(next) = self.peek()
-            && matches!(next.token, Token::Symbol(Symbol::Question))
-        {
+        if self.peek_is(Token::Symbol(Symbol::Question)) {
             let question = self.pop()?;
             if !matches!(base, ExternType::CString | ExternType::Opaque) {
                 return Err(ParseErr {
@@ -1026,6 +1154,7 @@ impl Parser {
         let start = self.current_start();
         let return_type = self.parse_return_type()?;
         let name = self.parse_identifier()?;
+        let type_params = self.parse_type_params()?;
         let arguments = self.parse_function_parameters()?;
 
         // A function body must be a compound statement; there are no forward
@@ -1042,6 +1171,7 @@ impl Parser {
         let function = Function {
             return_type,
             name,
+            type_params,
             arguments,
             statement,
         };
@@ -1052,6 +1182,7 @@ impl Parser {
     fn parse_method_parameters(
         &mut self,
         struct_name: &Spanned<String>,
+        type_params: &[Spanned<String>],
     ) -> Result<Vec<Spanned<IdentifierTypePair>>, ParseErr> {
         self.pop_token(
             Token::Symbol(Symbol::LeftParen),
@@ -1067,8 +1198,19 @@ impl Parser {
             });
         }
         let self_span = self.span_from(start);
-        let self_type =
-            Type::Struct(self.spanned(struct_name.node.clone(), struct_name.span.clone()));
+        let name = self.spanned(struct_name.node.clone(), struct_name.span.clone());
+        let self_type = if type_params.is_empty() {
+            Type::Struct(name)
+        } else {
+            let args = type_params
+                .iter()
+                .map(|p| {
+                    let param = self.spanned(p.node.clone(), p.span.clone());
+                    Type::Struct(param)
+                })
+                .collect();
+            Type::Generic(name, args)
+        };
         let mut arguments = vec![self.spanned(
             IdentifierTypePair {
                 name: "self".to_string(),
@@ -1108,11 +1250,12 @@ impl Parser {
     fn parse_method(
         &mut self,
         struct_name: &Spanned<String>,
+        type_params: &[Spanned<String>],
     ) -> Result<Spanned<Function>, ParseErr> {
         let start = self.current_start();
         let return_type = self.parse_return_type()?;
         let name = self.parse_identifier()?;
-        let arguments = self.parse_method_parameters(struct_name)?;
+        let arguments = self.parse_method_parameters(struct_name, type_params)?;
 
         let token = self.peek()?;
         if token.token != Token::Symbol(Symbol::LeftBrace) {
@@ -1126,6 +1269,7 @@ impl Parser {
         let function = Function {
             return_type,
             name,
+            type_params: vec![], // TODO: For first pass of generics, we won't have type params for methods
             arguments,
             statement,
         };
@@ -1139,10 +1283,8 @@ impl Parser {
             Token::Keyword(Keyword::Impl),
             "Expected method block to start with 'impl': impl <struct> {...}",
         )?;
-        let name_start = self.current_start();
-        let name = self.parse_identifier()?;
-        let name_span = self.span_from(name_start);
-        let struct_name = self.spanned(name, name_span);
+        let struct_name = self.parse_spanned_identifier()?;
+        let type_params = self.parse_type_params()?;
 
         self.pop_token(
             Token::Symbol(Symbol::LeftBrace),
@@ -1150,7 +1292,7 @@ impl Parser {
         )?;
         let mut functions = vec![];
         while self.peek()?.token != Token::Symbol(Symbol::RightBrace) {
-            functions.push(self.parse_method(&struct_name)?);
+            functions.push(self.parse_method(&struct_name, &type_params)?);
         }
         self.pop()?;
 
@@ -1158,6 +1300,7 @@ impl Parser {
         Ok(self.spanned(
             Impl {
                 struct_name,
+                type_params,
                 functions,
             },
             span,
@@ -1171,6 +1314,7 @@ impl Parser {
             "Expected struct declaration to start with 'struct': struct <name> {...}",
         )?;
         let name = self.parse_identifier()?;
+        let type_params = self.parse_type_params()?;
         let members = self.parse_generic_delimited(
             Token::Symbol(Symbol::LeftBrace),
             Token::Symbol(Symbol::RightBrace),
@@ -1178,7 +1322,14 @@ impl Parser {
             Parser::parse_identifier_type_pair,
         )?;
         let span = self.span_from(start);
-        Ok(self.spanned(Struct { name, members }, span))
+        Ok(self.spanned(
+            Struct {
+                name,
+                type_params,
+                members,
+            },
+            span,
+        ))
     }
 
     fn parse_module(&mut self) -> Result<Module, ParseErr> {
@@ -1321,6 +1472,107 @@ mod tests {
             &["struct Foo", "struct {}", "struct Foo { foo, bar }"],
             Parser::parse_struct,
         );
+    }
+
+    #[test]
+    fn test_parse_generic_struct() {
+        test_parser(
+            &[
+                "struct pair<A, B> { first: A, second: B }",
+                "struct box<T> { value: [T], fallback: T? }",
+                "struct node<T> { value: T, next: node<T>? }",
+            ],
+            &[
+                "struct s<> { x: int }",
+                "struct s<1> { x: int }",
+                "struct s<T { x: int }",
+                "struct s<,T> { x: int }",
+            ],
+            Parser::parse_struct,
+        );
+    }
+
+    #[test]
+    fn test_parse_generic_function() {
+        test_parser(
+            &[
+                "T id<T>(x: T) { return x; }",
+                "void swap<A, B>(a: A, b: B) {}",
+                "pair<A, B> make<A, B>(a: A, b: B) { return new pair<A, B> { first: a, second: b }; }",
+            ],
+            &["T id<>(x: T) { return x; }", "T id<T(x: T) { return x; }"],
+            Parser::parse_function,
+        );
+    }
+
+    #[test]
+    fn test_parse_generic_impl() {
+        test_parser(
+            &[
+                "impl pair<A, B> { A first(self) { return self.first; } }",
+                "impl box<T> { void put(self, v: T) { self.value.push(v); } }",
+                "impl Counter { void bump(self) {} }",
+            ],
+            &["impl pair<> { }", "impl pair<A B> { }"],
+            Parser::parse_impl,
+        );
+    }
+
+    #[test]
+    fn test_parse_generic_type_mentions() {
+        test_parser(
+            &[
+                "pair<int, string> flip(p: pair<int, [bool]>) { return p; }",
+                "pair<box<int>, int> nested(x: box<box<int>>) { return x; }",
+                "box<int>? maybe() { return none; }",
+                "void arrays(xs: [pair<int, int>]) {}",
+            ],
+            &["pair<int f(p: int) {}"],
+            Parser::parse_function,
+        );
+        test_parser(
+            &[
+                "let x: pair<int, int> = p;",
+                "let x: pair<int,int>= p;",
+                "let x: pair<int, int,> = p;",
+                "let x: pair<box<int>, box<box<int>>> = p;",
+            ],
+            &["let x: pair<int = p;"],
+            Parser::parse_statement,
+        );
+        test_parser(
+            &["new pair<int, string> { first: 1, second: s }"],
+            &[],
+            Parser::parse_expression,
+        );
+    }
+
+    #[test]
+    fn test_parse_turbofish() {
+        test_parser(
+            &[
+                "id::<int>(3)",
+                "util.make::<int, [char]>()",
+                "f::<box<int>>(x)",
+                "f::<int?>(x)",
+                "x.method::<int>()",
+            ],
+            &[
+                "id::(3)",
+                "id::<>(3)",
+                "id::<int",
+                "3::<int>",
+                "f()::<int>(x)",
+                "xs[0]::<int>(x)",
+                "a.b.c::<int>(x)",
+            ],
+            Parser::parse_expression,
+        );
+    }
+
+    #[test]
+    fn test_extern_rejects_type_params() {
+        test_parser_invalid(&["extern int64 f<T>(x: int64);"], Parser::parse_module);
     }
 
     #[test]

@@ -238,6 +238,10 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 Ok(self.context.struct_type(&[tag, inner], false).into())
             }
             Type::Struct(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
+            Type::Generic(_, _) => Err(CodegenErr {
+                msg: "generic type was not instantiated",
+                span: span.clone(),
+            }),
             Type::Function(_, _) => Err(CodegenErr {
                 msg: "functions cannot be used as values",
                 span: span.clone(),

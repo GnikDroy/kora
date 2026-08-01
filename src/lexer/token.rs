@@ -70,6 +70,7 @@ pub enum Symbol {
     RightBracket,
     Semicolon,
     Colon,
+    DoubleColon,
     Comma,
     Plus,
     Minus,
@@ -139,6 +140,7 @@ impl TryFrom<&str> for Symbol {
         } else {
             match s {
                 "==" => Ok(EqualEqual),
+                "::" => Ok(DoubleColon),
                 ">=" => Ok(GreaterEqual),
                 "<=" => Ok(LessEqual),
                 "!=" => Ok(ExclamEqual),

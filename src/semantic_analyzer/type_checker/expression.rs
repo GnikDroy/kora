@@ -444,6 +444,10 @@ impl TypeChecker<'_> {
                 msg: "Cannot infer the type of `none`; give the target an optional type T?",
                 span: span.clone(),
             }),
+            TypeApplication(_, _) => Err(TypeErr {
+                msg: "generic call was not instantiated",
+                span: span.clone(),
+            }),
             Unwrap(inner) => match self.get_expression_type(inner)? {
                 Type::Optional(ty) => Ok(*ty),
                 _ => Err(TypeErr {

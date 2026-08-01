@@ -12,6 +12,9 @@ impl<'ctx> CodeGen<'ctx, '_> {
     ) -> Result<BasicValueEnum<'ctx>, CodegenErr> {
         let span = &expr.span;
         match &expr.node {
+            Expression::TypeApplication(_, _) => {
+                unreachable!("generics are instantiated before codegen")
+            }
             Expression::IntegerLiteral(v) => {
                 Ok(self.context.i64_type().const_int(*v as u64, true).into())
             }

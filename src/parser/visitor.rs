@@ -50,6 +50,10 @@ pub trait ASTVisitor: Sized {
         walk_call_expression(self, expr, exprs);
     }
 
+    fn visit_type_application(&mut self, expr: &Spanned<Expression>, arguments: &[Type]) {
+        walk_type_application(self, expr, arguments);
+    }
+
     fn visit_cast_expression(&mut self, expr: &Spanned<Expression>, typename: &Type) {
         walk_cast_expression(self, expr, typename);
     }
@@ -243,6 +247,17 @@ pub fn walk_binary_expression<V: ASTVisitor>(
     visitor.visit_expression(right);
 }
 
+pub fn walk_type_application<V: ASTVisitor>(
+    visitor: &mut V,
+    expr: &Spanned<Expression>,
+    arguments: &[Type],
+) {
+    visitor.visit_expression(expr);
+    for ty in arguments {
+        visitor.visit_typename(ty);
+    }
+}
+
 pub fn walk_expression<V: ASTVisitor>(visitor: &mut V, expr: &Spanned<Expression>) {
     match &expr.node {
         Expression::IntegerLiteral(i) => {
@@ -295,6 +310,9 @@ pub fn walk_expression<V: ASTVisitor>(visitor: &mut V, expr: &Spanned<Expression
         }
         Expression::StructLiteral(typename, fields) => {
             visitor.visit_struct_literal(typename, fields);
+        }
+        Expression::TypeApplication(inner, arguments) => {
+            visitor.visit_type_application(inner, arguments);
         }
     }
 }

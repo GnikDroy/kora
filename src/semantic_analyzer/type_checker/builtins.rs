@@ -122,7 +122,7 @@ pub fn is_comparable(ty: &Type) -> bool {
     match ty {
         Type::Int | Type::Real | Type::Bool | Type::Char | Type::Opaque => true,
         Type::Array(inner) | Type::Optional(inner) => is_comparable(inner),
-        Type::Struct(_) | Type::Function(_, _) => false,
+        Type::Struct(_) | Type::Generic(_, _) | Type::Function(_, _) => false,
     }
 }
 
