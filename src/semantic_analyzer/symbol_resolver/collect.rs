@@ -38,17 +38,27 @@ impl<'a> GlobalsCollector<'a> {
                 });
             } else {
                 self.table
-                    .structs
-                    .insert(struct_.node.name.clone(), StructDef::default());
+                    .struct_names
+                    .insert(struct_.node.name.clone(), struct_.id);
+                self.table.structs.insert(
+                    struct_.id,
+                    StructDef {
+                        name: struct_.node.name.clone(),
+                        ..StructDef::default()
+                    },
+                );
             }
         }
     }
 
     fn collect_struct_members(&mut self, module: &Module) {
         for struct_ in module.structs.iter() {
+            if !self.table.structs.contains_key(&struct_.id) {
+                continue;
+            }
             for member in struct_.node.members.iter() {
                 check_typename(self.table, self.errors, &member.node.typename);
-                let already = self.table.structs[&struct_.node.name]
+                let already = self.table.structs[&struct_.id]
                     .members
                     .iter()
                     .any(|(field, _)| field == &member.node.name);
@@ -60,7 +70,7 @@ impl<'a> GlobalsCollector<'a> {
                 } else {
                     self.table
                         .structs
-                        .get_mut(&struct_.node.name)
+                        .get_mut(&struct_.id)
                         .unwrap()
                         .members
                         .push((member.node.name.clone(), member.node.typename.clone()));
@@ -88,16 +98,15 @@ impl<'a> GlobalsCollector<'a> {
 
     fn collect_methods(&mut self, module: &Module) {
         for impl_ in module.impls.iter() {
-            let struct_name = &impl_.node.struct_ref.name;
-            if !self.table.struct_exists(&struct_name.node) {
+            let Some(decl) = self.table.struct_decl_of(&impl_.node.struct_ref) else {
                 self.errors.push(TypeErr {
                     msg: "impl block for an undefined struct",
-                    span: struct_name.span.clone(),
+                    span: impl_.node.struct_ref.name.span.clone(),
                 });
                 continue;
-            }
+            };
             for func in impl_.node.functions.iter() {
-                let struct_def = &self.table.structs[&struct_name.node];
+                let struct_def = &self.table.structs[&decl];
                 if struct_def
                     .members
                     .iter()
@@ -122,7 +131,7 @@ impl<'a> GlobalsCollector<'a> {
                 );
                 self.table
                     .structs
-                    .get_mut(&struct_name.node)
+                    .get_mut(&decl)
                     .unwrap()
                     .methods
                     .insert(func.node.name.clone(), id);
@@ -157,13 +166,14 @@ mod tests {
         let symbols =
             resolve(r#"struct Point { x: int, y: [char] } int main() { return 0; }"#).expect("ok");
         assert!(symbols.struct_exists("Point"));
-        assert_eq!(symbols.struct_member("Point", "x"), Some(Type::Int));
+        let point = symbols.struct_names["Point"];
+        assert_eq!(symbols.struct_member(point, "x"), Some(Type::Int));
         assert_eq!(
-            symbols.struct_member("Point", "y"),
+            symbols.struct_member(point, "y"),
             Some(Type::Array(Box::new(Type::Char)))
         );
-        assert_eq!(symbols.struct_member("Point", "z"), None);
-        assert_eq!(symbols.struct_member("Missing", "x"), None);
+        assert_eq!(symbols.struct_member(point, "z"), None);
+        assert!(!symbols.struct_exists("Missing"));
     }
 
     #[test]
@@ -176,11 +186,12 @@ mod tests {
             "#,
         )
         .expect("ok");
-        let get = symbols.struct_method("P", "get").expect("get");
+        let p = symbols.struct_names["P"];
+        let get = symbols.struct_method(p, "get").expect("get");
         assert_eq!(symbols.symbol(get).name, "get");
-        assert!(symbols.struct_method("P", "set").is_some());
-        assert!(symbols.struct_method("P", "missing").is_none());
-        assert!(symbols.struct_method("Q", "get").is_none());
+        assert!(symbols.struct_method(p, "set").is_some());
+        assert!(symbols.struct_method(p, "missing").is_none());
+        assert!(!symbols.struct_exists("Q"));
     }
 
     #[test]

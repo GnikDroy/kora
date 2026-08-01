@@ -12,8 +12,8 @@ use crate::semantic_analyzer::ArrayMethod;
 impl<'ctx> CodeGen<'ctx, '_> {
     /// { i64 len, i64 cap, ptr buf }
     pub(super) fn array_header_type(&mut self) -> StructType<'ctx> {
-        if let Some(ty) = self.struct_types.get("k.array") {
-            return *ty;
+        if let Some(ty) = self.array_type {
+            return ty;
         }
         let ty = self.context.opaque_struct_type("k.array");
         ty.set_body(
@@ -24,7 +24,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
             ],
             false,
         );
-        self.struct_types.insert("k.array".to_string(), ty);
+        self.array_type = Some(ty);
         ty
     }
 
@@ -186,7 +186,8 @@ impl<'ctx> CodeGen<'ctx, '_> {
             .into_pointer_value();
 
         if let Type::Struct(sr) = typename {
-            let constructor = self.struct_constructor(&sr.name.node, span)?;
+            let decl = self.struct_decl(sr);
+            let constructor = self.struct_constructor(decl, span)?;
             let buf = self.array_buf(array);
             let function = self.frame().function;
             let slot_index = self.entry_alloca(self.context.i64_type().into(), "i");

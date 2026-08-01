@@ -39,6 +39,7 @@ fn transpile_with_async(source: &str, async_externs: HashSet<String>) -> String 
         method_calls,
         checker.array_method_calls,
         struct_members,
+        symbols.struct_names.clone(),
         HashMap::new(),
         async_fns,
     );
@@ -390,6 +391,7 @@ fn transpile_program(
         method_calls,
         compiled.array_method_calls,
         struct_members,
+        compiled.symbols.struct_names.clone(),
         function_names,
         async_fns,
     );

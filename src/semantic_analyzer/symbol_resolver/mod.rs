@@ -14,7 +14,7 @@ use crate::parser::Type;
 pub(super) fn check_typename(table: &SymbolTable, errors: &mut Vec<TypeErr>, ty: &Type) {
     match ty {
         Type::Struct(sr) => {
-            if !table.struct_exists(&sr.name.node) {
+            if table.struct_decl_of(sr).is_none() {
                 errors.push(TypeErr {
                     msg: "Undefined type",
                     span: sr.name.span.clone(),

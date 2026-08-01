@@ -38,9 +38,10 @@ pub struct CodeGen<'ctx, 'a> {
     builder: Builder<'ctx>,
     program: &'a CompiledProgram,
     functions: HashMap<SymbolId, FunctionValue<'ctx>>,
-    struct_types: HashMap<String, StructType<'ctx>>,
+    struct_types: HashMap<NodeId, StructType<'ctx>>,
+    array_type: Option<StructType<'ctx>>,
     array_equality_fns: HashMap<Type, FunctionValue<'ctx>>, // memoized `i1 @"eq.N"(ptr, ptr)` per array type
-    default_fns: HashMap<String, FunctionValue<'ctx>>,
+    default_fns: HashMap<NodeId, FunctionValue<'ctx>>,
     frame: Option<Frame<'ctx>>,
 }
 
@@ -62,6 +63,7 @@ pub fn lower<'ctx>(
         program,
         functions: HashMap::new(),
         struct_types: HashMap::new(),
+        array_type: None,
         array_equality_fns: HashMap::new(),
         default_fns: HashMap::new(),
         frame: None,

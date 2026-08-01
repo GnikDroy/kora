@@ -214,7 +214,9 @@ impl TypeChecker<'_> {
         {
             match self.get_expression_type(obj)? {
                 Type::Struct(sr) => {
-                    if let Some(method) = self.symbols.struct_method(&sr.name.node, member) {
+                    if let Some(decl) = self.symbols.struct_decl_of(&sr)
+                        && let Some(method) = self.symbols.struct_method(decl, member)
+                    {
                         return self.get_method_call_return_type(f, method, args, span);
                     }
                 }
@@ -278,7 +280,8 @@ impl TypeChecker<'_> {
         match left_type {
             Type::Struct(sr) => self
                 .symbols
-                .struct_member(&sr.name.node, member)
+                .struct_decl_of(&sr)
+                .and_then(|decl| self.symbols.struct_member(decl, member))
                 .ok_or(TypeErr {
                     msg: "Invalid member for struct",
                     span: span.clone(),
@@ -311,8 +314,11 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn struct_is_default_constructible(&self, name: &str) -> bool {
-        self.struct_has_default(name, &mut Vec::new())
+    fn struct_is_default_constructible(&self, sr: &StructRef) -> bool {
+        let Some(decl) = self.symbols.struct_decl_of(sr) else {
+            return false;
+        };
+        self.struct_has_default(decl, &mut Vec::new())
     }
 
     /// A struct has a default when every member
@@ -320,17 +326,20 @@ impl TypeChecker<'_> {
     /// - is an optional
     /// - is a list
     /// - default constructible struct (requires cycle detection)
-    fn struct_has_default(&self, name: &str, visiting: &mut Vec<String>) -> bool {
-        if visiting.iter().any(|n| n == name) {
+    fn struct_has_default(&self, decl: NodeId, visiting: &mut Vec<NodeId>) -> bool {
+        if visiting.contains(&decl) {
             return false;
         }
-        let Some(members) = self.symbols.struct_members(name) else {
+        let Some(members) = self.symbols.struct_members(decl) else {
             return false;
         };
         let members: Vec<Type> = members.iter().map(|(_, ty)| ty.clone()).collect();
-        visiting.push(name.to_string());
+        visiting.push(decl);
         let ok = members.iter().all(|ty| match ty {
-            Type::Struct(inner) => self.struct_has_default(&inner.name.node, visiting),
+            Type::Struct(inner) => match self.symbols.struct_decl_of(inner) {
+                Some(inner_decl) => self.struct_has_default(inner_decl, visiting),
+                None => false,
+            },
             Type::Function(_, _) => false,
             _ => true,
         });
@@ -354,7 +363,7 @@ impl TypeChecker<'_> {
                     });
                 }
                 let ok = match typename {
-                    Type::Struct(sr) => self.struct_is_default_constructible(&sr.name.node),
+                    Type::Struct(sr) => self.struct_is_default_constructible(sr),
                     Type::Opaque => true,
                     other => builtins::is_scalar(other),
                 };
@@ -367,7 +376,7 @@ impl TypeChecker<'_> {
                 Ok(Type::Array(Box::new(typename.clone())))
             }
             _ => match typename {
-                Type::Struct(sr) if self.struct_is_default_constructible(&sr.name.node) => {
+                Type::Struct(sr) if self.struct_is_default_constructible(sr) => {
                     Ok(typename.clone())
                 }
                 Type::Struct(_) => Err(TypeErr {
@@ -399,6 +408,7 @@ impl TypeChecker<'_> {
                 span: span.clone(),
             });
         };
+        let decl = self.symbols.struct_decl_of(sr);
         for (i, (field, value)) in fields.iter().enumerate() {
             if fields[..i].iter().any(|(prev, _)| prev.node == field.node) {
                 return Err(TypeErr {
@@ -406,7 +416,8 @@ impl TypeChecker<'_> {
                     span: field.span.clone(),
                 });
             }
-            let Some(field_type) = self.symbols.struct_member(&sr.name.node, &field.node) else {
+            let Some(field_type) = decl.and_then(|d| self.symbols.struct_member(d, &field.node))
+            else {
                 return Err(TypeErr {
                     msg: "Invalid member for struct",
                     span: field.span.clone(),
@@ -419,7 +430,7 @@ impl TypeChecker<'_> {
                 });
             }
         }
-        if Some(fields.len()) != self.symbols.struct_member_count(&sr.name.node) {
+        if Some(fields.len()) != decl.and_then(|d| self.symbols.struct_member_count(d)) {
             return Err(TypeErr {
                 msg: "Struct literal must initialize every member",
                 span: span.clone(),

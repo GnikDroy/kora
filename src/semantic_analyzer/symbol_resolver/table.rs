@@ -18,6 +18,7 @@ pub struct Symbol {
 
 #[derive(Debug, Default)]
 pub struct StructDef {
+    pub name: String,
     // Members are ordered for C compatibility
     pub members: Vec<(String, Type)>,
     pub methods: HashMap<String, SymbolId>,
@@ -28,7 +29,8 @@ pub struct SymbolTable {
     pub symbols: Vec<Symbol>,
     pub uses: HashMap<NodeId, SymbolId>,
     pub declarations: HashMap<NodeId, SymbolId>,
-    pub structs: HashMap<String, StructDef>,
+    pub structs: HashMap<NodeId, StructDef>,
+    pub struct_names: HashMap<String, NodeId>,
 }
 
 impl SymbolTable {
@@ -50,28 +52,35 @@ impl SymbolTable {
     }
 
     pub fn struct_exists(&self, name: &str) -> bool {
-        self.structs.contains_key(name)
+        self.struct_names.contains_key(name)
     }
 
-    pub fn struct_member(&self, name: &str, member: &str) -> Option<Type> {
+    pub fn struct_decl_of(&self, sr: &StructRef) -> Option<NodeId> {
+        match sr.target {
+            Some(id) => self.structs.contains_key(&id).then_some(id),
+            None => self.struct_names.get(&sr.name.node).copied(),
+        }
+    }
+
+    pub fn struct_member(&self, decl: NodeId, member: &str) -> Option<Type> {
         self.structs
-            .get(name)?
+            .get(&decl)?
             .members
             .iter()
             .find(|(field, _)| field == member)
             .map(|(_, ty)| ty.clone())
     }
 
-    pub fn struct_member_count(&self, name: &str) -> Option<usize> {
-        self.structs.get(name).map(|s| s.members.len())
+    pub fn struct_member_count(&self, decl: NodeId) -> Option<usize> {
+        self.structs.get(&decl).map(|s| s.members.len())
     }
 
-    pub fn struct_members(&self, name: &str) -> Option<&[(String, Type)]> {
-        self.structs.get(name).map(|s| s.members.as_slice())
+    pub fn struct_members(&self, decl: NodeId) -> Option<&[(String, Type)]> {
+        self.structs.get(&decl).map(|s| s.members.as_slice())
     }
 
-    pub fn struct_method(&self, name: &str, method: &str) -> Option<SymbolId> {
-        self.structs.get(name)?.methods.get(method).copied()
+    pub fn struct_method(&self, decl: NodeId, method: &str) -> Option<SymbolId> {
+        self.structs.get(&decl)?.methods.get(method).copied()
     }
 
     pub(super) fn add_symbol(

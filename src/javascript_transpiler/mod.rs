@@ -22,6 +22,7 @@ pub fn transpile(
     let method_calls = mangled_method_calls(&compiled.symbols, &compiled.method_calls);
     let function_names = function_names(&compiled.symbols, &compiled.program);
     let struct_members = struct_member_map(&compiled.symbols);
+    let struct_ids = compiled.symbols.struct_names.clone();
 
     let modules: Vec<&Module> = compiled.program.modules.iter().map(|m| &m.module).collect();
     let async_fns = resolve_async_fns(&modules, &function_names, &method_calls, async_externs);
@@ -30,6 +31,7 @@ pub fn transpile(
         method_calls,
         compiled.array_method_calls,
         struct_members,
+        struct_ids,
         function_names,
         async_fns,
     );
@@ -43,11 +45,11 @@ pub fn transpile(
     })
 }
 
-pub(crate) fn struct_member_map(symbols: &SymbolTable) -> HashMap<String, Vec<(String, Type)>> {
+pub(crate) fn struct_member_map(symbols: &SymbolTable) -> HashMap<NodeId, Vec<(String, Type)>> {
     symbols
         .structs
         .iter()
-        .map(|(name, def)| (name.clone(), def.members.clone()))
+        .map(|(decl, def)| (*decl, def.members.clone()))
         .collect()
 }
 
@@ -107,9 +109,9 @@ pub(crate) fn mangled_method_calls(
             let method = &symbols.symbol(*sym).name;
             let name = symbols
                 .structs
-                .iter()
-                .find(|(_, def)| def.methods.values().any(|m| m == sym))
-                .map(|(struct_name, _)| mangle_method(struct_name, method))
+                .values()
+                .find(|def| def.methods.values().any(|m| m == sym))
+                .map(|def| mangle_method(&def.name, method))
                 .unwrap_or_else(|| method.clone());
             (*id, name)
         })
@@ -123,7 +125,8 @@ pub struct JavascriptTranspiler {
     types: HashMap<NodeId, Type>,
     method_calls: HashMap<NodeId, String>,
     array_method_calls: HashMap<NodeId, ArrayMethod>,
-    struct_members: HashMap<String, Vec<(String, Type)>>,
+    struct_members: HashMap<NodeId, Vec<(String, Type)>>,
+    struct_ids: HashMap<String, NodeId>,
     /// Mangled name per function definition and call site
     function_names: HashMap<NodeId, String>,
     current_impl: Option<String>,
@@ -138,7 +141,8 @@ impl JavascriptTranspiler {
         types: HashMap<NodeId, Type>,
         method_calls: HashMap<NodeId, String>,
         array_method_calls: HashMap<NodeId, ArrayMethod>,
-        struct_members: HashMap<String, Vec<(String, Type)>>,
+        struct_members: HashMap<NodeId, Vec<(String, Type)>>,
+        struct_ids: HashMap<String, NodeId>,
         function_names: HashMap<NodeId, String>,
         async_fns: HashSet<String>,
     ) -> JavascriptTranspiler {
@@ -149,10 +153,16 @@ impl JavascriptTranspiler {
             method_calls,
             array_method_calls,
             struct_members,
+            struct_ids,
             function_names,
             current_impl: None,
             async_fns,
         }
+    }
+
+    fn struct_decl(&self, sr: &StructRef) -> Option<NodeId> {
+        sr.target
+            .or_else(|| self.struct_ids.get(&sr.name.node).copied())
     }
 
     pub fn get_source(&self) -> Result<&str, &[TranspilerErr]> {

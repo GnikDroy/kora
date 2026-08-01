@@ -128,7 +128,7 @@ impl JavascriptTranspiler {
     /// NOTE: Type checker rejects struct cycles, so we terminate.
     fn emit_default(&mut self, ty: &Type) {
         match ty {
-            Type::Struct(sr) => self.emit_struct_zero(&sr.name.node),
+            Type::Struct(sr) => self.emit_struct_zero(self.struct_decl(sr)),
             Type::Array(_) => self.source.push_str("[]"),
             Type::Optional(_) | Type::Opaque => self.source.push_str("null"),
             Type::Real => self.source.push_str("0.0"),
@@ -138,8 +138,10 @@ impl JavascriptTranspiler {
         }
     }
 
-    fn emit_struct_zero(&mut self, name: &str) {
-        let members = self.struct_members.get(name).cloned().unwrap_or_default();
+    fn emit_struct_zero(&mut self, decl: Option<NodeId>) {
+        let members = decl
+            .and_then(|d| self.struct_members.get(&d).cloned())
+            .unwrap_or_default();
         self.source.push_str("({");
         for (i, (field, ty)) in members.iter().enumerate() {
             if i > 0 {
@@ -663,7 +665,7 @@ impl ASTVisitor for JavascriptTranspiler {
                         .push_str("Array.from({length:__kora_runtime_check_len(");
                     self.visit_expression(expr);
                     self.source.push_str(")},()=>");
-                    self.emit_struct_zero(&sr.name.node);
+                    self.emit_struct_zero(self.struct_decl(sr));
                     self.source.push(')');
                 }
                 _ => {
@@ -675,7 +677,7 @@ impl ASTVisitor for JavascriptTranspiler {
                 }
             },
             None => match typename {
-                Type::Struct(sr) => self.emit_struct_zero(&sr.name.node),
+                Type::Struct(sr) => self.emit_struct_zero(self.struct_decl(sr)),
                 _ => self.source.push_str("({})"),
             },
         }
