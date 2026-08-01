@@ -8,6 +8,16 @@ pub use visitor::*;
 
 use crate::lexer::{Keyword, Position, Symbol, Token, TokenInfo};
 
+#[derive(Debug)]
+enum ConcreteOrGeneric<C, G> {
+    Concrete(Spanned<C>),
+    Generic(Spanned<G>),
+}
+
+type StructDecl = ConcreteOrGeneric<Struct, GenericStruct>;
+type FunctionDecl = ConcreteOrGeneric<Function, GenericFunction>;
+type ImplDecl = ConcreteOrGeneric<Impl, GenericImpl>;
+
 pub struct Parser {
     tokens: Vec<TokenInfo>,
     last_end: Position,
@@ -1139,7 +1149,7 @@ impl Parser {
         ))
     }
 
-    fn parse_function(&mut self) -> Result<Spanned<Function>, ParseErr> {
+    fn parse_function(&mut self) -> Result<FunctionDecl, ParseErr> {
         let start = self.current_start();
         let return_type = self.parse_return_type()?;
         let name = self.parse_identifier()?;
@@ -1156,16 +1166,26 @@ impl Parser {
             });
         }
         let statement = self.parse_statement()?;
-
-        let function = Function {
-            return_type,
-            name,
-            type_params,
-            arguments,
-            statement,
-        };
         let span = self.span_from(start);
-        Ok(Spanned::fresh(function, span))
+
+        if type_params.is_empty() {
+            let function = Function {
+                return_type,
+                name,
+                arguments,
+                statement,
+            };
+            Ok(FunctionDecl::Concrete(Spanned::fresh(function, span)))
+        } else {
+            let function = GenericFunction {
+                return_type,
+                name,
+                type_params,
+                arguments,
+                statement,
+            };
+            Ok(FunctionDecl::Generic(Spanned::fresh(function, span)))
+        }
     }
 
     fn parse_method_parameters(
@@ -1258,7 +1278,6 @@ impl Parser {
         let function = Function {
             return_type,
             name,
-            type_params: vec![], // TODO: For first pass of generics, we won't have type params for methods
             arguments,
             statement,
         };
@@ -1266,7 +1285,7 @@ impl Parser {
         Ok(Spanned::fresh(function, span))
     }
 
-    fn parse_impl(&mut self) -> Result<Spanned<Impl>, ParseErr> {
+    fn parse_impl(&mut self) -> Result<ImplDecl, ParseErr> {
         let start = self.current_start();
         self.pop_token(
             Token::Keyword(Keyword::Impl),
@@ -1284,19 +1303,25 @@ impl Parser {
             functions.push(self.parse_method(&struct_name, &type_params)?);
         }
         self.pop()?;
-
         let span = self.span_from(start);
-        Ok(Spanned::fresh(
-            Impl {
+
+        if type_params.is_empty() {
+            let imp = Impl {
+                struct_name,
+                functions,
+            };
+            Ok(ImplDecl::Concrete(Spanned::fresh(imp, span)))
+        } else {
+            let imp = GenericImpl {
                 struct_name,
                 type_params,
                 functions,
-            },
-            span,
-        ))
+            };
+            Ok(ImplDecl::Generic(Spanned::fresh(imp, span)))
+        }
     }
 
-    fn parse_struct(&mut self) -> Result<Spanned<Struct>, ParseErr> {
+    fn parse_struct(&mut self) -> Result<StructDecl, ParseErr> {
         let start = self.current_start();
         self.pop_token(
             Token::Keyword(Keyword::Struct),
@@ -1311,14 +1336,18 @@ impl Parser {
             Parser::parse_identifier_type_pair,
         )?;
         let span = self.span_from(start);
-        Ok(Spanned::fresh(
-            Struct {
+
+        if type_params.is_empty() {
+            let decl = Struct { name, members };
+            Ok(StructDecl::Concrete(Spanned::fresh(decl, span)))
+        } else {
+            let decl = GenericStruct {
                 name,
                 type_params,
                 members,
-            },
-            span,
-        ))
+            };
+            Ok(StructDecl::Generic(Spanned::fresh(decl, span)))
+        }
     }
 
     fn parse_module(&mut self) -> Result<Module, ParseErr> {
@@ -1331,18 +1360,21 @@ impl Parser {
                 Token::Keyword(Keyword::Import) => {
                     module.imports.push(self.parse_import()?);
                 }
-                Token::Keyword(Keyword::Struct) => {
-                    module.structs.push(self.parse_struct()?);
-                }
+                Token::Keyword(Keyword::Struct) => match self.parse_struct()? {
+                    StructDecl::Concrete(decl) => module.structs.push(decl),
+                    StructDecl::Generic(decl) => module.generic_structs.push(decl),
+                },
                 Token::Keyword(Keyword::Extern) => {
                     module.extern_functions.push(self.parse_extern_function()?);
                 }
-                Token::Keyword(Keyword::Impl) => {
-                    module.impls.push(self.parse_impl()?);
-                }
-                _ => {
-                    module.functions.push(self.parse_function()?);
-                }
+                Token::Keyword(Keyword::Impl) => match self.parse_impl()? {
+                    ImplDecl::Concrete(imp) => module.impls.push(imp),
+                    ImplDecl::Generic(imp) => module.generic_impls.push(imp),
+                },
+                _ => match self.parse_function()? {
+                    FunctionDecl::Concrete(func) => module.functions.push(func),
+                    FunctionDecl::Generic(func) => module.generic_functions.push(func),
+                },
             }
         }
         Ok(module)

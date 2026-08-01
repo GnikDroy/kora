@@ -91,6 +91,9 @@ pub struct Module {
     pub extern_functions: Vec<Spanned<ExternFunction>>,
     pub functions: Vec<Spanned<Function>>,
     pub impls: Vec<Spanned<Impl>>,
+    pub generic_structs: Vec<Spanned<GenericStruct>>,
+    pub generic_functions: Vec<Spanned<GenericFunction>>,
+    pub generic_impls: Vec<Spanned<GenericImpl>>,
 }
 
 #[derive(Debug, Clone)]
@@ -105,15 +108,36 @@ pub struct Import {
 #[derive(Debug, Clone)]
 pub struct Impl {
     pub struct_name: Spanned<String>,
-    pub type_params: Vec<Spanned<String>>,
     pub functions: Vec<Spanned<Function>>,
 }
 
 #[derive(Debug, Clone)]
 pub struct Struct {
     pub name: String,
+    pub members: Vec<Spanned<IdentifierTypePair>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct GenericStruct {
+    pub name: String,
     pub type_params: Vec<Spanned<String>>,
     pub members: Vec<Spanned<IdentifierTypePair>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct GenericFunction {
+    pub return_type: Option<Type>,
+    pub name: String,
+    pub type_params: Vec<Spanned<String>>,
+    pub arguments: Vec<Spanned<IdentifierTypePair>>,
+    pub statement: Spanned<Statement>,
+}
+
+#[derive(Debug, Clone)]
+pub struct GenericImpl {
+    pub struct_name: Spanned<String>,
+    pub type_params: Vec<Spanned<String>>,
+    pub functions: Vec<Spanned<Function>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -173,7 +197,6 @@ pub struct ExternFunction {
 pub struct Function {
     pub return_type: Option<Type>,
     pub name: String,
-    pub type_params: Vec<Spanned<String>>,
     pub arguments: Vec<Spanned<IdentifierTypePair>>,
     pub statement: Spanned<Statement>,
 }
