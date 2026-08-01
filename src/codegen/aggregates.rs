@@ -23,9 +23,11 @@ impl<'ctx> CodeGen<'ctx, '_> {
             .iter()
             .map(|(_, ty)| self.basic_type(ty, span))
             .collect::<Result<Vec<_>, _>>()?;
-        let ty = self
-            .context
-            .opaque_struct_type(&self.program.symbols.structs[&decl].name);
+        let ty = self.context.opaque_struct_type(
+            self.emitted
+                .get(&decl)
+                .unwrap_or(&self.program.symbols.structs[&decl].name),
+        );
         ty.set_body(&field_types, false);
         self.struct_types.insert(decl, ty);
         Ok(ty)
@@ -69,7 +71,10 @@ impl<'ctx> CodeGen<'ctx, '_> {
             return Ok(*function);
         }
         let struct_type = self.struct_type(decl, span)?;
-        let name = &self.program.symbols.structs[&decl].name;
+        let name = self
+            .emitted
+            .get(&decl)
+            .unwrap_or(&self.program.symbols.structs[&decl].name);
         let ptr = self.context.ptr_type(AddressSpace::default());
         let function =
             self.module

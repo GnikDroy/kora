@@ -178,7 +178,12 @@ impl ASTVisitor for JavascriptTranspiler {
     fn visit_struct(&mut self, _: &Spanned<Struct>) {}
 
     fn visit_impl(&mut self, impl_: &Spanned<Impl>) {
-        self.current_impl = Some(impl_.node.struct_ref.name.node.clone());
+        let struct_ref = &impl_.node.struct_ref;
+        let base = struct_ref
+            .target
+            .and_then(|t| self.emitted.get(&t))
+            .unwrap_or(&struct_ref.name.node);
+        self.current_impl = Some(base.clone());
         walk_impl(self, impl_);
         self.current_impl = None;
     }

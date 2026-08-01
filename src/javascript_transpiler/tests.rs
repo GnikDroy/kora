@@ -30,19 +30,24 @@ fn transpile_with_async(source: &str, async_externs: HashSet<String>) -> String 
         .check()
         .unwrap_or_else(|errs| panic!("return check: {errs:?}"));
 
-    let method_calls = super::mangled_method_calls(&symbols, &checker.method_calls);
-    let async_fns =
-        super::resolve_async_fns(&[&module], &HashMap::new(), &method_calls, async_externs);
-    let struct_members = super::struct_member_map(&symbols);
-    let mut transpiler = JavascriptTranspiler::new(
-        checker.types,
-        method_calls,
-        checker.array_method_calls,
-        struct_members,
-        symbols.struct_names.clone(),
-        HashMap::new(),
-        async_fns,
+    let method_calls = super::mangled_method_calls(&symbols, &checker.method_calls, &HashMap::new());
+    let async_fns = super::resolve_async_fns(
+        &[&module],
+        &HashMap::new(),
+        &method_calls,
+        async_externs,
+        &HashMap::new(),
     );
+    let struct_members = super::struct_member_map(&symbols);
+    let mut transpiler = JavascriptTranspiler {
+        types: checker.types,
+        method_calls,
+        array_method_calls: checker.array_method_calls,
+        struct_members,
+        struct_ids: symbols.struct_names.clone(),
+        async_fns,
+        ..JavascriptTranspiler::default()
+    };
     transpiler.visit_module(&module);
     transpiler
         .get_source()
@@ -379,22 +384,31 @@ fn transpile_program(
     })
     .unwrap_or_else(|e| panic!("compile: {e:?}"));
 
-    let method_calls = super::mangled_method_calls(&compiled.symbols, &compiled.method_calls);
-    let function_names = super::function_names(&compiled.symbols, &compiled.program);
+    let emitted = crate::mangle::emitted_names(&compiled.program, &compiled.origins);
+    let method_calls =
+        super::mangled_method_calls(&compiled.symbols, &compiled.method_calls, &emitted);
+    let function_names = super::function_names(&compiled.symbols, &compiled.program, &emitted);
     let struct_members = super::struct_member_map(&compiled.symbols);
     let modules: Vec<&parser::Module> =
         compiled.program.modules.iter().map(|m| &m.module).collect();
-    let async_fns =
-        super::resolve_async_fns(&modules, &function_names, &method_calls, async_externs);
-    let mut transpiler = JavascriptTranspiler::new(
-        compiled.types,
+    let async_fns = super::resolve_async_fns(
+        &modules,
+        &function_names,
+        &method_calls,
+        async_externs,
+        &emitted,
+    );
+    let mut transpiler = JavascriptTranspiler {
+        types: compiled.types,
         method_calls,
-        compiled.array_method_calls,
+        array_method_calls: compiled.array_method_calls,
         struct_members,
-        compiled.symbols.struct_names.clone(),
+        struct_ids: compiled.symbols.struct_names.clone(),
         function_names,
         async_fns,
-    );
+        emitted,
+        ..JavascriptTranspiler::default()
+    };
     transpiler.emit_program(&modules);
     transpiler
         .get_source()

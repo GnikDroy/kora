@@ -19,22 +19,31 @@ pub fn transpile(
     compiled: crate::CompiledProgram,
     async_externs: HashSet<String>,
 ) -> Result<String, String> {
-    let method_calls = mangled_method_calls(&compiled.symbols, &compiled.method_calls);
-    let function_names = function_names(&compiled.symbols, &compiled.program);
+    let emitted = crate::mangle::emitted_names(&compiled.program, &compiled.origins);
+    let method_calls = mangled_method_calls(&compiled.symbols, &compiled.method_calls, &emitted);
+    let function_names = function_names(&compiled.symbols, &compiled.program, &emitted);
     let struct_members = struct_member_map(&compiled.symbols);
     let struct_ids = compiled.symbols.struct_names.clone();
 
     let modules: Vec<&Module> = compiled.program.modules.iter().map(|m| &m.module).collect();
-    let async_fns = resolve_async_fns(&modules, &function_names, &method_calls, async_externs);
-    let mut transpiler = JavascriptTranspiler::new(
-        compiled.types,
+    let async_fns = resolve_async_fns(
+        &modules,
+        &function_names,
+        &method_calls,
+        async_externs,
+        &emitted,
+    );
+    let mut transpiler = JavascriptTranspiler {
+        types: compiled.types,
         method_calls,
-        compiled.array_method_calls,
+        array_method_calls: compiled.array_method_calls,
         struct_members,
         struct_ids,
         function_names,
         async_fns,
-    );
+        emitted,
+        ..JavascriptTranspiler::default()
+    };
     transpiler.emit_program(&modules);
 
     transpiler.get_source().map(|s| s.to_string()).map_err(|e| {
@@ -56,6 +65,7 @@ pub(crate) fn struct_member_map(symbols: &SymbolTable) -> HashMap<NodeId, Vec<(S
 pub(crate) fn function_names(
     symbols: &SymbolTable,
     program: &LoadedProgram,
+    emitted: &HashMap<NodeId, String>,
 ) -> HashMap<NodeId, String> {
     let entry = program.modules.first().map(|m| m.id);
     let root = program
@@ -81,7 +91,8 @@ pub(crate) fn function_names(
             let name = if Some(module.id) == entry && func.node.name == "main" {
                 "__kora_main".to_string()
             } else {
-                mangle(&prefix, &func.node.name)
+                let base = emitted.get(&func.id).unwrap_or(&func.node.name);
+                mangle(&prefix, base)
             };
             by_node.insert(func.id, name.clone());
             if let Some(id) = symbols.symbol_id_of_declaration(func.id) {
@@ -102,6 +113,7 @@ pub(crate) fn function_names(
 pub(crate) fn mangled_method_calls(
     symbols: &SymbolTable,
     method_calls: &HashMap<NodeId, SymbolId>,
+    emitted: &HashMap<NodeId, String>,
 ) -> HashMap<NodeId, String> {
     method_calls
         .iter()
@@ -109,9 +121,11 @@ pub(crate) fn mangled_method_calls(
             let method = &symbols.symbol(*sym).name;
             let name = symbols
                 .structs
-                .values()
-                .find(|def| def.methods.values().any(|m| m == sym))
-                .map(|def| mangle_method(&def.name, method))
+                .iter()
+                .find(|(_, def)| def.methods.values().any(|m| m == sym))
+                .map(|(decl, def)| {
+                    mangle_method(emitted.get(decl).unwrap_or(&def.name), method)
+                })
                 .unwrap_or_else(|| method.clone());
             (*id, name)
         })
@@ -129,6 +143,7 @@ pub struct JavascriptTranspiler {
     struct_ids: HashMap<String, NodeId>,
     /// Mangled name per function definition and call site
     function_names: HashMap<NodeId, String>,
+    emitted: HashMap<NodeId, String>,
     current_impl: Option<String>,
     /// What color is your function?
     /// https://journal.stuffwithstuff.com/2015/02/01/what-color-is-your-function/
@@ -137,29 +152,6 @@ pub struct JavascriptTranspiler {
 }
 
 impl JavascriptTranspiler {
-    pub fn new(
-        types: HashMap<NodeId, Type>,
-        method_calls: HashMap<NodeId, String>,
-        array_method_calls: HashMap<NodeId, ArrayMethod>,
-        struct_members: HashMap<NodeId, Vec<(String, Type)>>,
-        struct_ids: HashMap<String, NodeId>,
-        function_names: HashMap<NodeId, String>,
-        async_fns: HashSet<String>,
-    ) -> JavascriptTranspiler {
-        JavascriptTranspiler {
-            source: String::new(),
-            errors: Vec::new(),
-            types,
-            method_calls,
-            array_method_calls,
-            struct_members,
-            struct_ids,
-            function_names,
-            current_impl: None,
-            async_fns,
-        }
-    }
-
     fn struct_decl(&self, sr: &StructRef) -> Option<NodeId> {
         sr.target
             .or_else(|| self.struct_ids.get(&sr.name.node).copied())

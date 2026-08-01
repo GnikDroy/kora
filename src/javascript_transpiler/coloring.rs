@@ -10,6 +10,7 @@ pub(crate) fn resolve_async_fns(
     function_names: &HashMap<NodeId, String>,
     method_calls: &HashMap<NodeId, String>,
     async_externs: HashSet<String>,
+    emitted: &HashMap<NodeId, String>,
 ) -> HashSet<String> {
     let mut async_fns = async_externs;
 
@@ -29,9 +30,14 @@ pub(crate) fn resolve_async_fns(
                     )
                 })
                 .chain(module.impls.iter().flat_map(|impl_| {
-                    impl_.node.functions.iter().map(|f| {
+                    let struct_ref = &impl_.node.struct_ref;
+                    let base = struct_ref
+                        .target
+                        .and_then(|t| emitted.get(&t))
+                        .unwrap_or(&struct_ref.name.node);
+                    impl_.node.functions.iter().map(move |f| {
                         (
-                            mangle_method(&impl_.node.struct_ref.name.node, &f.node.name),
+                            mangle_method(base, &f.node.name),
                             called_names(&f.node.statement, function_names, method_calls),
                         )
                     })

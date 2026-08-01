@@ -7,7 +7,7 @@ pub use errors::*;
 use std::collections::{HashMap, HashSet};
 
 use crate::loader::LoadedProgram;
-use crate::mangle::encode_instance;
+use crate::mangle::{encode_instance, unique_name};
 use crate::parser::{Span, Type};
 
 use collect::{GenericFns, GenericStructs, collect};
@@ -157,7 +157,7 @@ impl<'p> Instantiator<'p> {
         }
 
         let module = self.generic_structs[name].module;
-        let instance = self.unique_struct_name(encode_instance(name, args));
+        let instance = self.unique_struct_name(encode_instance(name, args, &HashMap::new()));
         self.struct_registry.insert(key, instance.clone());
         self.instance_displays
             .insert(instance.clone(), display.clone());
@@ -214,7 +214,7 @@ impl<'p> Instantiator<'p> {
             return None;
         }
 
-        let instance = self.unique_fn_name(module, encode_instance(name, args));
+        let instance = self.unique_fn_name(module, encode_instance(name, args, &HashMap::new()));
         self.fn_registry.insert(key, instance.clone());
         self.generic_fns
             .get_mut(&(module, name.to_string()))
@@ -269,20 +269,6 @@ impl<'p> Instantiator<'p> {
         });
         self.used_fn_names[module].insert(name.clone());
         name
-    }
-}
-
-fn unique_name(base: String, taken: impl Fn(&str) -> bool) -> String {
-    if !taken(&base) {
-        return base;
-    }
-    let mut n = 2;
-    loop {
-        let candidate = format!("{base}${n}");
-        if !taken(&candidate) {
-            return candidate;
-        }
-        n += 1;
     }
 }
 

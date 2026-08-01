@@ -1,6 +1,10 @@
+use std::collections::{HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
 
-use crate::parser::Type;
+use crate::loader::LoadedProgram;
+use crate::parser::{NodeId, Type};
+
+pub(crate) type InstanceOrigins = HashMap<NodeId, (String, Vec<Type>)>;
 
 pub(crate) fn mangle(prefix: &str, name: &str) -> String {
     if prefix.is_empty() {
@@ -43,27 +47,99 @@ pub(crate) fn mangle_prefix(path: &Path, root: &Path) -> String {
         .collect()
 }
 
-pub(crate) fn encode_instance(name: &str, args: &[Type]) -> String {
+pub(crate) fn encode_instance(name: &str, args: &[Type], origins: &InstanceOrigins) -> String {
     let mut encoded = name.to_string();
     for arg in args {
         encoded.push_str("$$");
-        encoded.push_str(&encode_type(arg));
+        encoded.push_str(&encode_type(arg, origins));
     }
     encoded
 }
 
-fn encode_type(ty: &Type) -> String {
+fn encode_type(ty: &Type, origins: &InstanceOrigins) -> String {
     match ty {
         Type::Int => "int".to_string(),
         Type::Real => "real".to_string(),
         Type::Bool => "bool".to_string(),
         Type::Char => "char".to_string(),
         Type::Opaque => "opaque".to_string(),
-        Type::Array(inner) => format!("arr_{}", encode_type(inner)),
-        Type::Optional(inner) => format!("opt_{}", encode_type(inner)),
-        Type::Struct(sr) => sr.name.node.clone(),
+        Type::Array(inner) => format!("arr_{}", encode_type(inner, origins)),
+        Type::Optional(inner) => format!("opt_{}", encode_type(inner, origins)),
+        Type::Struct(sr) => sr
+            .target
+            .and_then(|t| origins.get(&t))
+            .map(|(generic, args)| encode_instance(generic, args, origins))
+            .unwrap_or_else(|| sr.name.node.clone()),
         Type::Generic(name, _) => name.node.clone(),
         Type::Function(_, _) => "fn".to_string(),
+    }
+}
+
+pub(crate) fn emitted_names(
+    program: &LoadedProgram,
+    origins: &InstanceOrigins,
+) -> HashMap<NodeId, String> {
+    let mut emitted = HashMap::new();
+
+    let mut taken: HashSet<String> = program
+        .modules
+        .iter()
+        .flat_map(|m| m.module.structs.iter())
+        .filter(|s| !origins.contains_key(&s.id))
+        .map(|s| s.node.name.clone())
+        .collect();
+    for module in program.modules.iter() {
+        for decl in module.module.structs.iter() {
+            if let Some((generic, args)) = origins.get(&decl.id) {
+                let name = unique_name(encode_instance(generic, args, origins), |candidate| {
+                    taken.contains(candidate)
+                });
+                taken.insert(name.clone());
+                emitted.insert(decl.id, name);
+            }
+        }
+    }
+
+    for module in program.modules.iter() {
+        let mut taken: HashSet<String> = module
+            .module
+            .extern_functions
+            .iter()
+            .map(|f| f.node.name.clone())
+            .chain(
+                module
+                    .module
+                    .functions
+                    .iter()
+                    .filter(|f| !origins.contains_key(&f.id))
+                    .map(|f| f.node.name.clone()),
+            )
+            .collect();
+        for decl in module.module.functions.iter() {
+            if let Some((generic, args)) = origins.get(&decl.id) {
+                let name = unique_name(encode_instance(generic, args, origins), |candidate| {
+                    taken.contains(candidate)
+                });
+                taken.insert(name.clone());
+                emitted.insert(decl.id, name);
+            }
+        }
+    }
+
+    emitted
+}
+
+pub(crate) fn unique_name(base: String, taken: impl Fn(&str) -> bool) -> String {
+    if !taken(&base) {
+        return base;
+    }
+    let mut n = 2;
+    loop {
+        let candidate = format!("{base}${n}");
+        if !taken(&candidate) {
+            return candidate;
+        }
+        n += 1;
     }
 }
 

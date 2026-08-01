@@ -42,6 +42,7 @@ pub struct CodeGen<'ctx, 'a> {
     array_type: Option<StructType<'ctx>>,
     array_equality_fns: HashMap<Type, FunctionValue<'ctx>>, // memoized `i1 @"eq.N"(ptr, ptr)` per array type
     default_fns: HashMap<NodeId, FunctionValue<'ctx>>,
+    emitted: HashMap<NodeId, String>,
     frame: Option<Frame<'ctx>>,
 }
 
@@ -66,6 +67,7 @@ pub fn lower<'ctx>(
         array_type: None,
         array_equality_fns: HashMap::new(),
         default_fns: HashMap::new(),
+        emitted: crate::mangle::emitted_names(&program.program, &program.origins),
         frame: None,
     };
     let entry = program.program.modules.first().map(|m| m.id);
@@ -112,15 +114,22 @@ impl<'ctx> CodeGen<'ctx, '_> {
             let name = if is_entry && func.node.name == "main" {
                 "__kora_main".to_string()
             } else {
-                mangle(prefix, &func.node.name)
+                let base = self.emitted.get(&func.id).unwrap_or(&func.node.name);
+                mangle(prefix, base)
             };
             self.declare_function(func.id, &name, &func.node.return_type, &func.node.arguments)?;
         }
         for impl_ in module.impls.iter() {
+            let struct_ref = &impl_.node.struct_ref;
+            let base = struct_ref
+                .target
+                .and_then(|t| self.emitted.get(&t))
+                .unwrap_or(&struct_ref.name.node)
+                .clone();
             for func in impl_.node.functions.iter() {
                 self.declare_function(
                     func.id,
-                    &mangle_method(&impl_.node.struct_ref.name.node, &func.node.name),
+                    &mangle_method(&base, &func.node.name),
                     &func.node.return_type,
                     &func.node.arguments,
                 )?;

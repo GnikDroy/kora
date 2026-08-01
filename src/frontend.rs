@@ -6,6 +6,7 @@ use std::path::Path;
 use crate::instantiate::{GenericNote, InstantiateErr};
 use crate::lexer::{LexerErr, Position};
 use crate::loader::{LoadErr, LoadedProgram, Loader};
+use crate::mangle::InstanceOrigins;
 use crate::parser::{ASTVisitor, ExternFunction, NodeId, ParseErr, Span, Type};
 use crate::semantic_analyzer::{
     ArrayMethod, Resolver, ReturnChecker, SymbolId, SymbolTable, TypeChecker, TypeErr,
@@ -17,6 +18,7 @@ pub struct CompiledProgram {
     pub(crate) types: HashMap<NodeId, Type>,
     pub(crate) method_calls: HashMap<NodeId, SymbolId>,
     pub(crate) array_method_calls: HashMap<NodeId, ArrayMethod>,
+    pub(crate) origins: InstanceOrigins,
 }
 
 #[derive(Debug)]
@@ -184,6 +186,7 @@ where
         types,
         method_calls,
         array_method_calls,
+        origins: InstanceOrigins::new(),
     })
 }
 
