@@ -397,6 +397,15 @@ fn test_extern_bool_marshalling() {
 }
 
 #[test]
+fn test_generic_function_monomorphizes() {
+    let source = r#"
+        T max<T>(a: T, b: T) { if (a > b) { return a; } return b; }
+        int main() { return max::<int>(2, 5) * 10 + (max::<real>(1.5, 2.5) as int); }
+    "#;
+    assert_eq!(run_main(source), 52);
+}
+
+#[test]
 fn test_thunk_names_cannot_collide_with_mangled_functions() {
     let result = run_main(
         r#"

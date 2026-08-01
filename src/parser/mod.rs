@@ -307,7 +307,7 @@ impl Parser {
             })
         })?;
         let span = self.span_from(start);
-        Ok(Spanned::fresh(node, span))
+        Ok(Spanned::new(node, span))
     }
 
     fn parselet_infix_function_call(
@@ -434,7 +434,7 @@ impl Parser {
                         let start = term.span.start.clone();
                         let node = self.parselet_infix_operators(operator, term)?;
                         let span = self.span_from(start);
-                        term = Spanned::fresh(node, span);
+                        term = Spanned::new(node, span);
                         continue;
                     }
                 }
@@ -462,7 +462,7 @@ impl Parser {
         let start = self.current_start();
         let name = self.parse_identifier()?;
         let span = self.span_from(start);
-        Ok(Spanned::fresh(name, span))
+        Ok(Spanned::new(name, span))
     }
 
     fn parse_field_initializer(
@@ -488,7 +488,7 @@ impl Parser {
 
         let typename = self.parse_typename()?;
         let span = self.span_from(start);
-        Ok(Spanned::fresh(IdentifierTypePair { name, typename }, span))
+        Ok(Spanned::new(IdentifierTypePair { name, typename }, span))
     }
 
     fn parse_generic_delimited<T>(
@@ -701,7 +701,7 @@ impl Parser {
             _ => self.parse_simple_statement(),
         }?;
         let init_span = self.span_from(init_start);
-        let init = Spanned::fresh(init, init_span);
+        let init = Spanned::new(init, init_span);
 
         let cond = self.parse_expression()?;
 
@@ -739,50 +739,50 @@ impl Parser {
         let it_name = format!("$it{n}");
         let i_name = format!("$i{n}");
 
-        let it_binding = Spanned::fresh(it_name.clone(), span.clone());
-        let let_it = Spanned::fresh(Statement::Let(it_binding, None, iterable), span.clone());
+        let it_binding = Spanned::new(it_name.clone(), span.clone());
+        let let_it = Spanned::new(Statement::Let(it_binding, None, iterable), span.clone());
 
-        let zero = Spanned::fresh(Expression::IntegerLiteral(0), span.clone());
-        let i_binding = Spanned::fresh(i_name.clone(), span.clone());
-        let let_i = Spanned::fresh(Statement::Let(i_binding, None, zero), span.clone());
+        let zero = Spanned::new(Expression::IntegerLiteral(0), span.clone());
+        let i_binding = Spanned::new(i_name.clone(), span.clone());
+        let let_i = Spanned::new(Statement::Let(i_binding, None, zero), span.clone());
 
-        let i_ref = Spanned::fresh(Expression::Identifier(i_name.clone()), span.clone());
-        let it_ref = Spanned::fresh(Expression::Identifier(it_name.clone()), span.clone());
-        let len_access = Spanned::fresh(
+        let i_ref = Spanned::new(Expression::Identifier(i_name.clone()), span.clone());
+        let it_ref = Spanned::new(Expression::Identifier(it_name.clone()), span.clone());
+        let len_access = Spanned::new(
             Expression::Access(Box::new(it_ref), "len".to_string()),
             span.clone(),
         );
-        let len_call = Spanned::fresh(
+        let len_call = Spanned::new(
             Expression::Call(Box::new(len_access), Vec::new()),
             span.clone(),
         );
-        let cond = Spanned::fresh(
+        let cond = Spanned::new(
             Expression::Binary(Box::new(i_ref), BinaryOp::Less, Box::new(len_call)),
             span.clone(),
         );
 
-        let i_ref = Spanned::fresh(Expression::Identifier(i_name.clone()), span.clone());
-        let one = Spanned::fresh(Expression::IntegerLiteral(1), span.clone());
-        let next = Spanned::fresh(
+        let i_ref = Spanned::new(Expression::Identifier(i_name.clone()), span.clone());
+        let one = Spanned::new(Expression::IntegerLiteral(1), span.clone());
+        let next = Spanned::new(
             Expression::Binary(Box::new(i_ref), BinaryOp::Add, Box::new(one)),
             span.clone(),
         );
-        let i_ref = Spanned::fresh(Expression::Identifier(i_name.clone()), span.clone());
-        let step = Spanned::fresh(
+        let i_ref = Spanned::new(Expression::Identifier(i_name.clone()), span.clone());
+        let step = Spanned::new(
             Expression::Binary(Box::new(i_ref), BinaryOp::Assign, Box::new(next)),
             span.clone(),
         );
 
-        let it_ref = Spanned::fresh(Expression::Identifier(it_name), span.clone());
-        let i_ref = Spanned::fresh(Expression::Identifier(i_name), span.clone());
-        let element = Spanned::fresh(
+        let it_ref = Spanned::new(Expression::Identifier(it_name), span.clone());
+        let i_ref = Spanned::new(Expression::Identifier(i_name), span.clone());
+        let element = Spanned::new(
             Expression::ArrayIndex(Box::new(it_ref), Box::new(i_ref)),
             span.clone(),
         );
-        let let_element = Spanned::fresh(Statement::Let(variable, None, element), var_span);
+        let let_element = Spanned::new(Statement::Let(variable, None, element), var_span);
 
-        let inner = Spanned::fresh(Statement::Compound(vec![let_element, body]), span.clone());
-        let for_loop = Spanned::fresh(
+        let inner = Spanned::new(Statement::Compound(vec![let_element, body]), span.clone());
+        let for_loop = Spanned::new(
             Statement::For(Box::new(let_i), cond, step, Box::new(inner)),
             span.clone(),
         );
@@ -834,7 +834,7 @@ impl Parser {
             _ => self.parse_simple_statement(),
         }?;
         let span = self.span_from(start);
-        Ok(Spanned::fresh(node, span))
+        Ok(Spanned::new(node, span))
     }
 
     fn parse_array_typename(&mut self) -> Result<Type, ParseErr> {
@@ -968,7 +968,7 @@ impl Parser {
             Token::Keyword(Keyword::Opaque) => Ok(Type::Opaque),
             Token::Keyword(Keyword::String) => Ok(Type::Array(Box::new(Type::Char))),
             Token::Identifier(name) => {
-                let name = Spanned::fresh(name, span);
+                let name = Spanned::new(name, span);
                 if self.peek_is(Token::Symbol(Symbol::Less)) {
                     Ok(Type::Generic(name, self.parse_type_arguments()?))
                 } else {
@@ -1047,7 +1047,7 @@ impl Parser {
             "Expected semicolon ; to end import declaration",
         )?;
         let span = self.span_from(start);
-        Ok(Spanned::fresh(Import { path, alias }, span))
+        Ok(Spanned::new(Import { path, alias }, span))
     }
 
     fn parse_extern_typename(&mut self) -> Result<ExternType, ParseErr> {
@@ -1114,7 +1114,7 @@ impl Parser {
         )?;
         let typename = self.parse_extern_typename()?;
         let span = self.span_from(start);
-        Ok(Spanned::fresh(ExternParameter { name, typename }, span))
+        Ok(Spanned::new(ExternParameter { name, typename }, span))
     }
 
     fn parse_extern_function(&mut self) -> Result<Spanned<ExternFunction>, ParseErr> {
@@ -1139,7 +1139,7 @@ impl Parser {
         )?;
 
         let span = self.span_from(start);
-        Ok(Spanned::fresh(
+        Ok(Spanned::new(
             ExternFunction {
                 return_type,
                 name,
@@ -1175,7 +1175,7 @@ impl Parser {
                 arguments,
                 statement,
             };
-            Ok(FunctionDecl::Concrete(Spanned::fresh(function, span)))
+            Ok(FunctionDecl::Concrete(Spanned::new(function, span)))
         } else {
             let function = GenericFunction {
                 return_type,
@@ -1184,7 +1184,7 @@ impl Parser {
                 arguments,
                 statement,
             };
-            Ok(FunctionDecl::Generic(Spanned::fresh(function, span)))
+            Ok(FunctionDecl::Generic(Spanned::new(function, span)))
         }
     }
 
@@ -1207,20 +1207,20 @@ impl Parser {
             });
         }
         let self_span = self.span_from(start);
-        let name = Spanned::fresh(struct_name.node.clone(), struct_name.span.clone());
+        let name = Spanned::new(struct_name.node.clone(), struct_name.span.clone());
         let self_type = if type_params.is_empty() {
             Type::Struct(name)
         } else {
             let args = type_params
                 .iter()
                 .map(|p| {
-                    let param = Spanned::fresh(p.node.clone(), p.span.clone());
+                    let param = Spanned::new(p.node.clone(), p.span.clone());
                     Type::Struct(param)
                 })
                 .collect();
             Type::Generic(name, args)
         };
-        let mut arguments = vec![Spanned::fresh(
+        let mut arguments = vec![Spanned::new(
             IdentifierTypePair {
                 name: "self".to_string(),
                 typename: self_type,
@@ -1282,7 +1282,7 @@ impl Parser {
             statement,
         };
         let span = self.span_from(start);
-        Ok(Spanned::fresh(function, span))
+        Ok(Spanned::new(function, span))
     }
 
     fn parse_impl(&mut self) -> Result<ImplDecl, ParseErr> {
@@ -1310,14 +1310,14 @@ impl Parser {
                 struct_name,
                 functions,
             };
-            Ok(ImplDecl::Concrete(Spanned::fresh(imp, span)))
+            Ok(ImplDecl::Concrete(Spanned::new(imp, span)))
         } else {
             let imp = GenericImpl {
                 struct_name,
                 type_params,
                 functions,
             };
-            Ok(ImplDecl::Generic(Spanned::fresh(imp, span)))
+            Ok(ImplDecl::Generic(Spanned::new(imp, span)))
         }
     }
 
@@ -1339,14 +1339,14 @@ impl Parser {
 
         if type_params.is_empty() {
             let decl = Struct { name, members };
-            Ok(StructDecl::Concrete(Spanned::fresh(decl, span)))
+            Ok(StructDecl::Concrete(Spanned::new(decl, span)))
         } else {
             let decl = GenericStruct {
                 name,
                 type_params,
                 members,
             };
-            Ok(StructDecl::Generic(Spanned::fresh(decl, span)))
+            Ok(StructDecl::Generic(Spanned::new(decl, span)))
         }
     }
 

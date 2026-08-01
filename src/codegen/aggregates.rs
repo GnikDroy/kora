@@ -1,6 +1,6 @@
 use inkwell::AddressSpace;
 use inkwell::types::StructType;
-use inkwell::values::{FunctionValue, PointerValue, ValueKind};
+use inkwell::values::{FunctionValue, PointerValue};
 
 use super::{CodeGen, CodegenErr};
 use crate::parser::*;

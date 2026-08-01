@@ -3,9 +3,10 @@ use std::error::Error;
 use std::fmt;
 use std::path::Path;
 
-use crate::lexer::LexerErr;
+use crate::instantiate::{GenericNote, InstantiateErr};
+use crate::lexer::{LexerErr, Position};
 use crate::loader::{LoadErr, LoadedProgram, Loader};
-use crate::parser::{ASTVisitor, ExternFunction, NodeId, ParseErr, Type};
+use crate::parser::{ASTVisitor, ExternFunction, NodeId, ParseErr, Span, Type};
 use crate::semantic_analyzer::{
     ArrayMethod, Resolver, ReturnChecker, SymbolId, SymbolTable, TypeChecker, TypeErr,
 };
@@ -23,6 +24,7 @@ pub enum CompileErr {
     Load(LoadErr),
     Lex(LexerErr),
     Parse(ParseErr),
+    Instantiate(InstantiateErr),
     Semantic(TypeErr),
 }
 
@@ -32,6 +34,7 @@ impl Error for CompileErr {
             Self::Load(err) => Some(err),
             Self::Lex(err) => Some(err),
             Self::Parse(err) => Some(err),
+            Self::Instantiate(err) => Some(err),
             Self::Semantic(err) => Some(err),
         }
     }
@@ -43,9 +46,40 @@ impl fmt::Display for CompileErr {
             CompileErr::Load(err) => write!(f, "{err}"),
             CompileErr::Lex(err) => write!(f, "{err}"),
             CompileErr::Parse(err) => write!(f, "{err}"),
+            CompileErr::Instantiate(err) => write!(f, "{err}"),
             CompileErr::Semantic(err) => write!(f, "{err}"),
         }
     }
+}
+
+/// Attach an "instantiated here" note to every semantic error that lies inside
+/// a generic declaration's source region, so post-instantiation errors point
+/// back at the use sites that produced the failing instance.
+fn annotate_generic_errors(errors: Vec<TypeErr>, notes: &[GenericNote]) -> Vec<CompileErr> {
+    fn le(a: &Position, b: &Position) -> bool {
+        (a.row, a.col) <= (b.row, b.col)
+    }
+    fn within(inner: &Span, outer: &Span) -> bool {
+        inner.source == outer.source && le(&outer.start, &inner.start) && le(&inner.end, &outer.end)
+    }
+    let mut out = Vec::new();
+    for err in errors {
+        let span = err.span.clone();
+        out.push(CompileErr::Semantic(err));
+        for note in notes {
+            if within(&span, &note.region) {
+                for (display, site) in &note.instances {
+                    out.push(CompileErr::Instantiate(InstantiateErr {
+                        msg: format!(
+                            "note: inside a generic expanded as `{display}`, instantiated here"
+                        ),
+                        span: site.clone(),
+                    }));
+                }
+            }
+        }
+    }
+    out
 }
 
 /// Run the whole front-end over the program reachable from `entry`: build the
@@ -57,16 +91,20 @@ where
 {
     // prioritize std/ imports from embedded standard library
     let provider = |path: &Path| crate::stdlib::source(path).or_else(|| provider(path));
-    let program = Loader::new(provider).load(entry)?;
+    let mut program = Loader::new(provider).load(entry)?;
 
-    let symbols = Resolver::new()
-        .resolve_program(&program)
+    let generic_notes = crate::instantiate::Instantiator::new(&mut program)
+        .run()
         .map_err(|errors| {
             errors
                 .into_iter()
-                .map(CompileErr::Semantic)
+                .map(CompileErr::Instantiate)
                 .collect::<Vec<_>>()
         })?;
+
+    let symbols = Resolver::new()
+        .resolve_program(&program)
+        .map_err(|errors| annotate_generic_errors(errors, &generic_notes))?;
 
     let mut analyze_errors = Vec::new();
 
@@ -137,10 +175,7 @@ where
     }
 
     if !analyze_errors.is_empty() {
-        return Err(analyze_errors
-            .into_iter()
-            .map(CompileErr::Semantic)
-            .collect());
+        return Err(annotate_generic_errors(analyze_errors, &generic_notes));
     }
 
     Ok(CompiledProgram {
@@ -357,6 +392,64 @@ int g() { return abs(2); }",
                 ]),
             )
             .is_ok()
+        );
+    }
+
+    #[test]
+    fn test_generic_program_compiles() {
+        let result = compile(
+            "main.kora",
+            provider(vec![
+                (
+                    "main.kora",
+                    r#"
+                    import "util.kora";
+                    struct pair<A, B> { first: A, second: B }
+                    impl pair<A, B> {
+                        A fst(self) { return self.first; }
+                        B snd(self) { return self.second; }
+                    }
+                    int main() {
+                        let p = new pair<int, string>{ first: 40, second: "ab" };
+                        let boxed = util.wrap::<int>(p.fst());
+                        return boxed.v + p.snd().len();
+                    }
+                    "#,
+                ),
+                (
+                    "util.kora",
+                    r#"
+                    struct box<T> { v: T }
+                    box<T> wrap<T>(v: T) { return new box<T>{ v: v }; }
+                    "#,
+                ),
+            ]),
+        );
+        if let Err(errors) = result {
+            panic!("unexpected errors: {errors:?}");
+        }
+    }
+
+    #[test]
+    fn test_generic_instance_error_mentions_instantiation() {
+        let Err(errors) = compile(
+            "main.kora",
+            provider(vec![(
+                "main.kora",
+                "T bad<T>(x: T) { return x + true; } int main() { return bad::<int>(1); }",
+            )]),
+        ) else {
+            panic!("expected a type error inside the instance");
+        };
+        assert!(
+            errors.iter().any(|e| matches!(e, CompileErr::Semantic(_))),
+            "{errors:?}"
+        );
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.to_string().contains("instantiated here")),
+            "{errors:?}"
         );
     }
 

@@ -1119,6 +1119,90 @@ fn test_gc_survives_allocation_churn() {
 }
 
 #[test]
+fn test_generic_identity_and_pair() {
+    let (stdout, stderr, code) = run(r#"
+            import "std/conv";
+            import "std/io";
+            struct pair<A, B> { first: A, second: B }
+            impl pair<A, B> {
+                A fst(self) { return self.first; }
+                void set_second(self, v: B) { self.second = v; }
+            }
+            T id<T>(x: T) { return x; }
+            int main() {
+                let p = new pair<int, string>{ first: 40, second: "xy" };
+                p.set_second("abc");
+                io.print(conv.int_to_string(id::<int>(p.fst()) + p.second.len()));
+                let q = new pair<bool, real>{ first: true, second: 1.5 };
+                if (q.fst() && q.second == 1.5) { return id::<int>(2); }
+                return 0;
+            }
+        "#);
+    assert_eq!(stdout, "43\n", "{stderr}");
+    assert_eq!(code, 2);
+}
+
+#[test]
+fn test_generic_across_modules() {
+    let (_, stderr, code) = run_program(&[
+        (
+            "main.kora",
+            r#"
+                import "second.kora";
+                import "util.kora";
+                int main() {
+                    let b = util.make::<int>(35);
+                    return b.v + second.get();
+                }
+            "#,
+        ),
+        (
+            "second.kora",
+            r#"
+                import "util.kora";
+                int get() {
+                    let b = util.make::<int>(7);
+                    return b.v;
+                }
+            "#,
+        ),
+        (
+            "util.kora",
+            r#"
+                struct box<T> { v: T }
+                box<T> make<T>(v: T) { return new box<T>{ v: v }; }
+            "#,
+        ),
+    ]);
+    assert_eq!(code, 42, "{stderr}");
+}
+
+#[test]
+fn test_generic_list_pattern() {
+    let (stdout, stderr, code) = run(r#"
+            import "std/conv";
+            import "std/io";
+            struct node<T> { value: T, next: node<T>? }
+            node<int> cons(v: int, rest: node<int>?) {
+                return new node<int>{ value: v, next: rest };
+            }
+            int main() {
+                let list: node<int>? = cons(3, cons(2, cons(1, none)));
+                let sum = 0;
+                let cur = list;
+                while (cur != none) {
+                    sum = sum + cur!.value;
+                    io.print(conv.int_to_string(cur!.value));
+                    cur = cur!.next;
+                }
+                return sum;
+            }
+        "#);
+    assert_eq!(stdout, "3\n2\n1\n", "{stderr}");
+    assert_eq!(code, 6);
+}
+
+#[test]
 fn test_node_panics_on_missing_extern() {
     let dir = temp_dir();
     let entry = dir.join("main.kora");

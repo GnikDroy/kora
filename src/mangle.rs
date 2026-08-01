@@ -1,5 +1,7 @@
 use std::path::{Component, Path, PathBuf};
 
+use crate::parser::Type;
+
 pub(crate) fn mangle(prefix: &str, name: &str) -> String {
     if prefix.is_empty() {
         format!("kora${name}")
@@ -39,6 +41,30 @@ pub(crate) fn mangle_prefix(path: &Path, root: &Path) -> String {
             }
         })
         .collect()
+}
+
+pub(crate) fn encode_instance(name: &str, args: &[Type]) -> String {
+    let mut encoded = name.to_string();
+    for arg in args {
+        encoded.push_str("$$");
+        encoded.push_str(&encode_type(arg));
+    }
+    encoded
+}
+
+fn encode_type(ty: &Type) -> String {
+    match ty {
+        Type::Int => "int".to_string(),
+        Type::Real => "real".to_string(),
+        Type::Bool => "bool".to_string(),
+        Type::Char => "char".to_string(),
+        Type::Opaque => "opaque".to_string(),
+        Type::Array(inner) => format!("arr_{}", encode_type(inner)),
+        Type::Optional(inner) => format!("opt_{}", encode_type(inner)),
+        Type::Struct(name) => name.node.clone(),
+        Type::Generic(name, _) => name.node.clone(),
+        Type::Function(_, _) => "fn".to_string(),
+    }
 }
 
 fn relative_to(path: &Path, root: &Path) -> PathBuf {

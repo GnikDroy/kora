@@ -152,7 +152,7 @@ mod tests {
     use crate::parser::{NodeId, Span, Spanned};
 
     fn struct_ty(name: &str) -> Type {
-        Type::Struct(Spanned::new(
+        Type::Struct(Spanned::with_id(
             name.to_string(),
             Span::default(),
             NodeId::default(),

@@ -37,7 +37,7 @@ impl Default for SourceId {
 pub struct NodeId(pub(crate) u64);
 
 impl NodeId {
-    pub fn fresh() -> NodeId {
+    pub fn new() -> NodeId {
         use std::sync::atomic::{AtomicU64, Ordering};
         static NEXT: AtomicU64 = AtomicU64::new(0);
         NodeId(NEXT.fetch_add(1, Ordering::Relaxed))
@@ -55,12 +55,12 @@ pub struct Spanned<T> {
 }
 
 impl<T> Spanned<T> {
-    pub fn new(node: T, span: Span, id: NodeId) -> Self {
-        Spanned { node, span, id }
+    pub fn new(node: T, span: Span) -> Self {
+        Spanned::with_id(node, span, NodeId::new())
     }
 
-    pub fn fresh(node: T, span: Span) -> Self {
-        Spanned::new(node, span, NodeId::fresh())
+    pub fn with_id(node: T, span: Span, id: NodeId) -> Self {
+        Spanned { node, span, id }
     }
 }
 
