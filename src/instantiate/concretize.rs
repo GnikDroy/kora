@@ -5,7 +5,7 @@ use crate::parser::{
 };
 
 /// Scaffolds build concrete copy of generics with fresh NodeIds everywhere.
-fn scaffold_struct(decl: &Spanned<GenericStruct>) -> Spanned<Struct> {
+pub(super) fn scaffold_struct(decl: &Spanned<GenericStruct>) -> Spanned<Struct> {
     let mut decl = Spanned::new(
         Struct {
             name: decl.node.name.clone(),
@@ -185,10 +185,10 @@ impl Instantiator<'_> {
     pub(super) fn instance_struct(
         &mut self,
         generic: &str,
-        instance: &str,
+        decl: &mut Spanned<Struct>,
         args: &[Type],
         chain: &mut Chain,
-    ) -> Spanned<Struct> {
+    ) {
         let def = &self.generic_structs[generic];
         let params: Vec<String> = def
             .decl
@@ -197,17 +197,14 @@ impl Instantiator<'_> {
             .iter()
             .map(|p| p.node.clone())
             .collect();
-        let mut decl = scaffold_struct(&def.decl);
-        decl.node.name = instance.to_string();
         let subst: TypeSubstitutions = params.into_iter().zip(args.iter().cloned()).collect();
-        self.concretize_struct_members(&subst, &mut decl, chain);
-        decl
+        self.concretize_struct_members(&subst, decl, chain);
     }
 
     pub(super) fn instance_impls(
         &mut self,
         generic: &str,
-        instance: &str,
+        target: NodeId,
         args: &[Type],
         chain: &mut Chain,
     ) -> Vec<(usize, Spanned<Impl>)> {
@@ -227,7 +224,7 @@ impl Instantiator<'_> {
         scaffolds
             .into_iter()
             .map(|(module, params, mut imp)| {
-                imp.node.struct_ref.name.node = instance.to_string();
+                imp.node.struct_ref.target = Some(target);
                 let subst: TypeSubstitutions =
                     params.into_iter().zip(args.iter().cloned()).collect();
                 for method in imp.node.functions.iter_mut() {
@@ -455,7 +452,7 @@ impl Instantiator<'_> {
             Type::Struct(sr) => {
                 if let Some(concrete) = subst.get(&sr.name.node) {
                     replacement = Some(concrete.clone());
-                } else if self.generic_structs.contains_key(&sr.name.node) {
+                } else if sr.target.is_none() && self.generic_structs.contains_key(&sr.name.node) {
                     let msg = format!(
                         "generic struct `{}` requires type arguments: {}<...>",
                         sr.name.node, sr.name.node
@@ -480,13 +477,13 @@ impl Instantiator<'_> {
                         format!("`{generic_name}` is not a generic struct"),
                         &name_span,
                     );
-                } else if let Some(instance) =
+                } else if let Some(decl) =
                     self.instantiate_struct(&generic_name, args, &name_span, chain)
                 {
-                    replacement =
-                        Some(Type::Struct(StructRef::unresolved(Spanned::new(
-                            instance, name_span,
-                        ))));
+                    replacement = Some(Type::Struct(StructRef {
+                        name: Spanned::new(generic_name, name_span),
+                        target: Some(decl),
+                    }));
                 }
             }
             Type::Array(inner) => self.concretize_type(subst, inner, span, chain),

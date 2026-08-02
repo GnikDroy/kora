@@ -1,27 +1,26 @@
-use std::collections::HashSet;
-
 use super::super::errors::TypeErr;
 use super::check_typename;
 use super::scope::Scope;
 use super::table::{StructDef, SymbolId, SymbolTable, is_intrinsic};
+use crate::instantiate::Instantiated;
 use crate::parser::*;
 
 pub(super) struct GlobalsCollector<'a> {
     table: &'a mut SymbolTable,
     errors: &'a mut Vec<TypeErr>,
-    fn_instances: &'a HashSet<NodeId>,
+    instances: &'a Instantiated,
 }
 
 impl<'a> GlobalsCollector<'a> {
     pub(super) fn new(
         table: &'a mut SymbolTable,
         errors: &'a mut Vec<TypeErr>,
-        fn_instances: &'a HashSet<NodeId>,
+        instances: &'a Instantiated,
     ) -> Self {
         GlobalsCollector {
             table,
             errors,
-            fn_instances,
+            instances,
         }
     }
 
@@ -42,7 +41,15 @@ impl<'a> GlobalsCollector<'a> {
 
     fn collect_struct_names(&mut self, module: &Module) {
         for struct_ in module.structs.iter() {
-            if self.table.struct_exists(&struct_.node.name) {
+            if self.instances.struct_instances.contains(&struct_.id) {
+                self.table.structs.insert(
+                    struct_.id,
+                    StructDef {
+                        name: struct_.node.name.clone(),
+                        ..StructDef::default()
+                    },
+                );
+            } else if self.table.struct_exists(&struct_.node.name) {
                 self.errors.push(TypeErr {
                     msg: "Redeclaration of struct",
                     span: struct_.span.clone(),
@@ -102,7 +109,7 @@ impl<'a> GlobalsCollector<'a> {
             let id =
                 self.table
                     .add_symbol(func.id, func.node.name.clone(), Some(func.node.get_type()));
-            if !self.fn_instances.contains(&func.id) {
+            if !self.instances.fn_instances.contains(&func.id) {
                 self.bind(&mut scope, func.node.name.clone(), id, &func.span);
             }
         }

@@ -62,9 +62,14 @@ fn run_main_files(files: &[(&str, &str)]) -> i64 {
     extern "C" fn jit_flip_bool(x: bool) -> bool {
         !x
     }
+    extern "C" fn jit_gc_malloc(size: u64) -> *mut u8 {
+        let layout = std::alloc::Layout::from_size_align(size as usize, 16).unwrap();
+        unsafe { std::alloc::alloc_zeroed(layout) }
+    }
 
     let stand_ins = [
         ("__kora_panic", jit_panic as *const ()),
+        ("GC_malloc", jit_gc_malloc as *const ()),
         ("make_handle_a", jit_handle_a as *const ()),
         ("make_handle_b", jit_handle_b as *const ()),
         ("ret_neg_i32", jit_ret_neg_i32 as *const ()),
@@ -403,6 +408,21 @@ fn test_generic_function_monomorphizes() {
         int main() { return max::<int>(2, 5) * 10 + (max::<real>(1.5, 2.5) as int); }
     "#;
     assert_eq!(run_main(source), 52);
+}
+
+#[test]
+fn test_generic_struct_methods_monomorphize() {
+    let source = r#"
+        struct box<T> { v: T }
+        impl box<T> { T get(self) { return self.v; } }
+        int main() {
+            let a = new box<int>{ v: 41 };
+            let b = new box<bool>{ v: true };
+            if (b.get()) { return a.get() + 1; }
+            return 0;
+        }
+    "#;
+    assert_eq!(run_main(source), 42);
 }
 
 #[test]

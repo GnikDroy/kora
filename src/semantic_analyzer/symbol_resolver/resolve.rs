@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use super::super::errors::TypeErr;
 use super::check_typename;
@@ -16,7 +16,6 @@ pub struct Resolver {
     errors: Vec<TypeErr>,
     loop_depth: usize,
     resolutions: HashMap<NodeId, NodeId>,
-    fn_instances: HashSet<NodeId>,
 }
 
 impl Resolver {
@@ -65,10 +64,8 @@ impl Resolver {
         instances: &Instantiated,
     ) -> Result<SymbolTable, Vec<TypeErr>> {
         self.resolutions = instances.resolutions.clone();
-        self.fn_instances = instances.fn_instances.clone();
-        let globals =
-            GlobalsCollector::new(&mut self.table, &mut self.errors, &self.fn_instances)
-                .collect(modules);
+        let globals = GlobalsCollector::new(&mut self.table, &mut self.errors, instances)
+            .collect(modules);
         self.scopes = Scopes::new(globals, imports);
         for (index, module) in modules.iter().enumerate() {
             self.scopes.enter_source(index);

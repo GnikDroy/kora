@@ -1143,6 +1143,21 @@ fn test_generic_identity_and_pair() {
 }
 
 #[test]
+fn test_generic_struct_methods_monomorphize() {
+    let (_, stderr, code) = run(r#"
+            struct box<T> { v: T }
+            impl box<T> { T get(self) { return self.v; } }
+            int main() {
+                let a = new box<int>{ v: 41 };
+                let b = new box<bool>{ v: true };
+                if (b.get()) { return a.get() + 1; }
+                return 0;
+            }
+        "#);
+    assert_eq!(code, 42, "{stderr}");
+}
+
+#[test]
 fn test_generic_across_modules() {
     let (_, stderr, code) = run_program(&[
         (

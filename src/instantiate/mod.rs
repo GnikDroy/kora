@@ -7,11 +7,11 @@ pub use errors::*;
 use std::collections::{HashMap, HashSet};
 
 use crate::loader::LoadedProgram;
-use crate::mangle::{InstanceOrigins, encode_instance, unique_name};
+use crate::mangle::{InstanceOrigins, unique_name};
 use crate::parser::{NodeId, Span, Type};
 
 use collect::{GenericFns, GenericStructs, collect};
-use concretize::scaffold_function;
+use concretize::{scaffold_function, scaffold_struct};
 
 const DEPTH_LIMIT: usize = 64;
 
@@ -35,7 +35,7 @@ pub struct Instantiator<'p> {
     generic_structs: GenericStructs,
     generic_fns: GenericFns,
 
-    struct_registry: HashMap<(String, Vec<Type>), String>,
+    struct_registry: HashMap<(String, Vec<Type>), NodeId>,
     fn_registry: HashMap<(usize, String, Vec<Type>), NodeId>,
 
     used_struct_names: HashSet<String>,
@@ -46,7 +46,7 @@ pub struct Instantiator<'p> {
     struct_instances: HashSet<NodeId>,
     origins: InstanceOrigins,
 
-    instance_displays: HashMap<String, String>,
+    instance_displays: HashMap<NodeId, String>,
     errors: Vec<InstantiateErr>,
 }
 
@@ -147,10 +147,10 @@ impl<'p> Instantiator<'p> {
         args: &[Type],
         use_span: &Span,
         chain: &mut Chain,
-    ) -> Option<String> {
+    ) -> Option<NodeId> {
         let key = (name.to_string(), args.to_vec());
-        if let Some(instance) = self.struct_registry.get(&key) {
-            return Some(instance.clone());
+        if let Some(&decl) = self.struct_registry.get(&key) {
+            return Some(decl);
         }
 
         let def = &self.generic_structs[name];
@@ -177,11 +177,15 @@ impl<'p> Instantiator<'p> {
             return None;
         }
 
+        // Register before concretizing the members so self-referential
+        // structs hit the registry instead of recursing forever.
         let module = self.generic_structs[name].module;
-        let instance = self.unique_struct_name(encode_instance(name, args, &HashMap::new()));
-        self.struct_registry.insert(key, instance.clone());
-        self.instance_displays
-            .insert(instance.clone(), display.clone());
+        let mut decl = scaffold_struct(&self.generic_structs[name].decl);
+        self.struct_registry.insert(key, decl.id);
+        self.struct_instances.insert(decl.id);
+        self.origins
+            .insert(decl.id, (name.to_string(), args.to_vec()));
+        self.instance_displays.insert(decl.id, display.clone());
         self.generic_structs
             .get_mut(name)
             .unwrap()
@@ -189,13 +193,14 @@ impl<'p> Instantiator<'p> {
             .push((display.clone(), use_span.clone()));
 
         chain.push((display, use_span.clone()));
-        let decl = self.instance_struct(name, &instance, args, chain);
+        self.instance_struct(name, &mut decl, args, chain);
+        let id = decl.id;
         self.program.modules[module].module.structs.push(decl);
-        for (impl_module, imp) in self.instance_impls(name, &instance, args, chain) {
+        for (impl_module, imp) in self.instance_impls(name, id, args, chain) {
             self.program.modules[impl_module].module.impls.push(imp);
         }
         chain.pop();
-        Some(instance)
+        Some(id)
     }
 
     fn instantiate_function(
@@ -264,9 +269,9 @@ impl<'p> Instantiator<'p> {
             Type::Opaque => "opaque".to_string(),
             Type::Array(inner) => format!("[{}]", self.display_type(inner)),
             Type::Optional(inner) => format!("{}?", self.display_type(inner)),
-            Type::Struct(sr) => self
-                .instance_displays
-                .get(&sr.name.node)
+            Type::Struct(sr) => sr
+                .target
+                .and_then(|t| self.instance_displays.get(&t))
                 .cloned()
                 .unwrap_or_else(|| sr.name.node.clone()),
             Type::Generic(name, args) => self.display_instance(&name.node, args),
@@ -434,7 +439,7 @@ mod tests {
 
     #[test]
     fn test_instantiates_generic_struct_with_impls() {
-        let (program, _) = run_one(
+        let (program, out) = run_one(
             r#"
             struct pair<A, B> { first: A, second: B }
             impl pair<A, B> { A fst(self) { return self.first; } }
@@ -445,19 +450,28 @@ mod tests {
             "#,
         );
         let names = struct_names(&program, 0);
-        assert_eq!(names, vec!["pair$$int$$arr_char".to_string()]);
+        assert_eq!(names, vec!["pair".to_string()]);
         let decl = &program.modules[0].module.structs[0];
         assert_eq!(decl.node.members[0].node.typename, Type::Int);
         assert_eq!(
             decl.node.members[1].node.typename,
             Type::Array(Box::new(Type::Char))
         );
+        assert_eq!(
+            out.origins[&decl.id],
+            (
+                "pair".to_string(),
+                vec![Type::Int, Type::Array(Box::new(Type::Char))]
+            )
+        );
+        assert!(out.struct_instances.contains(&decl.id));
         let imp = &program.modules[0].module.impls[0];
-        assert_eq!(imp.node.struct_ref.name.node, "pair$$int$$arr_char");
+        assert_eq!(imp.node.struct_ref.name.node, "pair");
+        assert_eq!(imp.node.struct_ref.target, Some(decl.id));
         let method = &imp.node.functions[0];
         assert!(matches!(
             &method.node.arguments[0].node.typename,
-            Type::Struct(sr) if sr.name.node == "pair$$int$$arr_char"
+            Type::Struct(sr) if sr.name.node == "pair" && sr.target == Some(decl.id)
         ));
         assert_eq!(method.node.return_type, Some(Type::Int));
     }
@@ -493,7 +507,7 @@ mod tests {
 
     #[test]
     fn test_generic_struct_field_of_generic_struct() {
-        let (program, _) = run_one(
+        let (program, out) = run_one(
             r#"
             struct box<T> { v: T }
             struct uses<T> { b: box<T> }
@@ -504,17 +518,24 @@ mod tests {
             "#,
         );
         let names = struct_names(&program, 0);
-        assert!(names.contains(&"box$$int".to_string()), "{names:?}");
-        assert!(names.contains(&"uses$$int".to_string()), "{names:?}");
+        assert!(names.contains(&"box".to_string()), "{names:?}");
+        assert!(names.contains(&"uses".to_string()), "{names:?}");
         let uses = program.modules[0]
             .module
             .structs
             .iter()
-            .find(|s| s.node.name == "uses$$int")
+            .find(|s| s.node.name == "uses")
             .unwrap();
+        let box_decl = program.modules[0]
+            .module
+            .structs
+            .iter()
+            .find(|s| s.node.name == "box")
+            .unwrap();
+        assert_eq!(out.origins[&box_decl.id], ("box".to_string(), vec![Type::Int]));
         assert!(matches!(
             &uses.node.members[0].node.typename,
-            Type::Struct(sr) if sr.name.node == "box$$int"
+            Type::Struct(sr) if sr.target == Some(box_decl.id)
         ));
     }
 
@@ -529,12 +550,39 @@ mod tests {
             }
             "#,
         );
-        assert_eq!(struct_names(&program, 0), vec!["node$$int".to_string()]);
+        assert_eq!(struct_names(&program, 0), vec!["node".to_string()]);
         let node = &program.modules[0].module.structs[0];
         assert!(matches!(
             &node.node.members[1].node.typename,
-            Type::Optional(inner) if matches!(&**inner, Type::Struct(sr) if sr.name.node == "node$$int")
+            Type::Optional(inner) if matches!(&**inner, Type::Struct(sr) if sr.target == Some(node.id))
         ));
+    }
+
+    #[test]
+    fn test_nested_instance_args_stay_distinct() {
+        let (program, out) = run_one(
+            r#"
+            struct box<T> { v: T }
+            int main() {
+                let a = new box<box<int>>{ v: new box<int>{ v: 1 } };
+                let b = new box<box<bool>>{ v: new box<bool>{ v: true } };
+                return a.v.v;
+            }
+            "#,
+        );
+        let boxes: Vec<_> = program.modules[0]
+            .module
+            .structs
+            .iter()
+            .filter(|s| s.node.name == "box")
+            .collect();
+        assert_eq!(boxes.len(), 4);
+        let origins: Vec<_> = boxes.iter().map(|s| &out.origins[&s.id]).collect();
+        for (i, a) in origins.iter().enumerate() {
+            for b in origins.iter().skip(i + 1) {
+                assert_ne!(a, b, "nested instances must have distinct origins");
+            }
+        }
     }
 
     #[test]
