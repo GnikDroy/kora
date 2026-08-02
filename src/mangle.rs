@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
 
-use crate::instantiate::InstanceOrigins;
+use crate::instantiate::{InstanceOrigin, InstanceOrigins};
 use crate::loader::LoadedProgram;
 use crate::parser::{NodeId, Type};
 
@@ -67,7 +67,7 @@ fn encode_type(ty: &Type, origins: &InstanceOrigins) -> String {
         Type::Struct(sr) => sr
             .target
             .and_then(|t| origins.get(&t))
-            .map(|(generic, args)| encode_instance(generic, args, origins))
+            .map(|origin| encode_instance(&origin.generic, &origin.args, origins))
             .unwrap_or_else(|| sr.name.node.clone()),
         Type::Generic(name, _) => name.node.clone(),
         Type::Function(_, _) => "fn".to_string(),
@@ -90,7 +90,7 @@ pub(crate) fn emitted_names(
     for module in program.modules.iter() {
         for decl in module.module.structs.iter() {
             let name = match origins.get(&decl.id) {
-                Some((generic, args)) => {
+                Some(InstanceOrigin { generic, args }) => {
                     let name = unique_name(encode_instance(generic, args, origins), |candidate| {
                         taken.contains(candidate)
                     });
@@ -135,7 +135,7 @@ pub(crate) fn emitted_names(
         }
         for decl in module.module.functions.iter() {
             let base = match origins.get(&decl.id) {
-                Some((generic, args)) => {
+                Some(InstanceOrigin { generic, args }) => {
                     let name = unique_name(encode_instance(generic, args, origins), |candidate| {
                         taken.contains(candidate)
                     });

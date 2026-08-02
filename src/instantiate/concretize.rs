@@ -1,8 +1,13 @@
-use super::{InstantiationStack, Instantiator, TypeSubstitutions};
+use std::collections::HashMap;
+
+use super::{InstantiationStack, Instantiator};
+
 use crate::parser::{
     Expression, Function, GenericFunction, GenericImpl, GenericStruct, Impl, NodeId, Span, Spanned,
     Statement, Struct, StructRef, Type,
 };
+
+pub(crate) type TypeSubstitutions = HashMap<String, Type>;
 
 /// Scaffolds build concrete copy of generics with fresh NodeIds everywhere.
 pub(super) fn scaffold_struct(decl: &Spanned<GenericStruct>) -> Spanned<Struct> {
@@ -243,7 +248,7 @@ impl Instantiator<'_> {
         args: &[Type],
         stack: &mut InstantiationStack,
     ) {
-        let def = &self.generic_fns[&(module, generic.to_string())];
+        let def = &self.generic_fns[module][generic];
         let params: Vec<String> = def
             .decl
             .node
@@ -531,7 +536,7 @@ impl Instantiator<'_> {
     ) -> Option<Expression> {
         match &callee.node {
             Expression::Identifier(name) => {
-                if !self.generic_fns.contains_key(&(module, name.clone())) {
+                if !self.generic_fns[module].contains_key(name) {
                     self.error(
                         format!("`{name}` is not a generic function in this module"),
                         span,
@@ -539,7 +544,7 @@ impl Instantiator<'_> {
                     return None;
                 }
                 let decl = self.instantiate_function(module, name, args, span, stack)?;
-                self.resolutions.insert(mention, decl);
+                self.output.resolutions.insert(mention, decl);
                 Some(Expression::Identifier(name.clone()))
             }
             Expression::Access(inner, member) => {
@@ -554,7 +559,7 @@ impl Instantiator<'_> {
                     self.error(format!("`{alias}` is not an imported module"), span);
                     return None;
                 };
-                if !self.generic_fns.contains_key(&(target, member.clone())) {
+                if !self.generic_fns[target].contains_key(member) {
                     self.error(
                         format!("`{member}` is not a generic function in module `{alias}`"),
                         span,
@@ -562,7 +567,7 @@ impl Instantiator<'_> {
                     return None;
                 }
                 let decl = self.instantiate_function(target, member, args, span, stack)?;
-                self.resolutions.insert(mention, decl);
+                self.output.resolutions.insert(mention, decl);
                 Some(Expression::Access(inner.clone(), member.clone()))
             }
             _ => {

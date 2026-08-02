@@ -26,11 +26,8 @@ impl fmt::Display for InstantiateErr {
     }
 }
 
-/// One generic declaration's source region plus every instance minted from
-/// it. Clones keep the original spans, so a semantic error inside an instance
-/// body lands inside the region; the instances name the use sites to blame.
 #[derive(Debug)]
-pub struct GenericNote {
-    pub region: Span,
+pub struct GenericRegion {
+    pub span: Span,
     pub instances: Vec<(String, Span)>,
 }

@@ -9,22 +9,19 @@ pub(super) struct GenericStructDef {
     pub(super) module: usize,
     pub(super) decl: Spanned<GenericStruct>,
     pub(super) impls: Vec<(usize, Spanned<GenericImpl>)>,
-    pub(super) instances: Vec<(String, Span)>,
 }
 
 pub(super) struct GenericFnDef {
     pub(super) decl: Spanned<GenericFunction>,
-    pub(super) instances: Vec<(String, Span)>,
 }
 
 pub(super) type GenericStructs = HashMap<String, GenericStructDef>;
-pub(super) type GenericFns = HashMap<(usize, String), GenericFnDef>;
+pub(super) type GenericFns = Vec<HashMap<String, GenericFnDef>>;
 
 pub(super) struct InstantiateCtx {
     pub(super) generic_structs: GenericStructs,
     pub(super) generic_fns: GenericFns,
     pub(super) concrete_structs: HashMap<String, NodeId>,
-    pub(super) used_fn_names: Vec<HashSet<String>>,
 }
 
 pub(super) fn collect(program: &LoadedProgram) -> Result<InstantiateCtx, Vec<InstantiateErr>> {
@@ -44,23 +41,10 @@ pub(super) fn collect(program: &LoadedProgram) -> Result<InstantiateCtx, Vec<Ins
         .map(|s| (s.node.name.clone(), s.id))
         .collect();
 
-    let concrete_fn_names = program
-        .modules
-        .iter()
-        .map(|m| {
-            m.module
-                .functions
-                .iter()
-                .map(|f| f.node.name.clone())
-                .collect()
-        })
-        .collect();
-
     let ctx = InstantiateCtx {
         generic_structs: structs,
         generic_fns: fns,
         concrete_structs,
-        used_fn_names: concrete_fn_names,
     };
 
     let errors = validate(program, &ctx);
@@ -93,7 +77,6 @@ fn collect_generic_structs(
                     module: m,
                     decl: decl.clone(),
                     impls: Vec::new(),
-                    instances: Vec::new(),
                 },
             );
         }
@@ -106,24 +89,20 @@ fn collect_generic_functions(
     errors: &mut Vec<InstantiateErr>,
 ) -> GenericFns {
     let mut fns = GenericFns::new();
-    for (m, module) in program.modules.iter().enumerate() {
+    for module in program.modules.iter() {
+        let mut module_fns: HashMap<String, GenericFnDef> = HashMap::new();
         for decl in module.module.generic_functions.iter() {
             let name = decl.node.name.clone();
-            if fns.contains_key(&(m, name.clone())) {
+            if module_fns.contains_key(&name) {
                 errors.push(InstantiateErr {
                     msg: format!("function `{name}` is declared multiple times"),
                     span: decl.span.clone(),
                 });
                 continue;
             }
-            fns.insert(
-                (m, name),
-                GenericFnDef {
-                    decl: decl.clone(),
-                    instances: Vec::new(),
-                },
-            );
+            module_fns.insert(name, GenericFnDef { decl: decl.clone() });
         }
+        fns.push(module_fns);
     }
     fns
 }
@@ -218,24 +197,31 @@ fn validate(program: &LoadedProgram, ctx: &InstantiateCtx) -> Vec<InstantiateErr
         }
     }
 
-    for ((module, name), def) in ctx.generic_fns.iter() {
-        if ctx.used_fn_names[*module].contains(name) {
-            error(
-                &mut errors,
-                format!("function `{name}` is declared multiple times"),
-                &def.decl.span,
-            );
+    for (module, module_fns) in ctx.generic_fns.iter().enumerate() {
+        for (name, def) in module_fns.iter() {
+            let concrete_twin = program.modules[module]
+                .module
+                .functions
+                .iter()
+                .any(|f| &f.node.name == name);
+            if concrete_twin {
+                error(
+                    &mut errors,
+                    format!("function `{name}` is declared multiple times"),
+                    &def.decl.span,
+                );
+            }
+            if is_intrinsic(name) {
+                error(
+                    &mut errors,
+                    "Cannot declare a name reserved for a compiler intrinsic".to_string(),
+                    &def.decl.span,
+                );
+            }
+            check_params(&mut errors, &def.decl.node.type_params);
         }
-        if is_intrinsic(name) {
-            error(
-                &mut errors,
-                "Cannot declare a name reserved for a compiler intrinsic".to_string(),
-                &def.decl.span,
-            );
-        }
-        check_params(&mut errors, &def.decl.node.type_params);
     }
-    if let Some(def) = ctx.generic_fns.get(&(0, "main".to_string())) {
+    if let Some(def) = ctx.generic_fns.first().and_then(|fns| fns.get("main")) {
         error(
             &mut errors,
             "main cannot be generic".to_string(),

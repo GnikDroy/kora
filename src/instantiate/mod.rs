@@ -1,8 +1,10 @@
 mod collect;
 mod concretize;
 mod errors;
+mod types;
 
 pub use errors::*;
+pub use types::{InstanceOrigin, InstanceOrigins};
 
 use std::collections::{HashMap, HashSet};
 
@@ -11,18 +13,13 @@ use crate::parser::{NodeId, Span, Type};
 
 use collect::{GenericFns, GenericStructs, collect};
 use concretize::{scaffold_function, scaffold_struct};
+use types::{InstanceRegistry, InstantiationSite, InstantiationStack};
 
 const DEPTH_LIMIT: usize = 64;
 
-pub type InstanceOrigins = HashMap<NodeId, (String, Vec<Type>)>;
-
-pub(crate) type TypeSubstitutions = HashMap<String, Type>;
-
-pub(crate) type InstantiationStack = Vec<(String, Span)>;
-
 #[derive(Default)]
 pub struct Instantiated {
-    pub notes: Vec<GenericNote>,
+    pub regions: Vec<GenericRegion>,
     pub resolutions: HashMap<NodeId, NodeId>,
     pub fn_instances: HashSet<NodeId>,
     pub struct_instances: HashSet<NodeId>,
@@ -32,21 +29,16 @@ pub struct Instantiated {
 pub struct Instantiator<'p> {
     program: &'p mut LoadedProgram,
 
-    // usize here is the module index
     imports: Vec<HashMap<String, usize>>,
     concrete_structs: HashMap<String, NodeId>,
 
     generic_structs: GenericStructs,
     generic_fns: GenericFns,
 
-    struct_registry: HashMap<(String, Vec<Type>), NodeId>,
-    fn_registry: HashMap<(usize, String, Vec<Type>), NodeId>, // usize here is the module index
+    instance_registry: InstanceRegistry,
+    instantiation_sites: HashMap<NodeId, Vec<InstantiationSite>>,
 
-    resolutions: HashMap<NodeId, NodeId>,
-    fn_instances: HashSet<NodeId>,
-    struct_instances: HashSet<NodeId>,
-    origins: InstanceOrigins,
-
+    output: Instantiated,
     errors: Vec<InstantiateErr>,
 }
 
@@ -74,14 +66,11 @@ impl<'p> Instantiator<'p> {
             program,
             imports,
             generic_structs: HashMap::new(),
-            generic_fns: HashMap::new(),
+            generic_fns: GenericFns::new(),
             concrete_structs: HashMap::new(),
-            struct_registry: HashMap::new(),
-            fn_registry: HashMap::new(),
-            resolutions: HashMap::new(),
-            fn_instances: HashSet::new(),
-            struct_instances: HashSet::new(),
-            origins: InstanceOrigins::new(),
+            instance_registry: InstanceRegistry::default(),
+            output: Instantiated::default(),
+            instantiation_sites: HashMap::new(),
             errors: Vec::new(),
         }
     }
@@ -95,13 +84,13 @@ impl<'p> Instantiator<'p> {
         self.concretize_program();
 
         if self.errors.is_empty() {
-            Ok(Instantiated {
-                notes: self.notes(),
-                resolutions: self.resolutions,
-                fn_instances: self.fn_instances,
-                struct_instances: self.struct_instances,
-                origins: self.origins,
-            })
+            self.output.regions = regions(
+                &self.generic_structs,
+                &self.generic_fns,
+                &self.instantiation_sites,
+                &self.output.origins,
+            );
+            Ok(self.output)
         } else {
             Err(self.errors)
         }
@@ -114,30 +103,6 @@ impl<'p> Instantiator<'p> {
         });
     }
 
-    /// One note per generic source region (declaration and each impl), all
-    /// carrying the region's instances so semantic errors inside any region
-    /// can point back at the use sites that produced them.
-    fn notes(&self) -> Vec<GenericNote> {
-        let mut notes = Vec::new();
-        for def in self.generic_structs.values() {
-            let regions =
-                std::iter::once(&def.decl.span).chain(def.impls.iter().map(|(_, imp)| &imp.span));
-            for region in regions {
-                notes.push(GenericNote {
-                    region: region.clone(),
-                    instances: def.instances.clone(),
-                });
-            }
-        }
-        for def in self.generic_fns.values() {
-            notes.push(GenericNote {
-                region: def.decl.span.clone(),
-                instances: def.instances.clone(),
-            });
-        }
-        notes
-    }
-
     fn instantiate_struct(
         &mut self,
         name: &str,
@@ -145,12 +110,12 @@ impl<'p> Instantiator<'p> {
         use_span: &Span,
         stack: &mut InstantiationStack,
     ) -> Option<NodeId> {
-        let key = (name.to_string(), args.to_vec());
-        if let Some(&decl) = self.struct_registry.get(&key) {
+        let def = &self.generic_structs[name];
+        let generic = def.decl.id;
+        if let Some(decl) = self.instance_registry.get(generic, args) {
             return Some(decl);
         }
 
-        let def = &self.generic_structs[name];
         let expected = def.decl.node.type_params.len();
         if expected != args.len() {
             self.error(
@@ -162,33 +127,40 @@ impl<'p> Instantiator<'p> {
             );
             return None;
         }
-        let display = display_instance(name, args, &self.origins);
-        if stack.len() >= DEPTH_LIMIT {
+        let display = display_instance(name, args, &self.output.origins);
+        if stack.depth() >= DEPTH_LIMIT {
             self.error(
                 format!(
                     "instantiation depth limit ({DEPTH_LIMIT}) exceeded at `{display}`: {}",
-                    stack_summary(stack)
+                    stack.summary()
                 ),
                 use_span,
             );
             return None;
         }
 
-        // Register before concretizing the members so self-referential
-        // structs hit the registry instead of recursing forever.
+        // Register before concretizing so self-recursion hits registry
         let module = self.generic_structs[name].module;
         let mut decl = scaffold_struct(&self.generic_structs[name].decl);
-        self.struct_registry.insert(key, decl.id);
-        self.struct_instances.insert(decl.id);
-        self.origins
-            .insert(decl.id, (name.to_string(), args.to_vec()));
-        self.generic_structs
-            .get_mut(name)
-            .unwrap()
-            .instances
-            .push((display.clone(), use_span.clone()));
+        self.instance_registry
+            .insert(generic, args.to_vec(), decl.id);
+        self.output.struct_instances.insert(decl.id);
+        self.output.origins.insert(
+            decl.id,
+            InstanceOrigin {
+                generic: name.to_string(),
+                args: args.to_vec(),
+            },
+        );
+        self.instantiation_sites
+            .entry(generic)
+            .or_default()
+            .push(InstantiationSite {
+                args: args.to_vec(),
+                span: use_span.clone(),
+            });
 
-        stack.push((display, use_span.clone()));
+        stack.push(display, use_span.clone());
         self.instance_struct(name, &mut decl, args, stack);
         let id = decl.id;
         self.program.modules[module].module.structs.push(decl);
@@ -207,12 +179,12 @@ impl<'p> Instantiator<'p> {
         use_span: &Span,
         stack: &mut InstantiationStack,
     ) -> Option<NodeId> {
-        let key = (module, name.to_string(), args.to_vec());
-        if let Some(&decl) = self.fn_registry.get(&key) {
+        let def = &self.generic_fns[module][name];
+        let generic = def.decl.id;
+        if let Some(decl) = self.instance_registry.get(generic, args) {
             return Some(decl);
         }
 
-        let def = &self.generic_fns[&(module, name.to_string())];
         let expected = def.decl.node.type_params.len();
         if expected != args.len() {
             self.error(
@@ -224,12 +196,12 @@ impl<'p> Instantiator<'p> {
             );
             return None;
         }
-        let display = display_instance(name, args, &self.origins);
-        if stack.len() >= DEPTH_LIMIT {
+        let display = display_instance(name, args, &self.output.origins);
+        if stack.depth() >= DEPTH_LIMIT {
             self.error(
                 format!(
                     "instantiation depth limit ({DEPTH_LIMIT}) exceeded at `{display}`: {}",
-                    stack_summary(stack)
+                    stack.summary()
                 ),
                 use_span,
             );
@@ -237,25 +209,32 @@ impl<'p> Instantiator<'p> {
         }
 
         // Register before concretizing so self-recursion hits registry
-        let mut decl = scaffold_function(&self.generic_fns[&(module, name.to_string())].decl);
-        self.fn_registry.insert(key, decl.id);
-        self.fn_instances.insert(decl.id);
-        self.origins
-            .insert(decl.id, (name.to_string(), args.to_vec()));
-        self.generic_fns
-            .get_mut(&(module, name.to_string()))
-            .unwrap()
-            .instances
-            .push((display.clone(), use_span.clone()));
+        let mut decl = scaffold_function(&self.generic_fns[module][name].decl);
+        self.instance_registry
+            .insert(generic, args.to_vec(), decl.id);
+        self.output.fn_instances.insert(decl.id);
+        self.output.origins.insert(
+            decl.id,
+            InstanceOrigin {
+                generic: name.to_string(),
+                args: args.to_vec(),
+            },
+        );
+        self.instantiation_sites
+            .entry(generic)
+            .or_default()
+            .push(InstantiationSite {
+                args: args.to_vec(),
+                span: use_span.clone(),
+            });
 
-        stack.push((display, use_span.clone()));
+        stack.push(display, use_span.clone());
         self.instance_function(module, name, &mut decl, args, stack);
         stack.pop();
         let id = decl.id;
         self.program.modules[module].module.functions.push(decl);
         Some(id)
     }
-
 }
 
 pub(crate) fn display_type(ty: &Type, origins: &InstanceOrigins) -> String {
@@ -270,7 +249,7 @@ pub(crate) fn display_type(ty: &Type, origins: &InstanceOrigins) -> String {
         Type::Struct(sr) => sr
             .target
             .and_then(|t| origins.get(&t))
-            .map(|(generic, args)| display_instance(generic, args, origins))
+            .map(|origin| display_instance(&origin.generic, &origin.args, origins))
             .unwrap_or_else(|| sr.name.node.clone()),
         Type::Generic(name, args) => display_instance(&name.node, args, origins),
         Type::Function(_, _) => "fn".to_string(),
@@ -286,17 +265,45 @@ fn display_instance(name: &str, args: &[Type], origins: &InstanceOrigins) -> Str
     format!("{name}<{args}>")
 }
 
-fn stack_summary(stack: &InstantiationStack) -> String {
-    let names: Vec<&str> = stack.iter().map(|(name, _)| name.as_str()).collect();
-    if names.len() <= 6 {
-        names.join(" -> ")
-    } else {
-        format!(
-            "{} -> ... -> {}",
-            names[..3].join(" -> "),
-            names[names.len() - 3..].join(" -> ")
-        )
+fn regions(
+    structs: &GenericStructs,
+    fns: &GenericFns,
+    instantiation_sites: &HashMap<NodeId, Vec<InstantiationSite>>,
+    origins: &InstanceOrigins,
+) -> Vec<GenericRegion> {
+    let render = |name: &str, generic: NodeId| -> Vec<(String, Span)> {
+        instantiation_sites
+            .get(&generic)
+            .into_iter()
+            .flatten()
+            .map(|site| {
+                (
+                    display_instance(name, &site.args, origins),
+                    site.span.clone(),
+                )
+            })
+            .collect()
+    };
+
+    let mut regions = Vec::new();
+    for (name, def) in structs.iter() {
+        let instances = render(name, def.decl.id);
+        let spans =
+            std::iter::once(&def.decl.span).chain(def.impls.iter().map(|(_, imp)| &imp.span));
+        for span in spans {
+            regions.push(GenericRegion {
+                span: span.clone(),
+                instances: instances.clone(),
+            });
+        }
     }
+    for (name, def) in fns.iter().flatten() {
+        regions.push(GenericRegion {
+            span: def.decl.span.clone(),
+            instances: render(name, def.decl.id),
+        });
+    }
+    regions
 }
 
 #[cfg(test)]
@@ -413,7 +420,10 @@ mod tests {
         assert_eq!(instance.node.arguments[0].node.typename, Type::Int);
         assert_eq!(
             out.origins[&instance.id],
-            ("id".to_string(), vec![Type::Int])
+            InstanceOrigin {
+                generic: "id".to_string(),
+                args: vec![Type::Int]
+            }
         );
         assert!(out.fn_instances.contains(&instance.id));
         assert!(out.resolutions.values().any(|&decl| decl == instance.id));
@@ -442,10 +452,10 @@ mod tests {
         );
         assert_eq!(
             out.origins[&decl.id],
-            (
-                "pair".to_string(),
-                vec![Type::Int, Type::Array(Box::new(Type::Char))]
-            )
+            InstanceOrigin {
+                generic: "pair".to_string(),
+                args: vec![Type::Int, Type::Array(Box::new(Type::Char))]
+            }
         );
         assert!(out.struct_instances.contains(&decl.id));
         let imp = &program.modules[0].module.impls[0];
@@ -485,7 +495,13 @@ mod tests {
         assert!(names.contains(&"inner".to_string()), "{names:?}");
         let inner = function(&program, 0, "inner").id;
         assert!(out.resolutions.values().any(|&decl| decl == inner));
-        assert_eq!(out.origins[&inner], ("inner".to_string(), vec![Type::Int]));
+        assert_eq!(
+            out.origins[&inner],
+            InstanceOrigin {
+                generic: "inner".to_string(),
+                args: vec![Type::Int]
+            }
+        );
     }
 
     #[test]
@@ -517,7 +533,10 @@ mod tests {
             .unwrap();
         assert_eq!(
             out.origins[&box_decl.id],
-            ("box".to_string(), vec![Type::Int])
+            InstanceOrigin {
+                generic: "box".to_string(),
+                args: vec![Type::Int]
+            }
         );
         assert!(matches!(
             &uses.node.members[0].node.typename,
@@ -695,7 +714,7 @@ mod tests {
             let (&id, _) = out
                 .origins
                 .iter()
-                .find(|(_, origin)| **origin == ("id".to_string(), args.clone()))
+                .find(|(_, origin)| origin.generic == "id" && origin.args == args)
                 .expect("origin");
             program.modules[0]
                 .module
@@ -800,7 +819,7 @@ mod tests {
     }
 
     #[test]
-    fn test_notes_record_instances() {
+    fn test_regions_record_instances() {
         let (_, out) = run_one(
             r#"
             struct pair<A, B> { first: A, second: B }
@@ -812,9 +831,9 @@ mod tests {
             "#,
         );
         let displays: Vec<&str> = out
-            .notes
+            .regions
             .iter()
-            .flat_map(|n| n.instances.iter().map(|(d, _)| d.as_str()))
+            .flat_map(|r| r.instances.iter().map(|(d, _)| d.as_str()))
             .collect();
         assert!(displays.contains(&"pair<int, [char]>"), "{displays:?}");
     }

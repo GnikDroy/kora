@@ -3,7 +3,7 @@ use std::error::Error;
 use std::fmt;
 use std::path::Path;
 
-use crate::instantiate::{GenericNote, InstanceOrigins, InstantiateErr};
+use crate::instantiate::{GenericRegion, InstanceOrigins, InstantiateErr};
 use crate::lexer::{LexerErr, Position};
 use crate::loader::{LoadErr, LoadedProgram, Loader};
 use crate::parser::{ASTVisitor, ExternFunction, NodeId, ParseErr, Span, Type};
@@ -53,10 +53,8 @@ impl fmt::Display for CompileErr {
     }
 }
 
-/// Attach an "instantiated here" note to every semantic error that lies inside
-/// a generic declaration's source region, so post-instantiation errors point
-/// back at the use sites that produced the failing instance.
-fn annotate_generic_errors(errors: Vec<TypeErr>, notes: &[GenericNote]) -> Vec<CompileErr> {
+/// Attach an "instantiated here" note to every semantic error that lies inside a generic
+fn annotate_generic_errors(errors: Vec<TypeErr>, regions: &[GenericRegion]) -> Vec<CompileErr> {
     fn le(a: &Position, b: &Position) -> bool {
         (a.row, a.col) <= (b.row, b.col)
     }
@@ -67,9 +65,9 @@ fn annotate_generic_errors(errors: Vec<TypeErr>, notes: &[GenericNote]) -> Vec<C
     for err in errors {
         let span = err.span.clone();
         out.push(CompileErr::Semantic(err));
-        for note in notes {
-            if within(&span, &note.region) {
-                for (display, site) in &note.instances {
+        for region in regions {
+            if within(&span, &region.span) {
+                for (display, site) in &region.instances {
                     out.push(CompileErr::Instantiate(InstantiateErr {
                         msg: format!(
                             "note: inside a generic expanded as `{display}`, instantiated here"
@@ -105,7 +103,7 @@ where
 
     let symbols = Resolver::new()
         .resolve_program(&program, &instances)
-        .map_err(|errors| annotate_generic_errors(errors, &instances.notes))?;
+        .map_err(|errors| annotate_generic_errors(errors, &instances.regions))?;
 
     let mut analyze_errors = Vec::new();
 
@@ -176,7 +174,7 @@ where
     }
 
     if !analyze_errors.is_empty() {
-        return Err(annotate_generic_errors(analyze_errors, &instances.notes));
+        return Err(annotate_generic_errors(analyze_errors, &instances.regions));
     }
 
     Ok(CompiledProgram {
