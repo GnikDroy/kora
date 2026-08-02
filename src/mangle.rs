@@ -5,7 +5,7 @@ use crate::instantiate::InstanceOrigins;
 use crate::loader::LoadedProgram;
 use crate::parser::{NodeId, Type};
 
-pub(crate) fn mangle(prefix: &str, name: &str) -> String {
+fn mangle(prefix: &str, name: &str) -> String {
     if prefix.is_empty() {
         format!("kora${name}")
     } else {
@@ -13,11 +13,11 @@ pub(crate) fn mangle(prefix: &str, name: &str) -> String {
     }
 }
 
-pub(crate) fn mangle_method(struct_name: &str, name: &str) -> String {
+fn mangle_method(struct_name: &str, name: &str) -> String {
     format!("kora$${struct_name}${name}")
 }
 
-pub(crate) fn mangle_prefix(path: &Path, root: &Path) -> String {
+fn mangle_prefix(path: &Path, root: &Path) -> String {
     let rel = if path.is_absolute() == root.is_absolute() {
         relative_to(path, root)
     } else {
@@ -89,17 +89,33 @@ pub(crate) fn emitted_names(
         .collect();
     for module in program.modules.iter() {
         for decl in module.module.structs.iter() {
-            if let Some((generic, args)) = origins.get(&decl.id) {
-                let name = unique_name(encode_instance(generic, args, origins), |candidate| {
-                    taken.contains(candidate)
-                });
-                taken.insert(name.clone());
-                emitted.insert(decl.id, name);
-            }
+            let name = match origins.get(&decl.id) {
+                Some((generic, args)) => {
+                    let name = unique_name(encode_instance(generic, args, origins), |candidate| {
+                        taken.contains(candidate)
+                    });
+                    taken.insert(name.clone());
+                    name
+                }
+                None => decl.node.name.clone(),
+            };
+            emitted.insert(decl.id, name);
         }
     }
 
+    let entry = program.modules.first().map(|m| m.id);
+    let root = program
+        .sources
+        .first()
+        .and_then(|s| s.path.parent())
+        .unwrap_or_else(|| Path::new(""));
     for module in program.modules.iter() {
+        let is_entry = Some(module.id) == entry;
+        let prefix = if is_entry {
+            String::new()
+        } else {
+            mangle_prefix(&program.sources[module.id.0 as usize].path, root)
+        };
         let mut taken: HashSet<String> = module
             .module
             .extern_functions
@@ -114,13 +130,37 @@ pub(crate) fn emitted_names(
                     .map(|f| f.node.name.clone()),
             )
             .collect();
+        for func in module.module.extern_functions.iter() {
+            emitted.insert(func.id, func.node.name.clone());
+        }
         for decl in module.module.functions.iter() {
-            if let Some((generic, args)) = origins.get(&decl.id) {
-                let name = unique_name(encode_instance(generic, args, origins), |candidate| {
-                    taken.contains(candidate)
-                });
-                taken.insert(name.clone());
-                emitted.insert(decl.id, name);
+            let base = match origins.get(&decl.id) {
+                Some((generic, args)) => {
+                    let name = unique_name(encode_instance(generic, args, origins), |candidate| {
+                        taken.contains(candidate)
+                    });
+                    taken.insert(name.clone());
+                    name
+                }
+                None => decl.node.name.clone(),
+            };
+            let symbol = if is_entry && base == "main" {
+                "__kora_main".to_string()
+            } else {
+                mangle(&prefix, &base)
+            };
+            emitted.insert(decl.id, symbol);
+        }
+        for imp in module.module.impls.iter() {
+            let base = imp
+                .node
+                .struct_ref
+                .target
+                .and_then(|t| emitted.get(&t))
+                .cloned()
+                .unwrap_or_else(|| imp.node.struct_ref.name.node.clone());
+            for method in imp.node.functions.iter() {
+                emitted.insert(method.id, mangle_method(&base, &method.node.name));
             }
         }
     }

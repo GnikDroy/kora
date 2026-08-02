@@ -1,13 +1,12 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::mangle::mangle_method;
 use crate::parser::*;
 
 /// JavaScript is a colored language ;)
 /// https://journal.stuffwithstuff.com/2015/02/01/what-color-is-your-function/
 pub(crate) fn resolve_async_fns(
     modules: &[&Module],
-    function_names: &HashMap<NodeId, String>,
+    function_call_names: &HashMap<NodeId, String>,
     method_calls: &HashMap<NodeId, String>,
     async_externs: HashSet<String>,
     emitted: &HashMap<NodeId, String>,
@@ -20,28 +19,13 @@ pub(crate) fn resolve_async_fns(
             module
                 .functions
                 .iter()
+                .chain(module.impls.iter().flat_map(|i| i.node.functions.iter()))
                 .map(|f| {
                     (
-                        function_names
-                            .get(&f.id)
-                            .cloned()
-                            .unwrap_or_else(|| f.node.name.clone()),
-                        called_names(&f.node.statement, function_names, method_calls),
+                        emitted[&f.id].clone(),
+                        called_names(&f.node.statement, function_call_names, method_calls),
                     )
                 })
-                .chain(module.impls.iter().flat_map(|impl_| {
-                    let struct_ref = &impl_.node.struct_ref;
-                    let base = struct_ref
-                        .target
-                        .and_then(|t| emitted.get(&t))
-                        .unwrap_or(&struct_ref.name.node);
-                    impl_.node.functions.iter().map(move |f| {
-                        (
-                            mangle_method(base, &f.node.name),
-                            called_names(&f.node.statement, function_names, method_calls),
-                        )
-                    })
-                }))
         })
         .collect();
 
@@ -64,16 +48,13 @@ pub(crate) fn resolve_async_fns(
     async_fns
 }
 
-/// Every function name called within a body, under the same names the
-/// emitter uses: mangled for kora functions, bare for externs, and
-/// struct$method for methods.
 fn called_names(
     body: &Spanned<Statement>,
-    function_names: &HashMap<NodeId, String>,
+    function_call_names: &HashMap<NodeId, String>,
     method_calls: &HashMap<NodeId, String>,
 ) -> HashSet<String> {
     let mut collector = CallCollector {
-        function_names,
+        function_call_names,
         method_calls,
         names: HashSet::new(),
     };
@@ -82,7 +63,7 @@ fn called_names(
 }
 
 struct CallCollector<'a> {
-    function_names: &'a HashMap<NodeId, String>,
+    function_call_names: &'a HashMap<NodeId, String>,
     method_calls: &'a HashMap<NodeId, String>,
     names: HashSet<String>,
 }
@@ -93,7 +74,7 @@ impl ASTVisitor for CallCollector<'_> {
         callee: &Spanned<Expression>,
         args: &[Spanned<Expression>],
     ) {
-        if let Some(name) = self.function_names.get(&callee.id) {
+        if let Some(name) = self.function_call_names.get(&callee.id) {
             self.names.insert(name.clone());
         } else if let Some(name) = self.method_calls.get(&callee.id) {
             self.names.insert(name.clone());

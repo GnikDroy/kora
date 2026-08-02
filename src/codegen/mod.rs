@@ -28,7 +28,6 @@ use inkwell::values::{
 };
 
 use crate::frontend::CompiledProgram;
-use crate::mangle::{mangle, mangle_method, mangle_prefix};
 use crate::parser::*;
 use crate::semantic_analyzer::{SymbolId, is_reference};
 
@@ -70,21 +69,8 @@ pub fn lower<'ctx>(
         emitted: crate::mangle::emitted_names(&program.program, &program.origins),
         frame: None,
     };
-    let entry = program.program.modules.first().map(|m| m.id);
-    let root = program
-        .program
-        .sources
-        .first()
-        .and_then(|s| s.path.parent())
-        .unwrap_or_else(|| std::path::Path::new(""));
     for module in program.program.modules.iter() {
-        let is_entry = Some(module.id) == entry;
-        let prefix = if is_entry {
-            String::new()
-        } else {
-            mangle_prefix(&program.program.sources[module.id.0 as usize].path, root)
-        };
-        codegen.declare_module(&module.module, &prefix, is_entry)?;
+        codegen.declare_module(&module.module)?;
     }
     for module in program.program.modules.iter() {
         codegen.lower_module(&module.module)?;
@@ -101,39 +87,17 @@ impl<'ctx> CodeGen<'ctx, '_> {
         self.frame.as_mut().unwrap()
     }
 
-    fn declare_module(
-        &mut self,
-        module: &Module,
-        prefix: &str,
-        is_entry: bool,
-    ) -> Result<(), CodegenErr> {
+    fn declare_module(&mut self, module: &Module) -> Result<(), CodegenErr> {
         for func in module.extern_functions.iter() {
             self.declare_extern_function(func);
         }
-        for func in module.functions.iter() {
-            let name = if is_entry && func.node.name == "main" {
-                "__kora_main".to_string()
-            } else {
-                let base = self.emitted.get(&func.id).unwrap_or(&func.node.name);
-                mangle(prefix, base)
-            };
+        for func in module
+            .functions
+            .iter()
+            .chain(module.impls.iter().flat_map(|i| i.node.functions.iter()))
+        {
+            let name = self.emitted[&func.id].clone();
             self.declare_function(func.id, &name, &func.node.return_type, &func.node.arguments)?;
-        }
-        for impl_ in module.impls.iter() {
-            let struct_ref = &impl_.node.struct_ref;
-            let base = struct_ref
-                .target
-                .and_then(|t| self.emitted.get(&t))
-                .unwrap_or(&struct_ref.name.node)
-                .clone();
-            for func in impl_.node.functions.iter() {
-                self.declare_function(
-                    func.id,
-                    &mangle_method(&base, &func.node.name),
-                    &func.node.return_type,
-                    &func.node.arguments,
-                )?;
-            }
         }
         Ok(())
     }
@@ -176,12 +140,11 @@ impl<'ctx> CodeGen<'ctx, '_> {
             None => self.context.void_type().fn_type(&param_types, false),
         };
 
-        let llvm_name = if name == "main" { "__kora_main" } else { name };
         // dedupe externs (it is okay to extern declare multiple times)
         let function = self
             .module
-            .get_function(llvm_name)
-            .unwrap_or_else(|| self.module.add_function(llvm_name, function_type, None));
+            .get_function(name)
+            .unwrap_or_else(|| self.module.add_function(name, function_type, None));
         let id = self
             .program
             .symbols

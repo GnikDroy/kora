@@ -1,6 +1,5 @@
 use super::JavascriptTranspiler;
 use super::error::TranspilerErr;
-use crate::mangle::mangle_method;
 use crate::parser::*;
 use crate::semantic_analyzer::ArrayMethod;
 
@@ -169,7 +168,7 @@ impl ASTVisitor for JavascriptTranspiler {
     }
 
     fn visit_extern_function(&mut self, func: &Spanned<ExternFunction>) {
-        let name = &func.node.name;
+        let name = &self.emitted[&func.id];
         self.source.push_str(&format!(
             "var {name} = typeof {name} === \"function\" ? {name} : __kora_missing_extern(\"{name}\");"
         ));
@@ -177,26 +176,8 @@ impl ASTVisitor for JavascriptTranspiler {
 
     fn visit_struct(&mut self, _: &Spanned<Struct>) {}
 
-    fn visit_impl(&mut self, impl_: &Spanned<Impl>) {
-        let struct_ref = &impl_.node.struct_ref;
-        let base = struct_ref
-            .target
-            .and_then(|t| self.emitted.get(&t))
-            .unwrap_or(&struct_ref.name.node);
-        self.current_impl = Some(base.clone());
-        walk_impl(self, impl_);
-        self.current_impl = None;
-    }
-
     fn visit_function(&mut self, func: &Spanned<Function>) {
-        let name = match &self.current_impl {
-            Some(struct_name) => mangle_method(struct_name, &func.node.name),
-            None => self
-                .function_names
-                .get(&func.id)
-                .cloned()
-                .unwrap_or_else(|| func.node.name.clone()),
-        };
+        let name = self.emitted[&func.id].clone();
         let arg_list: String = func
             .node
             .arguments
@@ -583,7 +564,7 @@ impl ASTVisitor for JavascriptTranspiler {
             return;
         }
 
-        if let Some(name) = self.function_names.get(&expr.id) {
+        if let Some(name) = self.function_call_names.get(&expr.id) {
             let name = name.clone();
             let is_async = self.async_fns.contains(&name);
             if is_async {

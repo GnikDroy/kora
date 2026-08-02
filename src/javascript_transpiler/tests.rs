@@ -36,13 +36,15 @@ fn transpile_with_async(source: &str, async_externs: HashSet<String>) -> String 
         .check()
         .unwrap_or_else(|errs| panic!("return check: {errs:?}"));
 
-    let method_calls = super::mangled_method_calls(&symbols, &checker.method_calls, &HashMap::new());
+    let emitted = crate::mangle::emitted_names(&program, &instances.origins);
+    let method_calls = super::method_call_names(&symbols, &checker.method_calls, &emitted);
+    let function_call_names = super::function_call_names(&symbols, &program, &emitted);
     let async_fns = super::resolve_async_fns(
         &[module],
-        &HashMap::new(),
+        &function_call_names,
         &method_calls,
         async_externs,
-        &HashMap::new(),
+        &emitted,
     );
     let struct_members = super::struct_member_map(&symbols);
     let mut transpiler = JavascriptTranspiler {
@@ -50,7 +52,9 @@ fn transpile_with_async(source: &str, async_externs: HashSet<String>) -> String 
         method_calls,
         array_method_calls: checker.array_method_calls,
         struct_members,
+        function_call_names,
         async_fns,
+        emitted,
         ..JavascriptTranspiler::default()
     };
     transpiler.visit_module(module);
@@ -104,7 +108,7 @@ fn test_async_coloring_propagates_through_method_calls() {
     );
     assert!(js.contains("async function kora$$P$ask(self)"), "{js}");
     assert!(js.contains("async function kora$$P$relay(self)"), "{js}");
-    assert!(js.contains("async function main()"), "{js}");
+    assert!(js.contains("async function __kora_main()"), "{js}");
     assert!(js.contains("(await kora$$P$ask(self))"), "{js}");
     assert!(js.contains("(await kora$$P$relay(p))"), "{js}");
 }
@@ -391,14 +395,14 @@ fn transpile_program(
 
     let emitted = crate::mangle::emitted_names(&compiled.program, &compiled.origins);
     let method_calls =
-        super::mangled_method_calls(&compiled.symbols, &compiled.method_calls, &emitted);
-    let function_names = super::function_names(&compiled.symbols, &compiled.program, &emitted);
+        super::method_call_names(&compiled.symbols, &compiled.method_calls, &emitted);
+    let function_call_names = super::function_call_names(&compiled.symbols, &compiled.program, &emitted);
     let struct_members = super::struct_member_map(&compiled.symbols);
     let modules: Vec<&parser::Module> =
         compiled.program.modules.iter().map(|m| &m.module).collect();
     let async_fns = super::resolve_async_fns(
         &modules,
-        &function_names,
+        &function_call_names,
         &method_calls,
         async_externs,
         &emitted,
@@ -408,7 +412,7 @@ fn transpile_program(
         method_calls,
         array_method_calls: compiled.array_method_calls,
         struct_members,
-        function_names,
+        function_call_names,
         async_fns,
         emitted,
         ..JavascriptTranspiler::default()
