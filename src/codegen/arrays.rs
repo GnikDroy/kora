@@ -9,7 +9,7 @@ use super::{CodeGen, CodegenErr};
 use crate::parser::*;
 use crate::semantic_analyzer::ArrayMethod;
 
-impl<'ctx> CodeGen<'ctx, '_> {
+impl<'ctx, 'a> CodeGen<'ctx, 'a> {
     /// { i64 len, i64 cap, ptr buf }
     pub(super) fn array_header_type(&mut self) -> StructType<'ctx> {
         if let Some(ty) = self.array_type {
@@ -66,11 +66,11 @@ impl<'ctx> CodeGen<'ctx, '_> {
         }
     }
 
-    fn array_element_type(&self, expr: &Spanned<Expression>) -> Type {
-        let Type::Array(elem) = self.program.types[&expr.id].clone() else {
+    fn array_element_type(&self, expr: &Spanned<Expression>) -> &'a Type {
+        let Type::Array(elem) = &self.program.types[&expr.id] else {
             unreachable!("expression is array-typed");
         };
-        *elem
+        elem
     }
 
     fn array_len(&mut self, array: PointerValue<'ctx>) -> IntValue<'ctx> {
@@ -116,7 +116,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
         span: &Span,
     ) -> Result<PointerValue<'ctx>, CodegenErr> {
         let elem = self.array_element_type(array);
-        let (elem_ty, _) = self.type_layout(&elem, span)?;
+        let (elem_ty, _) = self.type_layout(elem, span)?;
         let array = self.lower_expression(array)?.into_pointer_value();
         let index = self.lower_expression(index)?.into_int_value();
         let len = self.array_len(array);
@@ -139,7 +139,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
         elems: &[Spanned<Expression>],
     ) -> Result<BasicValueEnum<'ctx>, CodegenErr> {
         let elem = self.array_element_type(expr);
-        let (elem_ty, size) = self.type_layout(&elem, &expr.span)?;
+        let (elem_ty, size) = self.type_layout(elem, &expr.span)?;
         let len = self.context.i64_type().const_int(elems.len() as u64, false);
         let zero = self.context.i64_type().const_zero();
         let array = self
@@ -148,7 +148,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
             .into_pointer_value();
         let buf = self.array_buf(array);
         for (i, elem_expr) in elems.iter().enumerate() {
-            let value = self.lower_expression_expecting(elem_expr, &elem)?;
+            let value = self.lower_expression_expecting(elem_expr, elem)?;
             let index = self.context.i64_type().const_int(i as u64, false);
             let slot = unsafe {
                 self.builder
@@ -236,12 +236,12 @@ impl<'ctx> CodeGen<'ctx, '_> {
         span: &Span,
     ) -> Result<Option<BasicValueEnum<'ctx>>, CodegenErr> {
         let elem = self.array_element_type(obj);
-        let (elem_ty, size) = self.type_layout(&elem, span)?;
+        let (elem_ty, size) = self.type_layout(elem, span)?;
         let array = self.lower_expression(obj)?.into_pointer_value();
         let value = match method {
             ArrayMethod::Len => Some(self.array_len(array).into()),
             ArrayMethod::Push => {
-                let value = self.lower_expression_expecting(&args[0], &elem)?;
+                let value = self.lower_expression_expecting(&args[0], elem)?;
                 let slot = self.spill(value);
                 self.array_fn_call(
                     "__kora_array_push",
@@ -256,7 +256,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
             }
             ArrayMethod::Insert => {
                 let index = self.lower_expression(&args[0])?;
-                let value = self.lower_expression_expecting(&args[1], &elem)?;
+                let value = self.lower_expression_expecting(&args[1], elem)?;
                 let slot = self.spill(value);
                 self.array_fn_call(
                     "__kora_array_insert",
@@ -299,7 +299,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
         span: &Span,
     ) -> Result<BasicValueEnum<'ctx>, CodegenErr> {
         let elem = self.array_element_type(arg);
-        let (_, size) = self.type_layout(&elem, span)?;
+        let (_, size) = self.type_layout(elem, span)?;
         let array = self.lower_expression(arg)?;
         Ok(self
             .array_fn_call("__kora_array_copy", &[array.into(), size.into()])

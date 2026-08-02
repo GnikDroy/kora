@@ -21,10 +21,10 @@ impl<'ctx> CodeGen<'ctx, '_> {
                     None => self.lower_expression(init)?,
                 };
                 let k_type = match typename {
-                    Some(typename) => typename.clone(),
-                    None => self.program.types[&init.id].clone(),
+                    Some(typename) => typename,
+                    None => &self.program.types[&init.id],
                 };
-                let ty = self.basic_type(&k_type, &name.span)?;
+                let ty = self.basic_type(k_type, &name.span)?;
                 let alloca = self.entry_alloca(ty, &name.node);
                 self.builder.build_store(alloca, value).unwrap();
                 let id = self

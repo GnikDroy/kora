@@ -36,8 +36,8 @@ impl<'ctx> CodeGen<'ctx, '_> {
             }
             Expression::Binary(left, BinaryOp::Assign, right) => {
                 let target = self.lower_lvalue(left)?;
-                let expected = self.program.types[&left.id].clone();
-                let value = self.lower_expression_expecting(right, &expected)?;
+                let expected = &self.program.types[&left.id];
+                let value = self.lower_expression_expecting(right, expected)?;
                 self.builder.build_store(target, value).unwrap();
                 Ok(value)
             }
@@ -141,12 +141,12 @@ impl<'ctx> CodeGen<'ctx, '_> {
         expected: &Type,
     ) -> Result<BasicValueEnum<'ctx>, CodegenErr> {
         let value = self.lower_expression(expr)?;
-        let actual = self.program.types[&expr.id].clone();
-        if actual == *expected {
+        let actual = &self.program.types[&expr.id];
+        if actual == expected {
             return Ok(value);
         }
         if let Type::Optional(inner) = expected
-            && actual == **inner
+            && actual == &**inner
         {
             return self.lower_optional_wrap(value, inner, &expr.span);
         }
@@ -186,7 +186,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
             return self.lower_optional_equality(left, op, right, span);
         }
 
-        let operand_type = self.program.types[&left.id].clone();
+        let operand_type = &self.program.types[&left.id];
         let lhs = self.lower_expression(left)?;
         let rhs = self.lower_expression(right)?;
 
@@ -198,7 +198,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                     self.check_nonzero_divisor(r);
                 }
                 // Char is unsigned; Int is signed. Bool only reaches ==/!=.
-                let signed = operand_type == Type::Int;
+                let signed = *operand_type == Type::Int;
                 let b = &self.builder;
                 #[rustfmt::skip]
                 let result = match (op, signed) {
@@ -249,7 +249,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
             Type::Array(_) => {
                 let l = lhs.into_pointer_value();
                 let r = rhs.into_pointer_value();
-                return self.lower_array_binary(&operand_type, op, l, r, span);
+                return self.lower_array_binary(operand_type, op, l, r, span);
             }
             Type::Opaque => {
                 let eq = self.pointers_equal(lhs.into_pointer_value(), rhs.into_pointer_value());
@@ -313,7 +313,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
         target: &Type,
     ) -> Result<BasicValueEnum<'ctx>, CodegenErr> {
         use Type::*;
-        let from = self.program.types[&operand.id].clone();
+        let from = &self.program.types[&operand.id];
         let value = self.lower_expression(operand)?;
         let b = &self.builder;
 
@@ -416,9 +416,9 @@ impl<'ctx> CodeGen<'ctx, '_> {
         arg: &Spanned<Expression>,
         span: &Span,
     ) -> Result<BasicValueEnum<'ctx>, CodegenErr> {
-        match self.program.types[&arg.id].clone() {
+        match &self.program.types[&arg.id] {
             Type::Struct(sr) => {
-                let decl = self.struct_decl(&sr);
+                let decl = self.struct_decl(sr);
                 let struct_type = self.struct_type(decl, span)?;
                 let size = struct_type.size_of().unwrap();
                 let source = self.lower_expression(arg)?.into_pointer_value();

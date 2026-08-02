@@ -42,13 +42,13 @@ impl<'ctx> CodeGen<'ctx, '_> {
         &mut self,
         operand: &Spanned<Expression>,
     ) -> Result<BasicValueEnum<'ctx>, CodegenErr> {
-        let Type::Optional(inner) = self.program.types[&operand.id].clone() else {
+        let Type::Optional(inner) = &self.program.types[&operand.id] else {
             unreachable!("type checker rejects unwrap of non-optionals");
         };
         let value = self.lower_expression(operand)?;
-        let is_none = self.is_optional_none(value, &inner);
+        let is_none = self.is_optional_none(value, inner);
         self.panic_if(is_none, "force-unwrapped a none value");
-        if is_reference(&inner) {
+        if is_reference(inner) {
             return Ok(value);
         }
         Ok(self
@@ -86,27 +86,27 @@ impl<'ctx> CodeGen<'ctx, '_> {
         right: &Spanned<Expression>,
         span: &Span,
     ) -> Result<BasicValueEnum<'ctx>, CodegenErr> {
-        let left_type = self.program.types[&left.id].clone();
-        let right_type = self.program.types[&right.id].clone();
+        let left_type = &self.program.types[&left.id];
+        let right_type = &self.program.types[&right.id];
         let optional = if matches!(left_type, Type::Optional(_)) {
             left_type
         } else {
             right_type
         };
-        let Type::Optional(inner) = optional.clone() else {
+        let Type::Optional(inner) = optional else {
             unreachable!();
         };
 
         let equal = if matches!(left.node, Expression::NoneLiteral) {
             let value = self.lower_expression(right)?;
-            self.is_optional_none(value, &inner)
+            self.is_optional_none(value, inner)
         } else if matches!(right.node, Expression::NoneLiteral) {
             let value = self.lower_expression(left)?;
-            self.is_optional_none(value, &inner)
+            self.is_optional_none(value, inner)
         } else {
-            let a = self.lower_expression_expecting(left, &optional)?;
-            let b = self.lower_expression_expecting(right, &optional)?;
-            self.is_optional_values_equal(&inner, a, b, span)?
+            let a = self.lower_expression_expecting(left, optional)?;
+            let b = self.lower_expression_expecting(right, optional)?;
+            self.is_optional_values_equal(inner, a, b, span)?
         };
         if op == BinaryOp::NotEquality {
             return Ok(self.builder.build_not(equal, "ne").unwrap().into());

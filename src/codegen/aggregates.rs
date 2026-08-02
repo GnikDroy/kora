@@ -18,11 +18,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
         if let Some(ty) = self.struct_types.get(&decl) {
             return Ok(*ty);
         }
-        let members = self
-            .program
-            .symbols
-            .struct_members(&self.modules, decl)
-            .to_vec();
+        let members = self.program.symbols.struct_members(&self.modules, decl);
         let field_types = members
             .iter()
             .map(|m| self.basic_type(&m.node.typename, span))
@@ -48,10 +44,10 @@ impl<'ctx> CodeGen<'ctx, '_> {
         member: &str,
         span: &Span,
     ) -> Result<PointerValue<'ctx>, CodegenErr> {
-        let Type::Struct(sr) = self.program.types[&obj.id].clone() else {
+        let Type::Struct(sr) = &self.program.types[&obj.id] else {
             unreachable!("type checker rejects member access on non-structs");
         };
-        let decl = self.struct_decl(&sr);
+        let decl = self.struct_decl(sr);
         let struct_type = self.struct_type(decl, span)?;
         let index = self.struct_member_index(decl, member);
         let obj = self.lower_expression(obj)?.into_pointer_value();
@@ -82,11 +78,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
         self.builder.position_at_end(entry);
 
         let object = self.gc_malloc(struct_type.size_of().unwrap(), "new");
-        let members = self
-            .program
-            .symbols
-            .struct_members(&self.modules, decl)
-            .to_vec();
+        let members = self.program.symbols.struct_members(&self.modules, decl);
         for (index, member) in members.iter().enumerate() {
             let value = match &member.node.typename {
                 Type::Struct(inner) => {
