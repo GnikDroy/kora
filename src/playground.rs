@@ -31,3 +31,57 @@ pub fn transpile(source: &str, async_externs: Vec<String>) -> Result<String, Str
 
     crate::javascript_transpiler::transpile(compiled, async_externs.into_iter().collect())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_reports_instantiation_note() {
+        let err = transpile(
+            r#"
+                struct lt<T> {}
+                impl lt<T> { bool less(self, a: T, b: T) { return a < b; } }
+                int main() {
+                    let c = new lt<string>;
+                    if (c.less("a", "b")) { return 0; }
+                    return 1;
+                }
+            "#,
+            vec![],
+        )
+        .unwrap_err();
+        assert!(err.contains("instantiated here"), "{err}");
+    }
+
+    #[test]
+    fn test_reports_undefined_type_argument() {
+        let err = transpile(
+            r#"
+                import "std/time";
+                import "std/conv";
+                struct P<T> { node: P<T>? }
+                int main() {
+                    let p = new P<T>{ node: none };
+                    return 0;
+                }
+            "#,
+            vec![],
+        )
+        .unwrap_err();
+        assert!(err.contains("Undefined type"), "{err}");
+    }
+
+    #[test]
+    fn test_reports_runaway_instantiation() {
+        let err = transpile(
+            r#"
+                struct w<T> { inner: w<w<T>>? }
+                int main() { let x = new w<int>{ inner: none }; return 0; }
+            "#,
+            vec![],
+        )
+        .unwrap_err();
+        assert!(err.contains("depth limit"), "{err}");
+    }
+}

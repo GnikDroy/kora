@@ -1278,3 +1278,970 @@ fn test_emit_js_output_runs_under_node() {
     assert_eq!(out.0, "got: hello\n");
     assert_eq!(out.2, 3);
 }
+
+fn compile_fails(files: &[(&str, &str)]) -> String {
+    let dir = temp_dir();
+    for (name, source) in files {
+        std::fs::write(dir.join(name), source).unwrap();
+    }
+    let entry = dir.join(files[0].0);
+    let result = kora::compile(entry.to_str().unwrap(), |path: &Path| {
+        std::fs::read_to_string(path).ok()
+    });
+    std::fs::remove_dir_all(&dir).ok();
+    let errors = match result {
+        Ok(_) => panic!("expected a compile error"),
+        Err(errors) => errors,
+    };
+    errors
+        .iter()
+        .map(|e| e.to_string())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[test]
+fn test_generic_deeply_nested_boxes() {
+    let (_, _, code) = run(r#"
+        struct box<T> { v: T }
+        impl box<T> { T get(self) { return self.v; } }
+        int main() {
+            let a = new box<int>{ v: 7 };
+            let b = new box<box<int>>{ v: a };
+            let c = new box<box<box<int>>>{ v: b };
+            if (c.get().get().get() != 7) { return 1; }
+            if (b.get().get() != 7) { return 2; }
+            return 42;
+        }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_generic_distinct_scalar_instantiations() {
+    let (_, _, code) = run(r#"
+        struct box<T> { v: T }
+        impl box<T> { T get(self) { return self.v; } }
+        int main() {
+            let i = new box<int>{ v: 5 };
+            let b = new box<bool>{ v: true };
+            let c = new box<char>{ v: 'z' };
+            let r = 0;
+            if (i.get() == 5) { r = r + 1; }
+            if (b.get()) { r = r + 1; }
+            if (c.get() == 'z') { r = r + 1; }
+            if (r == 3) { return 42; }
+            return r;
+        }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_generic_two_type_params_and_swap() {
+    let (_, _, code) = run(r#"
+        struct pair<A, B> { fst: A, snd: B }
+        impl pair<A, B> {
+            A first(self) { return self.fst; }
+            B second(self) { return self.snd; }
+            pair<B, A> swap(self) { return new pair<B, A>{ fst: self.snd, snd: self.fst }; }
+        }
+        int main() {
+            let p = new pair<int, char>{ fst: 9, snd: 'x' };
+            let q = p.swap();
+            if (p.first() != 9) { return 1; }
+            if (q.second() != 9) { return 2; }
+            if (q.first() != 'x') { return 3; }
+            return 42;
+        }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_generic_recursive_linked_list() {
+    let (_, _, code) = run(r#"
+        struct node<T> { value: T, next: node<T>? }
+        struct list<T> { head: node<T>? }
+        list<T> make_list<T>() { return new list<T>{ head: none }; }
+        impl list<T> {
+            void push_front(self, x: T) { self.head = new node<T>{ value: x, next: self.head }; }
+            int length(self) {
+                let n = 0;
+                let cur = self.head;
+                while (cur != none) { n = n + 1; cur = cur!.next; }
+                return n;
+            }
+            int sum(self) {
+                let s = 0;
+                let cur = self.head;
+                while (cur != none) { s = s + cur!.value; cur = cur!.next; }
+                return s;
+            }
+        }
+        int main() {
+            let l = make_list::<int>();
+            l.push_front(10); l.push_front(20); l.push_front(12);
+            if (l.length() != 3) { return 1; }
+            if (l.sum() != 42) { return 2; }
+            return 42;
+        }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_generic_stack_over_array() {
+    let (_, _, code) = run(r#"
+        struct stack<T> { items: [T] }
+        stack<T> make_stack<T>() { return new stack<T>{ items: [] }; }
+        impl stack<T> {
+            void push(self, x: T) { self.items.push(x); }
+            T pop(self) { return self.items.pop(); }
+            int size(self) { return self.items.len(); }
+        }
+        int main() {
+            let s = make_stack::<int>();
+            s.push(1); s.push(2); s.push(40);
+            if (s.size() != 3) { return 1; }
+            let a = s.pop();
+            let b = s.pop();
+            if (a != 40) { return 2; }
+            if (b != 2) { return 3; }
+            if (s.size() != 1) { return 4; }
+            return 42;
+        }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_generic_fn_calls_generic_fn() {
+    let (_, _, code) = run(r#"
+        struct box<T> { v: T }
+        T ident<T>(x: T) { return x; }
+        box<T> wrap<T>(x: T) { return new box<T>{ v: ident::<T>(x) }; }
+        T unwrap<T>(b: box<T>) { return b.v; }
+        int main() {
+            let b = wrap::<int>(21);
+            let x = unwrap::<int>(b);
+            let y = ident::<int>(x);
+            if (x + y != 42) { return 1; }
+            return 42;
+        }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_generic_sort_with_comparator() {
+    let (_, _, code) = run(r#"
+        struct asc {}
+        impl asc { bool less(self, a: int, b: int) { return a < b; } }
+        struct desc {}
+        impl desc { bool less(self, a: int, b: int) { return a > b; } }
+        void sort<T, C>(xs: [T], cmp: C) {
+            let n = xs.len();
+            let i = 0;
+            while (i < n) {
+                let j = i + 1;
+                while (j < n) {
+                    if (cmp.less(xs[j], xs[i])) { let tmp = xs[i]; xs[i] = xs[j]; xs[j] = tmp; }
+                    j = j + 1;
+                }
+                i = i + 1;
+            }
+        }
+        int main() {
+            let xs = [5, 2, 8, 1, 9, 3];
+            sort::<int, asc>(xs, new asc);
+            if (xs[0] != 1) { return 1; }
+            if (xs[5] != 9) { return 2; }
+            sort::<int, desc>(xs, new desc);
+            if (xs[0] != 9) { return 3; }
+            if (xs[5] != 1) { return 4; }
+            return 42;
+        }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_generic_fold_with_combiner() {
+    let (_, _, code) = run(r#"
+        struct adder {}
+        impl adder { int combine(self, a: int, b: int) { return a + b; } }
+        struct multiplier {}
+        impl multiplier { int combine(self, a: int, b: int) { return a * b; } }
+        int fold<T, F>(xs: [T], init: int, f: F) {
+            let acc = init;
+            let i = 0;
+            while (i < xs.len()) { acc = f.combine(acc, xs[i]); i = i + 1; }
+            return acc;
+        }
+        int main() {
+            let xs = [1, 2, 3, 4, 5];
+            let s = fold::<int, adder>(xs, 0, new adder);
+            let p = fold::<int, multiplier>(xs, 1, new multiplier);
+            if (s != 15) { return 1; }
+            if (p != 120) { return 2; }
+            if (s + p - 93 != 42) { return 3; }
+            return 42;
+        }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_generic_instances_as_struct_fields() {
+    let (_, _, code) = run(r#"
+        struct box<T> { v: T }
+        struct holder { a: box<int>, b: box<char> }
+        int main() {
+            let h = new holder{ a: new box<int>{ v: 30 }, b: new box<char>{ v: 'c' } };
+            if (h.a.v != 30) { return 1; }
+            if (h.b.v != 'c') { return 2; }
+            h.a.v = 42;
+            if (h.a.v != 42) { return 3; }
+            return 42;
+        }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_array_of_generic_instances() {
+    let (_, _, code) = run(r#"
+        struct pair<A,B> { fst: A, snd: B }
+        int main() {
+            let ps: [pair<int, char>] = [];
+            ps.push(new pair<int, char>{ fst: 10, snd: 'a' });
+            ps.push(new pair<int, char>{ fst: 32, snd: 'b' });
+            let r = 0;
+            let i = 0;
+            while (i < ps.len()) { r = r + ps[i].fst; i = i + 1; }
+            if (r != 42) { return 1; }
+            if (ps[1].snd != 'b') { return 2; }
+            return 42;
+        }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_generic_over_generic_instance() {
+    let (_, _, code) = run(r#"
+        struct box<T> { v: T }
+        struct pair<A,B> { fst: A, snd: B }
+        impl box<T> { T get(self) { return self.v; } }
+        int main() {
+            let p = new pair<int, int>{ fst: 20, snd: 22 };
+            let b = new box<pair<int, int>>{ v: p };
+            let g = b.get();
+            if (g.fst + g.snd != 42) { return 1; }
+            return 42;
+        }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_copy_of_generic_is_independent() {
+    let (_, _, code) = run(r#"
+        struct box<T> { v: T }
+        int main() {
+            let a = new box<int>{ v: 10 };
+            let b = copy(a);
+            b.v = 99;
+            if (a.v != 10) { return 1; }
+            if (b.v != 99) { return 2; }
+            return 42;
+        }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_nested_generic_instances_stay_distinct() {
+    let (_, _, code) = run(r#"
+        struct box<T> { v: T }
+        impl box<T> { T get(self) { return self.v; } }
+        int main() {
+            let bi = new box<box<int>>{ v: new box<int>{ v: 5 } };
+            let bb = new box<box<bool>>{ v: new box<bool>{ v: true } };
+            let bc = new box<box<char>>{ v: new box<char>{ v: 'q' } };
+            let r = 0;
+            if (bi.get().get() == 5) { r = r + 10; }
+            if (bb.get().get()) { r = r + 30; }
+            if (bc.get().get() == 'q') { r = r + 2; }
+            if (r == 42) { return 42; }
+            return r;
+        }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_generic_bst_with_comparator() {
+    let (_, _, code) = run(r#"
+        struct tnode<T> { value: T, left: tnode<T>?, right: tnode<T>? }
+        struct tree<T, C> { root: tnode<T>?, cmp: C }
+        struct intcmp {}
+        impl intcmp { int compare(self, a: int, b: int) { if (a < b) { return -1; } if (a > b) { return 1; } return 0; } }
+        tree<T, C> make_tree<T, C>() { return new tree<T, C>{ root: none, cmp: new C }; }
+        impl tree<T, C> {
+            void insert(self, x: T) { self.root = self.insert_at(self.root, x); }
+            tnode<T>? insert_at(self, cur: tnode<T>?, x: T) {
+                if (cur == none) { return new tnode<T>{ value: x, left: none, right: none }; }
+                let c = cur!;
+                if (self.cmp.compare(x, c.value) < 0) { c.left = self.insert_at(c.left, x); }
+                else { c.right = self.insert_at(c.right, x); }
+                return c;
+            }
+            bool contains(self, x: T) {
+                let cur = self.root;
+                while (cur != none) {
+                    let d = self.cmp.compare(x, cur!.value);
+                    if (d == 0) { return true; }
+                    if (d < 0) { cur = cur!.left; } else { cur = cur!.right; }
+                }
+                return false;
+            }
+        }
+        int main() {
+            let t = make_tree::<int, intcmp>();
+            t.insert(5); t.insert(2); t.insert(8); t.insert(1); t.insert(9);
+            let r = 0;
+            if (t.contains(8)) { r = r + 40; }
+            if (!t.contains(7)) { r = r + 2; }
+            if (r == 42) { return 42; }
+            return r;
+        }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_many_generic_instantiations() {
+    let (_, _, code) = run(r#"
+        struct box<T> { v: T }
+        impl box<T> { T get(self) { return self.v; } }
+        int main() {
+            let a = new box<int>{ v: 1 };
+            let b = new box<bool>{ v: false };
+            let c = new box<char>{ v: 'a' };
+            let d = new box<real>{ v: 2.5 };
+            let e = new box<string>{ v: "hi" };
+            let f = new box<box<int>>{ v: new box<int>{ v: 40 } };
+            let r = 0;
+            if (a.get() == 1) { r = r + 1; }
+            if (!b.get()) { r = r + 1; }
+            if (c.get() == 'a') { r = r + 1; }
+            if (d.get() > 2.0) { r = r + 1; }
+            if (e.get().len() == 2) { r = r + 1; }
+            if (f.get().get() == 40) { r = r + 37; }
+            if (r == 42) { return 42; }
+            return r;
+        }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_generic_method_takes_same_generic() {
+    let (_, _, code) = run(r#"
+        struct node<T> { value: T, next: node<T>? }
+        struct list<T> { head: node<T>? }
+        list<T> make_list<T>() { return new list<T>{ head: none }; }
+        impl list<T> {
+            void push_front(self, x: T) { self.head = new node<T>{ value: x, next: self.head }; }
+            void append_all(self, other: list<T>) {
+                let c = other.head;
+                while (c != none) { self.push_front(c!.value); c = c!.next; }
+            }
+            int count(self) { let n = 0; let c = self.head; while (c != none) { n = n + 1; c = c!.next; } return n; }
+        }
+        int main() {
+            let a = make_list::<int>();
+            a.push_front(1); a.push_front(2);
+            let b = make_list::<int>();
+            b.push_front(3); b.push_front(4); b.push_front(5);
+            a.append_all(b);
+            if (a.count() != 5) { return 1; }
+            if (b.count() != 3) { return 2; }
+            return 42;
+        }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_generic_comparator_over_ordered_types() {
+    let (_, _, code) = run(r#"
+        struct less<T> {}
+        impl less<T> { bool lt(self, a: T, b: T) { return a < b; } }
+        T min_of<T, C>(xs: [T], cmp: C) {
+            let m = xs[0];
+            let i = 1;
+            while (i < xs.len()) { if (cmp.lt(xs[i], m)) { m = xs[i]; } i = i + 1; }
+            return m;
+        }
+        int main() {
+            let xs = [7, 3, 9, 1, 5];
+            let m = min_of::<int, less<int>>(xs, new less<int>);
+            if (m != 1) { return 1; }
+            let cs = ['d', 'a', 'z'];
+            let mc = min_of::<char, less<char>>(cs, new less<char>);
+            if (mc != 'a') { return 2; }
+            return 42;
+        }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_generic_phantom_type_parameter() {
+    let (_, _, code) = run(r#"
+        struct tagged<T> { x: int }
+        impl tagged<T> { int val(self) { return self.x; } }
+        int main() {
+            let a = new tagged<int>{ x: 20 };
+            let b = new tagged<bool>{ x: 22 };
+            if (a.val() + b.val() != 42) { return 1; }
+            return 42;
+        }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_generic_optional_field() {
+    let (_, _, code) = run(r#"
+        struct box<T> { v: T? }
+        impl box<T> {
+            bool has(self) { return self.v != none; }
+            T force(self) { return self.v!; }
+        }
+        int main() {
+            let a = new box<int>{ v: 42 };
+            let b = new box<int>{ v: none };
+            if (!a.has()) { return 1; }
+            if (b.has()) { return 2; }
+            if (a.force() != 42) { return 3; }
+            return 42;
+        }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_generic_swap_over_arrays() {
+    let (_, _, code) = run(r#"
+        void swap<T>(xs: [T], i: int, j: int) { let t = xs[i]; xs[i] = xs[j]; xs[j] = t; }
+        int main() {
+            let xs = [1, 2, 3];
+            swap::<int>(xs, 0, 2);
+            if (xs[0] != 3) { return 1; }
+            if (xs[2] != 1) { return 2; }
+            let ss = ["a", "b"];
+            swap::<string>(ss, 0, 1);
+            if (ss[0] != "b") { return 3; }
+            return 42;
+        }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_cross_module_generic() {
+    let (_, _, code) = run_program(&[
+        (
+            "main.kora",
+            r#"
+                import "lib.kora";
+                int main() {
+                    let b = lib.make_box::<int>(42);
+                    return b.v;
+                }
+            "#,
+        ),
+        (
+            "lib.kora",
+            "struct box<T> { v: T } box<T> make_box<T>(x: T) { return new box<T>{ v: x }; }",
+        ),
+    ]);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_generic_runaway_instantiation_is_capped() {
+    // An infinitely self-expanding generic must terminate at the depth cap,
+    // never hang the compiler.
+    let errors = compile_fails(&[(
+        "main.kora",
+        r#"
+            struct w<T> { inner: w<w<T>>? }
+            int main() {
+                let x = new w<int>{ inner: none };
+                return 0;
+            }
+        "#,
+    )]);
+    assert!(errors.contains("depth limit"), "{errors}");
+}
+
+#[test]
+fn test_undefined_type_argument_is_rejected() {
+    // The undefined `T` is only reachable through a self-referential field
+    // (`P<T>?`), so it never surfaces as a concrete type; the instantiation
+    // argument itself must still be validated.
+    let errors = compile_fails(&[(
+        "main.kora",
+        "struct P<T> { node: P<T>? } int main() { let p = new P<T>{ node: none }; return 0; }",
+    )]);
+    assert!(errors.contains("Undefined type"), "{errors}");
+}
+
+#[test]
+fn test_generic_body_error_reports_instantiation_site() {
+    // `<` is scalar-only; instantiating a generic body over string must fail
+    // with a note pointing at the instantiation.
+    let errors = compile_fails(&[(
+        "main.kora",
+        r#"
+            struct lt<T> {}
+            impl lt<T> { bool less(self, a: T, b: T) { return a < b; } }
+            int main() {
+                let c = new lt<string>;
+                if (c.less("a", "b")) { return 0; }
+                return 1;
+            }
+        "#,
+    )]);
+    assert!(errors.contains("instantiated here"), "{errors}");
+}
+
+#[test]
+fn test_generic_struct_arity_too_many() {
+    let e = compile_fails(&[(
+        "main.kora",
+        "struct box<T> { v: T } int main() { let b = new box<int, bool>{ v: 1 }; return 0; }",
+    )]);
+    assert!(e.contains("type argument(s), found"), "{e}");
+}
+
+#[test]
+fn test_generic_struct_arity_too_few() {
+    let e = compile_fails(&[(
+        "main.kora",
+        "struct pair<A, B> { x: A, y: B } int main() { let p = new pair<int>{ x: 1, y: 2 }; return 0; }",
+    )]);
+    assert!(e.contains("type argument(s), found"), "{e}");
+}
+
+#[test]
+fn test_generic_turbofish_arity_mismatch() {
+    let e = compile_fails(&[(
+        "main.kora",
+        "T id<T>(x: T) { return x; } int main() { return id::<int, bool>(5); }",
+    )]);
+    assert!(e.contains("type argument(s), found"), "{e}");
+}
+
+#[test]
+fn test_generic_duplicate_type_param() {
+    let e = compile_fails(&[(
+        "main.kora",
+        "struct box<T, T> { v: T } int main() { let b = new box<int, int>{ v: 1 }; return 0; }",
+    )]);
+    assert!(e.contains("duplicate type parameter"), "{e}");
+}
+
+#[test]
+fn test_generic_method_level_generics_rejected() {
+    // Method-level type parameters are not a v1 feature; the parser rejects them.
+    let e = compile_fails(&[(
+        "main.kora",
+        "struct box<T> { v: T } impl box<T> { U get<U>(self) { return self.v; } } int main() { return 0; }",
+    )]);
+    assert!(!e.is_empty(), "{e}");
+}
+
+#[test]
+fn test_generic_nested_optional_rejected() {
+    let e = compile_fails(&[(
+        "main.kora",
+        "struct box<T> { v: T? } int main() { let b = new box<int?>{ v: none }; return 0; }",
+    )]);
+    assert!(e.contains("nested optional"), "{e}");
+}
+
+#[test]
+fn test_generic_missing_duck_typed_method() {
+    let e = compile_fails(&[(
+        "main.kora",
+        "void sort<T, C>(xs: [T], c: C) { if (c.less(xs[0], xs[0])) { let x = 0; } } struct nocmp {} int main() { let xs = [1]; sort::<int, nocmp>(xs, new nocmp); return 0; }",
+    )]);
+    assert!(e.contains("Invalid member"), "{e}");
+}
+
+#[test]
+fn test_generic_method_on_scalar_rejected() {
+    let e = compile_fails(&[(
+        "main.kora",
+        "T f<T>(x: T) { return x.foo(); } int main() { return f::<int>(5); }",
+    )]);
+    assert!(e.contains("struct type"), "{e}");
+}
+
+#[test]
+fn test_generic_undefined_unused_type_arg() {
+    // T is unused in fields, yet `box<Undefined>` still validates its argument.
+    let e = compile_fails(&[(
+        "main.kora",
+        "struct box<T> {} impl box<T> { int m(self) { return 0; } } int main() { let b = new box<Undefined>; return b.m(); }",
+    )]);
+    assert!(e.contains("Undefined type"), "{e}");
+}
+
+#[test]
+fn test_generic_used_without_type_args() {
+    let e = compile_fails(&[(
+        "main.kora",
+        "struct box<T> { v: T } int main() { let b: box = new box<int>{ v: 1 }; return 0; }",
+    )]);
+    assert!(e.contains("requires type arguments"), "{e}");
+}
+
+#[test]
+fn test_generic_infinite_function_instantiation_capped() {
+    // A self-widening generic function must terminate at the depth cap.
+    let e = compile_fails(&[(
+        "main.kora",
+        "struct box<T> { v: T } int f<T>() { return f::<box<T>>(); } int main() { return f::<int>(); }",
+    )]);
+    assert!(e.contains("depth limit"), "{e}");
+}
+
+#[test]
+fn test_generic_new_array_of_reference_element_rejected() {
+    let e = compile_fails(&[(
+        "main.kora",
+        "struct s<T> { a: [T] } s<T> make<T>() { return new s<T>{ a: new T[3] }; } int main() { let x = make::<string>(); return 0; }",
+    )]);
+    assert!(e.contains("scalar element"), "{e}");
+}
+
+#[test]
+fn test_generic_mutual_recursion() {
+    let (_, _, code) = run(r#"
+        struct A<T> { b: B<T>?, v: T }
+        struct B<T> { a: A<T>?, w: T }
+        int main() {
+            let a = new A<int>{ b: none, v: 20 };
+            let b = new B<int>{ a: none, w: 22 };
+            a.b = b;
+            b.a = a;
+            if (a.v + a.b!.w != 42) { return 1; }
+            return 42;
+        }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_generic_five_type_params() {
+    let (_, _, code) = run(r#"
+        struct five<A,B,C,D,E> { a:A, b:B, c:C, d:D, e:E }
+        int main() {
+            let x = new five<int,bool,char,int,int>{ a:10, b:true, c:'z', d:20, e:12 };
+            if (x.b && x.c == 'z') { return x.a + x.d + x.e; }
+            return 0;
+        }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_generic_over_array_type() {
+    let (_, _, code) = run(r#"
+        struct box<T> { v: T }
+        impl box<T> { T get(self) { return self.v; } }
+        int main() {
+            let b = new box<[int]>{ v: [40, 2] };
+            let arr = b.get();
+            return arr[0] + arr[1];
+        }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_generic_over_optional_type() {
+    let (_, _, code) = run(r#"
+        struct box<T> { v: T }
+        impl box<T> { T get(self) { return self.v; } }
+        int main() {
+            let b = new box<int?>{ v: 42 };
+            let o = b.get();
+            if (o == none) { return 1; }
+            return o!;
+        }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_generic_stateful_functor() {
+    let (_, _, code) = run(r#"
+        struct counter { n: int }
+        impl counter { int apply(self, x: int) { self.n = self.n + 1; return x; } }
+        int each<T, F>(xs: [T], f: F) {
+            let i = 0;
+            while (i < xs.len()) { let y = f.apply(xs[i]); i = i + 1; }
+            return 0;
+        }
+        int main() {
+            let c = new counter{ n: 0 };
+            each::<int, counter>([1,2,3,4,5], c);
+            return c.n + 37;
+        }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_generic_two_functor_instances_distinct() {
+    let (_, _, code) = run(r#"
+        struct less<T> {}
+        impl less<T> { bool lt(self, a: T, b: T) { return a < b; } }
+        bool check<T, C>(a: T, b: T, c: C) { return c.lt(a, b); }
+        int main() {
+            let r = 0;
+            if (check::<int, less<int>>(1, 2, new less<int>)) { r = r + 20; }
+            if (check::<char, less<char>>('a', 'b', new less<char>)) { r = r + 22; }
+            if (r == 42) { return 42; }
+            return r;
+        }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_generic_method_constructs_multiple_instances() {
+    let (_, _, code) = run(r#"
+        struct box<T> { v: T }
+        impl box<T> { T get(self) { return self.v; } }
+        box<T> dup<T>(x: T) {
+            let a = new box<T>{ v: x };
+            let b = new box<T>{ v: a.get() };
+            return b;
+        }
+        int main() {
+            let r = dup::<int>(42);
+            return r.get();
+        }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_generic_struct_equality_rejected() {
+    let e = compile_fails(&[(
+        "main.kora",
+        "struct box<T> { v: T } int main() { let a = new box<int>{v:1}; let b = new box<int>{v:1}; if (a == b) { return 0; } return 1; }",
+    )]);
+    assert!(e.contains("Binary operator"), "{e}");
+}
+
+#[test]
+fn test_generic_array_of_struct_equality_rejected() {
+    let e = compile_fails(&[(
+        "main.kora",
+        "struct box<T> { v: T } int main() { let a: [box<int>] = []; let b: [box<int>] = []; if (a == b) { return 0; } return 1; }",
+    )]);
+    assert!(e.contains("Binary operator"), "{e}");
+}
+
+#[test]
+fn test_generic_cross_instantiation_assignment_rejected() {
+    let e = compile_fails(&[(
+        "main.kora",
+        "struct box<T> { v: T } int main() { let a = new box<int>{v:1}; let b = new box<bool>{v:true}; a = b; return 0; }",
+    )]);
+    assert!(e.contains("don't match"), "{e}");
+}
+
+#[test]
+fn test_generic_comparator_type_mismatch_reports_instantiation() {
+    let e = compile_fails(&[(
+        "main.kora",
+        r#"
+            struct intcmp {}
+            impl intcmp { bool lt(self, a: int, b: int) { return a < b; } }
+            bool check<T, C>(a: T, b: T, c: C) { return c.lt(a, b); }
+            int main() {
+                if (check::<string, intcmp>("a", "b", new intcmp)) { return 0; }
+                return 1;
+            }
+        "#,
+    )]);
+    assert!(e.contains("instantiated here"), "{e}");
+}
+
+#[test]
+fn test_generic_int_literal_to_real_field_rejected() {
+    // No implicit int->real coercion, even through a generic field.
+    let e = compile_fails(&[(
+        "main.kora",
+        "struct box<T> { v: T } int main() { let b = new box<real>{ v: 2 }; return 0; }",
+    )]);
+    assert!(e.contains("does not match the member"), "{e}");
+}
+
+#[test]
+fn test_generic_type_param_shadowing_struct_rejected() {
+    let e = compile_fails(&[(
+        "main.kora",
+        "struct S { n: int } struct box<S> { v: S } int main() { return 0; }",
+    )]);
+    assert!(e.contains("shadows struct"), "{e}");
+}
+
+#[test]
+fn test_generic_user_struct_as_type_argument() {
+    let (_, _, code) = run(r#"
+        struct Point { x: int, y: int }
+        struct box<T> { v: T }
+        impl box<T> { T get(self) { return self.v; } }
+        int main() {
+            let p = new Point{ x: 40, y: 2 };
+            let b = new box<Point>{ v: p };
+            let q = b.get();
+            return q.x + q.y;
+        }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_generic_method_named_like_array_method() {
+    // A struct method `len` coexists with the array `.len` on a `[T]` field.
+    let (_, _, code) = run(r#"
+        struct box<T> { items: [T] }
+        impl box<T> { int len(self) { return self.items.len() + 40; } }
+        int main() { let b = new box<int>{ items: [1, 2] }; return b.len(); }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_generic_method_named_copy() {
+    let (_, _, code) = run(r#"
+        struct box<T> { v: T }
+        impl box<T> { box<T> copy(self) { return new box<T>{ v: self.v }; } }
+        int main() { let a = new box<int>{ v: 42 }; let b = a.copy(); return b.v; }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_generic_recursive_quicksort_with_comparator() {
+    let (_, _, code) = run(r#"
+        struct asc {}
+        impl asc { bool lt(self, a: int, b: int) { return a < b; } }
+        void qsort<T, C>(xs: [T], lo: int, hi: int, cmp: C) {
+            if (lo >= hi) { return; }
+            let pivot = xs[hi];
+            let i = lo;
+            let j = lo;
+            while (j < hi) {
+                if (cmp.lt(xs[j], pivot)) { let t = xs[i]; xs[i] = xs[j]; xs[j] = t; i = i + 1; }
+                j = j + 1;
+            }
+            let t = xs[i]; xs[i] = xs[hi]; xs[hi] = t;
+            qsort::<T, C>(xs, lo, i - 1, cmp);
+            qsort::<T, C>(xs, i + 1, hi, cmp);
+        }
+        int main() {
+            let xs = [5, 2, 9, 1, 7, 3, 8, 4, 6];
+            qsort::<int, asc>(xs, 0, xs.len() - 1, new asc);
+            let ok = true;
+            let i = 1;
+            while (i < xs.len()) { if (xs[i-1] > xs[i]) { ok = false; } i = i + 1; }
+            if (ok && xs[0] == 1 && xs[8] == 9) { return 42; }
+            return 1;
+        }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_generic_all_array_methods_over_type_param() {
+    let (_, _, code) = run(r#"
+        int count_ops<T>(xs: [T]) {
+            let out: [T] = [];
+            out.push(xs[0]); out.push(xs[1]);
+            out.insert(1, xs[2]);
+            let removed = out.remove(0);
+            let tail = out.slice(0, 1);
+            out.extend(tail);
+            let last = out.pop();
+            return out.len();
+        }
+        int main() {
+            let xs = [1, 2, 3];
+            if (count_ops::<int>(xs) != 2) { return 1; }
+            return 42;
+        }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_generic_empty_struct() {
+    let (_, _, code) = run(r#"
+        struct unit<T> {}
+        impl unit<T> { int answer(self) { return 42; } }
+        int main() { let u = new unit<int>; let v = new unit<bool>; return u.answer(); }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_generic_functor_parameterized_by_functor() {
+    let (_, _, code) = run(r#"
+        struct inc {}
+        impl inc { int apply(self, x: int) { return x + 1; } }
+        struct twice<F> { f: F }
+        impl twice<F> { int apply(self, x: int) { return self.f.apply(self.f.apply(x)); } }
+        int main() { let t = new twice<inc>{ f: new inc }; return t.apply(40); }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_generic_deep_optional_unwrap_chain() {
+    let (_, _, code) = run(r#"
+        struct node<T> { v: T, next: node<T>? }
+        int main() {
+            let c = new node<int>{ v: 3, next: none };
+            let b = new node<int>{ v: 2, next: c };
+            let a = new node<int>{ v: 1, next: b };
+            return a.next!.next!.v * 14;
+        }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_generic_triple_nested_return() {
+    let (_, _, code) = run(r#"
+        struct box<T> { v: T }
+        box<box<box<T>>> triple<T>(x: T) {
+            return new box<box<box<T>>>{ v: new box<box<T>>{ v: new box<T>{ v: x } } };
+        }
+        int main() { let b = triple::<int>(42); return b.v.v.v; }
+    "#);
+    assert_eq!(code, 42);
+}
