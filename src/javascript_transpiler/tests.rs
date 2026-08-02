@@ -1,8 +1,9 @@
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 
 use crate::{
     javascript_transpiler::JavascriptTranspiler,
-    lexer,
+    loader::Loader,
     parser::{self, ASTVisitor},
     semantic_analyzer::{Resolver, ReturnChecker, TypeChecker},
 };
@@ -12,27 +13,32 @@ fn transpile(source: &str) -> String {
 }
 
 fn transpile_with_async(source: &str, async_externs: HashSet<String>) -> String {
-    let tokens = lexer::Lexer::lex(source).expect("lex");
-    let module = parser::Parser::new(tokens).parse().expect("parse");
+    let map: HashMap<String, String> = [("main.kora".to_string(), source.to_string())].into();
+    let provider = move |p: &Path| p.to_str().and_then(|s| map.get(s)).cloned();
+    let mut program = Loader::new(&provider).load("main.kora").expect("load");
+    let instances = crate::instantiate::Instantiator::new(&mut program)
+        .run()
+        .expect("instantiate");
     let symbols = Resolver::new()
-        .resolve(&[&module])
+        .resolve_program(&program, &instances)
         .unwrap_or_else(|errs| panic!("resolve: {errs:?}"));
+    let module = &program.modules[0].module;
 
     let mut checker = TypeChecker::new(&symbols);
-    checker.visit_module(&module);
+    checker.visit_module(module);
     checker
         .check()
         .unwrap_or_else(|errs| panic!("type check: {errs:?}"));
 
     let mut return_checker = ReturnChecker::new();
-    return_checker.visit_module(&module);
+    return_checker.visit_module(module);
     return_checker
         .check()
         .unwrap_or_else(|errs| panic!("return check: {errs:?}"));
 
     let method_calls = super::mangled_method_calls(&symbols, &checker.method_calls, &HashMap::new());
     let async_fns = super::resolve_async_fns(
-        &[&module],
+        &[module],
         &HashMap::new(),
         &method_calls,
         async_externs,
@@ -44,11 +50,10 @@ fn transpile_with_async(source: &str, async_externs: HashSet<String>) -> String 
         method_calls,
         array_method_calls: checker.array_method_calls,
         struct_members,
-        struct_ids: symbols.struct_names.clone(),
         async_fns,
         ..JavascriptTranspiler::default()
     };
-    transpiler.visit_module(&module);
+    transpiler.visit_module(module);
     transpiler
         .get_source()
         .map(|s| s.to_string())
@@ -403,7 +408,6 @@ fn transpile_program(
         method_calls,
         array_method_calls: compiled.array_method_calls,
         struct_members,
-        struct_ids: compiled.symbols.struct_names.clone(),
         function_names,
         async_fns,
         emitted,

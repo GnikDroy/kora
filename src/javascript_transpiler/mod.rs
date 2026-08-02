@@ -23,7 +23,6 @@ pub fn transpile(
     let method_calls = mangled_method_calls(&compiled.symbols, &compiled.method_calls, &emitted);
     let function_names = function_names(&compiled.symbols, &compiled.program, &emitted);
     let struct_members = struct_member_map(&compiled.symbols);
-    let struct_ids = compiled.symbols.struct_names.clone();
 
     let modules: Vec<&Module> = compiled.program.modules.iter().map(|m| &m.module).collect();
     let async_fns = resolve_async_fns(
@@ -38,7 +37,6 @@ pub fn transpile(
         method_calls,
         array_method_calls: compiled.array_method_calls,
         struct_members,
-        struct_ids,
         function_names,
         async_fns,
         emitted,
@@ -140,7 +138,6 @@ pub struct JavascriptTranspiler {
     method_calls: HashMap<NodeId, String>,
     array_method_calls: HashMap<NodeId, ArrayMethod>,
     struct_members: HashMap<NodeId, Vec<(String, Type)>>,
-    struct_ids: HashMap<String, NodeId>,
     /// Mangled name per function definition and call site
     function_names: HashMap<NodeId, String>,
     emitted: HashMap<NodeId, String>,
@@ -152,11 +149,6 @@ pub struct JavascriptTranspiler {
 }
 
 impl JavascriptTranspiler {
-    fn struct_decl(&self, sr: &StructRef) -> Option<NodeId> {
-        sr.target
-            .or_else(|| self.struct_ids.get(&sr.name.node).copied())
-    }
-
     pub fn get_source(&self) -> Result<&str, &[TranspilerErr]> {
         if self.errors.is_empty() {
             Ok(&self.source)

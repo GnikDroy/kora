@@ -402,7 +402,7 @@ mod tests {
 
     #[test]
     fn test_per_source_scoping_hides_unimported_names() {
-        let program = load_program(
+        let mut program = load_program(
             "main.kora",
             vec![
                 (
@@ -412,12 +412,12 @@ mod tests {
                 ("util.kora", "int helper() { return 1; }"),
             ],
         );
-        assert!(resolve_program(&program).is_err());
+        assert!(resolve_program(&mut program).is_err());
     }
 
     #[test]
     fn test_qualified_access_resolves_imported_member() {
-        let program = load_program(
+        let mut program = load_program(
             "main.kora",
             vec![
                 (
@@ -427,7 +427,7 @@ mod tests {
                 ("util.kora", "int helper() { return 1; }"),
             ],
         );
-        let symbols = resolve_program(&program).expect("resolve");
+        let symbols = resolve_program(&mut program).expect("resolve");
         let helper = source_module(&program, "util.kora").module.functions[0].id;
         let helper_id = symbols.symbol_id_of_declaration(helper).unwrap();
         assert!(symbols.uses.values().any(|&id| id == helper_id));
@@ -435,16 +435,16 @@ mod tests {
 
     #[test]
     fn test_qualified_access_requires_import() {
-        let program = load_program(
+        let mut program = load_program(
             "main.kora",
             vec![("main.kora", r#"int main() { return util.helper(); }"#)],
         );
-        assert!(resolve_program(&program).is_err());
+        assert!(resolve_program(&mut program).is_err());
     }
 
     #[test]
     fn test_unknown_imported_member_errors() {
-        let program = load_program(
+        let mut program = load_program(
             "main.kora",
             vec![
                 (
@@ -454,7 +454,7 @@ mod tests {
                 ("util.kora", "int helper() { return 1; }"),
             ],
         );
-        assert!(resolve_program(&program).is_err());
+        assert!(resolve_program(&mut program).is_err());
     }
 
     #[test]

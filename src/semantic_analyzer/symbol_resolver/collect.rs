@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use super::super::errors::TypeErr;
 use super::check_typename;
 use super::scope::Scope;
@@ -9,6 +11,7 @@ pub(super) struct GlobalsCollector<'a> {
     table: &'a mut SymbolTable,
     errors: &'a mut Vec<TypeErr>,
     instances: &'a Instantiated,
+    struct_names: HashSet<String>,
 }
 
 impl<'a> GlobalsCollector<'a> {
@@ -21,6 +24,7 @@ impl<'a> GlobalsCollector<'a> {
             table,
             errors,
             instances,
+            struct_names: HashSet::new(),
         }
     }
 
@@ -41,31 +45,22 @@ impl<'a> GlobalsCollector<'a> {
 
     fn collect_struct_names(&mut self, module: &Module) {
         for struct_ in module.structs.iter() {
-            if self.instances.struct_instances.contains(&struct_.id) {
-                self.table.structs.insert(
-                    struct_.id,
-                    StructDef {
-                        name: struct_.node.name.clone(),
-                        ..StructDef::default()
-                    },
-                );
-            } else if self.table.struct_exists(&struct_.node.name) {
+            if !self.instances.struct_instances.contains(&struct_.id)
+                && !self.struct_names.insert(struct_.node.name.clone())
+            {
                 self.errors.push(TypeErr {
                     msg: "Redeclaration of struct",
                     span: struct_.span.clone(),
                 });
-            } else {
-                self.table
-                    .struct_names
-                    .insert(struct_.node.name.clone(), struct_.id);
-                self.table.structs.insert(
-                    struct_.id,
-                    StructDef {
-                        name: struct_.node.name.clone(),
-                        ..StructDef::default()
-                    },
-                );
+                continue;
             }
+            self.table.structs.insert(
+                struct_.id,
+                StructDef {
+                    name: struct_.node.name.clone(),
+                    ..StructDef::default()
+                },
+            );
         }
     }
 
@@ -179,21 +174,29 @@ impl<'a> GlobalsCollector<'a> {
 #[cfg(test)]
 mod tests {
     use super::super::test_support::*;
-    use crate::parser::Type;
+    use crate::parser::{NodeId, Type};
+    use crate::semantic_analyzer::SymbolTable;
+
+    fn struct_decl(symbols: &SymbolTable, name: &str) -> Option<NodeId> {
+        symbols
+            .structs
+            .iter()
+            .find(|(_, def)| def.name == name)
+            .map(|(&decl, _)| decl)
+    }
 
     #[test]
     fn test_collects_struct_members() {
         let symbols =
             resolve(r#"struct Point { x: int, y: [char] } int main() { return 0; }"#).expect("ok");
-        assert!(symbols.struct_exists("Point"));
-        let point = symbols.struct_names["Point"];
+        let point = struct_decl(&symbols, "Point").expect("Point");
         assert_eq!(symbols.struct_member(point, "x"), Some(Type::Int));
         assert_eq!(
             symbols.struct_member(point, "y"),
             Some(Type::Array(Box::new(Type::Char)))
         );
         assert_eq!(symbols.struct_member(point, "z"), None);
-        assert!(!symbols.struct_exists("Missing"));
+        assert!(struct_decl(&symbols, "Missing").is_none());
     }
 
     #[test]
@@ -206,17 +209,17 @@ mod tests {
             "#,
         )
         .expect("ok");
-        let p = symbols.struct_names["P"];
+        let p = struct_decl(&symbols, "P").expect("P");
         let get = symbols.struct_method(p, "get").expect("get");
         assert_eq!(symbols.symbol(get).name, "get");
         assert!(symbols.struct_method(p, "set").is_some());
         assert!(symbols.struct_method(p, "missing").is_none());
-        assert!(!symbols.struct_exists("Q"));
+        assert!(struct_decl(&symbols, "Q").is_none());
     }
 
     #[test]
     fn test_top_level_symbols_are_bare_and_distinct() {
-        let program = load_program(
+        let mut program = load_program(
             "main.kora",
             vec![
                 (
@@ -227,7 +230,7 @@ mod tests {
                 ("b.kora", "int helper() { return 2; }"),
             ],
         );
-        let symbols = resolve_program(&program).expect("ok");
+        let symbols = resolve_program(&mut program).expect("ok");
         let a = source_module(&program, "a.kora").module.functions[0].id;
         let b = source_module(&program, "b.kora").module.functions[0].id;
         let a_id = symbols.symbol_id_of_declaration(a).unwrap();

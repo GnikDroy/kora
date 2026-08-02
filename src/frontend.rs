@@ -434,6 +434,36 @@ int g() { return abs(2); }",
     }
 
     #[test]
+    fn test_frontend_keeps_source_names() {
+        let compiled = compile(
+            "main.kora",
+            provider(vec![(
+                "main.kora",
+                r#"
+                struct box<T> { v: T }
+                impl box<T> { T get(self) { return self.v; } }
+                T id<T>(x: T) { return x; }
+                int main() {
+                    let a = new box<int>{ v: 1 };
+                    let b = new box<box<bool>>{ v: new box<bool>{ v: true } };
+                    return id::<int>(a.get());
+                }
+                "#,
+            )]),
+        )
+        .expect("compile");
+        for module in &compiled.program.modules {
+            for decl in &module.module.structs {
+                assert!(!decl.node.name.contains("$$"), "{}", decl.node.name);
+            }
+            for decl in &module.module.functions {
+                assert!(!decl.node.name.contains("$$"), "{}", decl.node.name);
+            }
+        }
+        assert!(!compiled.origins.is_empty());
+    }
+
+    #[test]
     fn test_generic_instance_error_mentions_instantiation() {
         let Err(errors) = compile(
             "main.kora",

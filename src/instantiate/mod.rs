@@ -7,7 +7,7 @@ pub use errors::*;
 use std::collections::{HashMap, HashSet};
 
 use crate::loader::LoadedProgram;
-use crate::mangle::{InstanceOrigins, unique_name};
+use crate::mangle::InstanceOrigins;
 use crate::parser::{NodeId, Span, Type};
 
 use collect::{GenericFns, GenericStructs, collect};
@@ -30,23 +30,23 @@ pub struct Instantiated {
 pub struct Instantiator<'p> {
     program: &'p mut LoadedProgram,
 
+    // usize here is the module index
     imports: Vec<HashMap<String, usize>>,
 
     generic_structs: GenericStructs,
     generic_fns: GenericFns,
+    concrete_structs: HashMap<String, NodeId>,
 
     struct_registry: HashMap<(String, Vec<Type>), NodeId>,
-    fn_registry: HashMap<(usize, String, Vec<Type>), NodeId>,
 
-    used_struct_names: HashSet<String>,
-    used_fn_names: Vec<HashSet<String>>,
+    // usize here is the module index
+    fn_registry: HashMap<(usize, String, Vec<Type>), NodeId>,
 
     resolutions: HashMap<NodeId, NodeId>,
     fn_instances: HashSet<NodeId>,
     struct_instances: HashSet<NodeId>,
     origins: InstanceOrigins,
 
-    instance_displays: HashMap<NodeId, String>,
     errors: Vec<InstantiateErr>,
 }
 
@@ -75,15 +75,13 @@ impl<'p> Instantiator<'p> {
             imports,
             generic_structs: HashMap::new(),
             generic_fns: HashMap::new(),
+            concrete_structs: HashMap::new(),
             struct_registry: HashMap::new(),
             fn_registry: HashMap::new(),
-            used_struct_names: HashSet::new(),
-            used_fn_names: Vec::new(),
             resolutions: HashMap::new(),
             fn_instances: HashSet::new(),
             struct_instances: HashSet::new(),
             origins: InstanceOrigins::new(),
-            instance_displays: HashMap::new(),
             errors: Vec::new(),
         }
     }
@@ -92,8 +90,7 @@ impl<'p> Instantiator<'p> {
         let ctx = collect(self.program)?;
         self.generic_structs = ctx.generic_structs;
         self.generic_fns = ctx.generic_fns;
-        self.used_struct_names = ctx.used_struct_names;
-        self.used_fn_names = ctx.used_fn_names;
+        self.concrete_structs = ctx.concrete_structs;
 
         self.concretize_program();
 
@@ -185,7 +182,6 @@ impl<'p> Instantiator<'p> {
         self.struct_instances.insert(decl.id);
         self.origins
             .insert(decl.id, (name.to_string(), args.to_vec()));
-        self.instance_displays.insert(decl.id, display.clone());
         self.generic_structs
             .get_mut(name)
             .unwrap()
@@ -271,8 +267,8 @@ impl<'p> Instantiator<'p> {
             Type::Optional(inner) => format!("{}?", self.display_type(inner)),
             Type::Struct(sr) => sr
                 .target
-                .and_then(|t| self.instance_displays.get(&t))
-                .cloned()
+                .and_then(|t| self.origins.get(&t))
+                .map(|(generic, args)| self.display_instance(generic, args))
                 .unwrap_or_else(|| sr.name.node.clone()),
             Type::Generic(name, args) => self.display_instance(&name.node, args),
             Type::Function(_, _) => "fn".to_string(),
@@ -288,19 +284,6 @@ impl<'p> Instantiator<'p> {
         format!("{name}<{args}>")
     }
 
-    fn unique_struct_name(&mut self, base: String) -> String {
-        let name = unique_name(base, |candidate| self.used_struct_names.contains(candidate));
-        self.used_struct_names.insert(name.clone());
-        name
-    }
-
-    fn unique_fn_name(&mut self, module: usize, base: String) -> String {
-        let name = unique_name(base, |candidate| {
-            self.used_fn_names[module].contains(candidate)
-        });
-        self.used_fn_names[module].insert(name.clone());
-        name
-    }
 }
 
 fn chain_summary(chain: &Chain) -> String {
@@ -770,6 +753,39 @@ mod tests {
         let make = function(&program, util, "make").id;
         let mentions: Vec<_> = out.resolutions.values().filter(|&&d| d == make).collect();
         assert_eq!(mentions.len(), 2);
+    }
+
+    #[test]
+    fn test_concrete_mentions_get_targets() {
+        let (program, _) = run_one(
+            r#"
+            struct Point { x: int }
+            struct Holder { p: Point }
+            impl Point { int get(self) { return self.x; } }
+            Point make(q: Point) { return q; }
+            int main() { return 0; }
+            "#,
+        );
+        let module = &program.modules[0].module;
+        let point = module.structs[0].id;
+        assert!(matches!(
+            &module.structs[1].node.members[0].node.typename,
+            Type::Struct(sr) if sr.target == Some(point)
+        ));
+        assert_eq!(module.impls[0].node.struct_ref.target, Some(point));
+        assert!(matches!(
+            &module.impls[0].node.functions[0].node.arguments[0].node.typename,
+            Type::Struct(sr) if sr.target == Some(point)
+        ));
+        let make = function(&program, 0, "make");
+        assert!(matches!(
+            &make.node.return_type,
+            Some(Type::Struct(sr)) if sr.target == Some(point)
+        ));
+        assert!(matches!(
+            &make.node.arguments[0].node.typename,
+            Type::Struct(sr) if sr.target == Some(point)
+        ));
     }
 
     #[test]

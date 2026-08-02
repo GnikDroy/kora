@@ -30,7 +30,6 @@ pub struct SymbolTable {
     pub uses: HashMap<NodeId, SymbolId>,
     pub declarations: HashMap<NodeId, SymbolId>,
     pub structs: HashMap<NodeId, StructDef>,
-    pub struct_names: HashMap<String, NodeId>,
 }
 
 impl SymbolTable {
@@ -51,15 +50,8 @@ impl SymbolTable {
         self.symbol(self.symbol_id_of_use(use_id)?).ty.clone()
     }
 
-    pub fn struct_exists(&self, name: &str) -> bool {
-        self.struct_names.contains_key(name)
-    }
-
     pub fn struct_decl_of(&self, sr: &StructRef) -> Option<NodeId> {
-        match sr.target {
-            Some(id) => self.structs.contains_key(&id).then_some(id),
-            None => self.struct_names.get(&sr.name.node).copied(),
-        }
+        sr.target.filter(|id| self.structs.contains_key(id))
     }
 
     pub fn struct_member(&self, decl: NodeId, member: &str) -> Option<Type> {

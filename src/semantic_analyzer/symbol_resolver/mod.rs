@@ -47,22 +47,27 @@ pub(super) mod test_support {
 
     use super::{Resolver, SymbolTable, TypeErr};
     use crate::loader::{LoadedModule, LoadedProgram, Loader};
-    use crate::{lexer, parser};
 
     pub(super) fn resolve(source: &str) -> Result<SymbolTable, Vec<TypeErr>> {
-        let tokens = lexer::Lexer::lex(source).expect("lex");
-        let module = parser::Parser::new(tokens).parse().expect("parse");
-        Resolver::new().resolve(&[&module])
+        let mut program = load_program_sources("main.kora", vec![("main.kora", source)]);
+        resolve_program(&mut program)
     }
 
-    pub(crate) fn resolve_program(program: &LoadedProgram) -> Result<SymbolTable, Vec<TypeErr>> {
-        Resolver::new().resolve_program(program, &crate::instantiate::Instantiated::default())
+    pub(crate) fn resolve_program(program: &mut LoadedProgram) -> Result<SymbolTable, Vec<TypeErr>> {
+        let instances = crate::instantiate::Instantiator::new(program)
+            .run()
+            .expect("instantiate");
+        Resolver::new().resolve_program(program, &instances)
     }
 
     pub(crate) fn load_program(
         entry: &str,
         files: Vec<(&'static str, &'static str)>,
     ) -> LoadedProgram {
+        load_program_sources(entry, files)
+    }
+
+    fn load_program_sources(entry: &str, files: Vec<(&str, &str)>) -> LoadedProgram {
         let map: HashMap<String, String> = files
             .into_iter()
             .map(|(k, v)| (k.to_string(), v.to_string()))

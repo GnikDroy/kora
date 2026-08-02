@@ -322,6 +322,10 @@ impl Instantiator<'_> {
         imp: &mut Spanned<Impl>,
         chain: &mut Chain,
     ) {
+        let struct_ref = &mut imp.node.struct_ref;
+        if struct_ref.target.is_none() {
+            struct_ref.target = self.concrete_structs.get(&struct_ref.name.node).copied();
+        }
         for method in imp.node.functions.iter_mut() {
             self.concretize_function(module, subst, method, chain);
         }
@@ -452,13 +456,17 @@ impl Instantiator<'_> {
             Type::Struct(sr) => {
                 if let Some(concrete) = subst.get(&sr.name.node) {
                     replacement = Some(concrete.clone());
-                } else if sr.target.is_none() && self.generic_structs.contains_key(&sr.name.node) {
-                    let msg = format!(
-                        "generic struct `{}` requires type arguments: {}<...>",
-                        sr.name.node, sr.name.node
-                    );
-                    let span = sr.name.span.clone();
-                    self.error(msg, &span);
+                } else if sr.target.is_none() {
+                    if self.generic_structs.contains_key(&sr.name.node) {
+                        let msg = format!(
+                            "generic struct `{}` requires type arguments: {}<...>",
+                            sr.name.node, sr.name.node
+                        );
+                        let span = sr.name.span.clone();
+                        self.error(msg, &span);
+                    } else {
+                        sr.target = self.concrete_structs.get(&sr.name.node).copied();
+                    }
                 }
             }
             Type::Generic(name, args) => {

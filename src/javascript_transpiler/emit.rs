@@ -128,7 +128,7 @@ impl JavascriptTranspiler {
     /// NOTE: Type checker rejects struct cycles, so we terminate.
     fn emit_default(&mut self, ty: &Type) {
         match ty {
-            Type::Struct(sr) => self.emit_struct_zero(self.struct_decl(sr)),
+            Type::Struct(sr) => self.emit_struct_zero(sr.target),
             Type::Array(_) => self.source.push_str("[]"),
             Type::Optional(_) | Type::Opaque => self.source.push_str("null"),
             Type::Real => self.source.push_str("0.0"),
@@ -670,7 +670,7 @@ impl ASTVisitor for JavascriptTranspiler {
                         .push_str("Array.from({length:__kora_runtime_check_len(");
                     self.visit_expression(expr);
                     self.source.push_str(")},()=>");
-                    self.emit_struct_zero(self.struct_decl(sr));
+                    self.emit_struct_zero(sr.target);
                     self.source.push(')');
                 }
                 _ => {
@@ -682,7 +682,7 @@ impl ASTVisitor for JavascriptTranspiler {
                 }
             },
             None => match typename {
-                Type::Struct(sr) => self.emit_struct_zero(self.struct_decl(sr)),
+                Type::Struct(sr) => self.emit_struct_zero(sr.target),
                 _ => self.source.push_str("({})"),
             },
         }

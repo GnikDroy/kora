@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use super::InstantiateErr;
 use crate::loader::LoadedProgram;
-use crate::parser::{GenericFunction, GenericImpl, GenericStruct, Span, Spanned};
+use crate::parser::{GenericFunction, GenericImpl, GenericStruct, NodeId, Span, Spanned};
 use crate::semantic_analyzer::is_intrinsic;
 
 pub(super) struct GenericStructDef {
@@ -23,7 +23,7 @@ pub(super) type GenericFns = HashMap<(usize, String), GenericFnDef>;
 pub(super) struct InstantiateCtx {
     pub(super) generic_structs: GenericStructs,
     pub(super) generic_fns: GenericFns,
-    pub(super) used_struct_names: HashSet<String>,
+    pub(super) concrete_structs: HashMap<String, NodeId>,
     pub(super) used_fn_names: Vec<HashSet<String>>,
 }
 
@@ -37,11 +37,11 @@ pub(super) fn collect(program: &LoadedProgram) -> Result<InstantiateCtx, Vec<Ins
         return Err(errors);
     }
 
-    let concrete_struct_names = program
+    let concrete_structs = program
         .modules
         .iter()
         .flat_map(|m| m.module.structs.iter())
-        .map(|s| s.node.name.clone())
+        .map(|s| (s.node.name.clone(), s.id))
         .collect();
 
     let concrete_fn_names = program
@@ -59,7 +59,7 @@ pub(super) fn collect(program: &LoadedProgram) -> Result<InstantiateCtx, Vec<Ins
     let ctx = InstantiateCtx {
         generic_structs: structs,
         generic_fns: fns,
-        used_struct_names: concrete_struct_names,
+        concrete_structs,
         used_fn_names: concrete_fn_names,
     };
 
@@ -170,7 +170,7 @@ fn validate(program: &LoadedProgram, ctx: &InstantiateCtx) -> Vec<InstantiateErr
                     &param.span,
                 );
             }
-            if ctx.used_struct_names.contains(&param.node)
+            if ctx.concrete_structs.contains_key(&param.node)
                 || ctx.generic_structs.contains_key(&param.node)
             {
                 error(
@@ -187,7 +187,7 @@ fn validate(program: &LoadedProgram, ctx: &InstantiateCtx) -> Vec<InstantiateErr
 
     for def in ctx.generic_structs.values() {
         let name = &def.decl.node.name;
-        if ctx.used_struct_names.contains(name) {
+        if ctx.concrete_structs.contains_key(name) {
             error(
                 &mut errors,
                 format!("struct `{name}` is declared multiple times"),

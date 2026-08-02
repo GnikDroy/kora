@@ -620,9 +620,10 @@ mod tests {
             }
         "#;
 
-        let (symbols, module) = analyze(source);
+        let (symbols, program) = analyze(source);
+        let module = &program.modules[0].module;
         let mut checker = TypeChecker::new(&symbols);
-        checker.visit_module(&module);
+        checker.visit_module(module);
         let result = checker.check();
         assert!(
             result.is_ok(),
@@ -661,9 +662,10 @@ mod tests {
             }
         "#;
 
-        let (symbols, module) = analyze(source);
+        let (symbols, program) = analyze(source);
+        let module = &program.modules[0].module;
         let mut checker = TypeChecker::new(&symbols);
-        checker.visit_module(&module);
+        checker.visit_module(module);
         let result = checker.check();
         assert!(result.is_err(), "source_text: {}", source);
         assert_eq!(result.unwrap_err().len(), 4, "source_text: {}", source);
@@ -675,9 +677,10 @@ mod tests {
         // must point there rather than at a default (0, 0) location.
         let source = "int main() {\n\n    let x: int = true;\n}\n";
 
-        let (symbols, module) = analyze(source);
+        let (symbols, program) = analyze(source);
+        let module = &program.modules[0].module;
         let mut checker = TypeChecker::new(&symbols);
-        checker.visit_module(&module);
+        checker.visit_module(module);
 
         let errors = checker.check().expect_err("expected a type error");
         assert_eq!(errors.len(), 1, "errors: {:?}", errors);
@@ -802,9 +805,10 @@ mod tests {
             }
         "#;
 
-        let (symbols, module) = analyze(source);
+        let (symbols, program) = analyze(source);
+        let module = &program.modules[0].module;
         let mut checker = TypeChecker::new(&symbols);
-        checker.visit_module(&module);
+        checker.visit_module(module);
 
         let errors = checker
             .check()
@@ -987,9 +991,10 @@ mod tests {
             impl P { int get(self) { return self.x; } }
             int main() { let p = new P; return p.get(); }
         "#;
-        let (symbols, module) = analyze(source);
+        let (symbols, program) = analyze(source);
+        let module = &program.modules[0].module;
         let mut checker = TypeChecker::new(&symbols);
-        checker.visit_module(&module);
+        checker.visit_module(module);
         checker.check().expect("check");
         let (_, method) = checker.method_calls.iter().next().expect("one method call");
         assert_eq!(symbols.symbol(*method).name, "get");
@@ -1434,9 +1439,10 @@ mod tests {
             void f() { }
             int main() { let x: real = 1.5 + 2.5; f(); return 0; }
         "#;
-        let (symbols, module) = analyze(source);
+        let (symbols, program) = analyze(source);
+        let module = &program.modules[0].module;
         let mut checker = TypeChecker::new(&symbols);
-        checker.visit_module(&module);
+        checker.visit_module(module);
         checker.check().expect("check");
 
         let body = &module.functions[1].node.statement;
@@ -1471,7 +1477,7 @@ mod tests {
                 ("util.kora", "int helper() { return 1; }"),
             ],
         );
-        assert!(program_type_checks(&program));
+        assert!(program_type_checks(program));
     }
 
     #[test]
@@ -1486,7 +1492,7 @@ mod tests {
                 ("util.kora", "int helper() { return 1; }"),
             ],
         );
-        assert!(!program_type_checks(&program));
+        assert!(!program_type_checks(program));
     }
 
     #[test]
@@ -1501,7 +1507,7 @@ mod tests {
                 ("util.kora", "int twice(n: int) { return n + n; }"),
             ],
         );
-        assert!(!program_type_checks(&program));
+        assert!(!program_type_checks(program));
     }
 
     #[test]
