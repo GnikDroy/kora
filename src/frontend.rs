@@ -108,7 +108,8 @@ where
     let mut analyze_errors = Vec::new();
 
     let (types, method_calls, array_method_calls) = {
-        let mut checker = TypeChecker::new(&symbols);
+        let mut checker =
+            TypeChecker::new(&symbols, program.modules.iter().map(|m| &m.module).collect());
         for module in &program.modules {
             checker.visit_module(&module.module);
         }

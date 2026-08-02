@@ -124,8 +124,8 @@ impl<'p> Instantiator<'p> {
         }
 
         // Register before concretizing so self-recursion hits registry
-        let module = self.generic_structs[name].module;
         let mut decl = scaffold_struct(&self.generic_structs[name].decl);
+        let module = decl.span.source.0 as usize;
         self.instance_registry
             .insert(generic, args.to_vec(), decl.id);
         self.output.struct_instances.insert(decl.id);
@@ -273,7 +273,7 @@ fn regions(
     for (name, def) in structs.iter() {
         let instances = render(name, def.decl.id);
         let spans =
-            std::iter::once(&def.decl.span).chain(def.impls.iter().map(|(_, imp)| &imp.span));
+            std::iter::once(&def.decl.span).chain(def.impls.iter().map(|imp| &imp.span));
         for span in spans {
             regions.push(GenericRegion {
                 span: span.clone(),

@@ -21,7 +21,7 @@ pub fn transpile(
     let method_calls = method_call_names(&compiled.symbols, &compiled.method_calls, &compiled.emitted);
     let function_call_names =
         function_call_names(&compiled.symbols, &compiled.program, &compiled.emitted);
-    let struct_members = struct_member_map(&compiled.symbols);
+    let struct_members = struct_member_map(&compiled.symbols, &compiled.program);
 
     let modules: Vec<&Module> = compiled.program.modules.iter().map(|m| &m.module).collect();
     let async_fns = resolve_async_fns(
@@ -51,11 +51,22 @@ pub fn transpile(
     })
 }
 
-pub(crate) fn struct_member_map(symbols: &SymbolTable) -> HashMap<NodeId, Vec<(String, Type)>> {
+pub(crate) fn struct_member_map(
+    symbols: &SymbolTable,
+    program: &LoadedProgram,
+) -> HashMap<NodeId, Vec<(String, Type)>> {
     symbols
         .structs
         .iter()
-        .map(|(decl, def)| (*decl, def.members.clone()))
+        .map(|(decl, def)| {
+            let members = program.modules[def.module].module.structs[def.index]
+                .node
+                .members
+                .iter()
+                .map(|m| (m.node.name.clone(), m.node.typename.clone()))
+                .collect();
+            (*decl, members)
+        })
         .collect()
 }
 

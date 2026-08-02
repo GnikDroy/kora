@@ -16,11 +16,10 @@ pub struct Symbol {
     pub ty: Option<Type>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct StructDef {
-    pub name: String,
-    // Members are ordered for C compatibility
-    pub members: Vec<(String, Type)>,
+    pub module: usize,
+    pub index: usize, // index into the AST's module's structs list
     pub methods: HashMap<String, SymbolId>,
 }
 
@@ -54,21 +53,20 @@ impl SymbolTable {
         sr.target.filter(|id| self.structs.contains_key(id))
     }
 
-    pub fn struct_member(&self, decl: NodeId, member: &str) -> Option<Type> {
-        self.structs
-            .get(&decl)?
-            .members
+    pub fn struct_members<'m>(
+        &self,
+        modules: &[&'m Module],
+        decl: NodeId,
+    ) -> &'m [Spanned<IdentifierTypePair>] {
+        let def = &self.structs[&decl];
+        &modules[def.module].structs[def.index].node.members
+    }
+
+    pub fn struct_member(&self, modules: &[&Module], decl: NodeId, member: &str) -> Option<Type> {
+        self.struct_members(modules, decl)
             .iter()
-            .find(|(field, _)| field == member)
-            .map(|(_, ty)| ty.clone())
-    }
-
-    pub fn struct_member_count(&self, decl: NodeId) -> Option<usize> {
-        self.structs.get(&decl).map(|s| s.members.len())
-    }
-
-    pub fn struct_members(&self, decl: NodeId) -> Option<&[(String, Type)]> {
-        self.structs.get(&decl).map(|s| s.members.as_slice())
+            .find(|m| m.node.name == member)
+            .map(|m| m.node.typename.clone())
     }
 
     pub fn struct_method(&self, decl: NodeId, method: &str) -> Option<SymbolId> {

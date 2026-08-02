@@ -6,9 +6,8 @@ use crate::parser::{GenericFunction, GenericImpl, GenericStruct, NodeId, Span, S
 use crate::semantic_analyzer::is_intrinsic;
 
 pub(super) struct GenericStructDef {
-    pub(super) module: usize,
     pub(super) decl: Spanned<GenericStruct>,
-    pub(super) impls: Vec<(usize, Spanned<GenericImpl>)>,
+    pub(super) impls: Vec<Spanned<GenericImpl>>,
 }
 
 pub(super) struct GenericFnDef {
@@ -61,7 +60,7 @@ fn collect_generic_structs(
     errors: &mut Vec<InstantiateErr>,
 ) -> GenericStructs {
     let mut structs = GenericStructs::new();
-    for (m, module) in program.modules.iter().enumerate() {
+    for module in program.modules.iter() {
         for decl in module.module.generic_structs.iter() {
             let name = decl.node.name.clone();
             if structs.contains_key(&name) {
@@ -74,7 +73,6 @@ fn collect_generic_structs(
             structs.insert(
                 name,
                 GenericStructDef {
-                    module: m,
                     decl: decl.clone(),
                     impls: Vec::new(),
                 },
@@ -112,7 +110,7 @@ fn collect_generic_impls(
     mut structs: GenericStructs,
     errors: &mut Vec<InstantiateErr>,
 ) -> GenericStructs {
-    for (m, module) in program.modules.iter().enumerate() {
+    for module in program.modules.iter() {
         for imp in module.module.generic_impls.iter() {
             let struct_name = &imp.node.struct_name.node;
             let Some(def) = structs.get_mut(struct_name) else {
@@ -124,7 +122,7 @@ fn collect_generic_impls(
                 });
                 continue;
             };
-            def.impls.push((m, imp.clone()));
+            def.impls.push(imp.clone());
         }
     }
     structs
@@ -182,7 +180,7 @@ fn validate(program: &LoadedProgram, ctx: &InstantiateCtx) -> Vec<InstantiateErr
         }
         check_params(&mut errors, &def.decl.node.type_params);
         let expected = def.decl.node.type_params.len();
-        for (_, imp) in &def.impls {
+        for imp in &def.impls {
             check_params(&mut errors, &imp.node.type_params);
             let found = imp.node.type_params.len();
             if found != expected {

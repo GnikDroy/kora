@@ -213,22 +213,23 @@ impl Instantiator<'_> {
         args: &[Type],
         stack: &mut InstantiationStack,
     ) -> Vec<(usize, Spanned<Impl>)> {
-        let scaffolds: Vec<(usize, Vec<String>, Spanned<Impl>)> = self.generic_structs[generic]
+        let scaffolds: Vec<(Vec<String>, Spanned<Impl>)> = self.generic_structs[generic]
             .impls
             .iter()
-            .map(|(module, imp)| {
+            .map(|imp| {
                 let params = imp
                     .node
                     .type_params
                     .iter()
                     .map(|p| p.node.clone())
                     .collect();
-                (*module, params, scaffold_impl(imp))
+                (params, scaffold_impl(imp))
             })
             .collect();
         scaffolds
             .into_iter()
-            .map(|(module, params, mut imp)| {
+            .map(|(params, mut imp)| {
+                let module = imp.span.source.0 as usize;
                 imp.node.struct_ref.target = Some(target);
                 let subst: TypeSubstitutions =
                     params.into_iter().zip(args.iter().cloned()).collect();

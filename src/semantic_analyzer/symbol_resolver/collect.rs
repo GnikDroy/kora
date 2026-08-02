@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use super::super::errors::TypeErr;
 use super::check_typename;
@@ -29,8 +29,8 @@ impl<'a> GlobalsCollector<'a> {
     }
 
     pub(super) fn collect(&mut self, modules: &[&Module]) -> Vec<Scope> {
-        for &module in modules {
-            self.collect_struct_names(module);
+        for (m, &module) in modules.iter().enumerate() {
+            self.collect_struct_names(m, module);
         }
         let mut scopes = Vec::new();
         for &module in modules {
@@ -38,13 +38,13 @@ impl<'a> GlobalsCollector<'a> {
             scopes.push(self.collect_function_signatures(module));
         }
         for &module in modules {
-            self.collect_methods(module);
+            self.collect_methods(modules, module);
         }
         scopes
     }
 
-    fn collect_struct_names(&mut self, module: &Module) {
-        for struct_ in module.structs.iter() {
+    fn collect_struct_names(&mut self, m: usize, module: &Module) {
+        for (index, struct_) in module.structs.iter().enumerate() {
             if !self.instances.struct_instances.contains(&struct_.id)
                 && !self.struct_names.insert(struct_.node.name.clone())
             {
@@ -57,8 +57,9 @@ impl<'a> GlobalsCollector<'a> {
             self.table.structs.insert(
                 struct_.id,
                 StructDef {
-                    name: struct_.node.name.clone(),
-                    ..StructDef::default()
+                    module: m,
+                    index,
+                    methods: HashMap::new(),
                 },
             );
         }
@@ -69,24 +70,16 @@ impl<'a> GlobalsCollector<'a> {
             if !self.table.structs.contains_key(&struct_.id) {
                 continue;
             }
-            for member in struct_.node.members.iter() {
+            for (k, member) in struct_.node.members.iter().enumerate() {
                 check_typename(self.table, self.errors, &member.node.typename);
-                let already = self.table.structs[&struct_.id]
-                    .members
+                let already = struct_.node.members[..k]
                     .iter()
-                    .any(|(field, _)| field == &member.node.name);
+                    .any(|prev| prev.node.name == member.node.name);
                 if already {
                     self.errors.push(TypeErr {
                         msg: "Redeclaration of struct member",
                         span: member.span.clone(),
                     });
-                } else {
-                    self.table
-                        .structs
-                        .get_mut(&struct_.id)
-                        .unwrap()
-                        .members
-                        .push((member.node.name.clone(), member.node.typename.clone()));
                 }
             }
         }
@@ -111,7 +104,7 @@ impl<'a> GlobalsCollector<'a> {
         scope
     }
 
-    fn collect_methods(&mut self, module: &Module) {
+    fn collect_methods(&mut self, modules: &[&Module], module: &Module) {
         for impl_ in module.impls.iter() {
             let Some(decl) = self.table.struct_decl_of(&impl_.node.struct_ref) else {
                 self.errors.push(TypeErr {
@@ -121,18 +114,18 @@ impl<'a> GlobalsCollector<'a> {
                 continue;
             };
             for func in impl_.node.functions.iter() {
-                let struct_def = &self.table.structs[&decl];
-                if struct_def
-                    .members
+                if self
+                    .table
+                    .struct_members(modules, decl)
                     .iter()
-                    .any(|(field, _)| field == &func.node.name)
+                    .any(|m| m.node.name == func.node.name)
                 {
                     self.errors.push(TypeErr {
                         msg: "A method cannot have the same name as a struct member",
                         span: func.span.clone(),
                     });
                 }
-                if struct_def.methods.contains_key(&func.node.name) {
+                if self.table.structs[&decl].methods.contains_key(&func.node.name) {
                     self.errors.push(TypeErr {
                         msg: "Redeclaration of method",
                         span: func.span.clone(),
@@ -174,29 +167,30 @@ impl<'a> GlobalsCollector<'a> {
 #[cfg(test)]
 mod tests {
     use super::super::test_support::*;
-    use crate::parser::{NodeId, Type};
-    use crate::semantic_analyzer::SymbolTable;
-
-    fn struct_decl(symbols: &SymbolTable, name: &str) -> Option<NodeId> {
-        symbols
-            .structs
-            .iter()
-            .find(|(_, def)| def.name == name)
-            .map(|(&decl, _)| decl)
-    }
+    use crate::parser::{Module, Type};
 
     #[test]
     fn test_collects_struct_members() {
-        let symbols =
-            resolve(r#"struct Point { x: int, y: [char] } int main() { return 0; }"#).expect("ok");
-        let point = struct_decl(&symbols, "Point").expect("Point");
-        assert_eq!(symbols.struct_member(point, "x"), Some(Type::Int));
+        let mut program = load_program(
+            "main.kora",
+            vec![(
+                "main.kora",
+                r#"struct Point { x: int, y: [char] } int main() { return 0; }"#,
+            )],
+        );
+        let symbols = resolve_program(&mut program).expect("ok");
+        let modules: Vec<&Module> = program.modules.iter().map(|m| &m.module).collect();
+        assert_eq!(symbols.structs.len(), 1);
+        let (&point, _) = symbols.structs.iter().next().unwrap();
         assert_eq!(
-            symbols.struct_member(point, "y"),
+            symbols.struct_member(&modules, point, "x"),
+            Some(Type::Int)
+        );
+        assert_eq!(
+            symbols.struct_member(&modules, point, "y"),
             Some(Type::Array(Box::new(Type::Char)))
         );
-        assert_eq!(symbols.struct_member(point, "z"), None);
-        assert!(struct_decl(&symbols, "Missing").is_none());
+        assert_eq!(symbols.struct_member(&modules, point, "z"), None);
     }
 
     #[test]
@@ -209,12 +203,12 @@ mod tests {
             "#,
         )
         .expect("ok");
-        let p = struct_decl(&symbols, "P").expect("P");
+        assert_eq!(symbols.structs.len(), 1);
+        let (&p, _) = symbols.structs.iter().next().unwrap();
         let get = symbols.struct_method(p, "get").expect("get");
         assert_eq!(symbols.symbol(get).name, "get");
         assert!(symbols.struct_method(p, "set").is_some());
         assert!(symbols.struct_method(p, "missing").is_none());
-        assert!(struct_decl(&symbols, "Q").is_none());
     }
 
     #[test]

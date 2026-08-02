@@ -281,7 +281,7 @@ impl TypeChecker<'_> {
             Type::Struct(sr) => self
                 .symbols
                 .struct_decl_of(&sr)
-                .and_then(|decl| self.symbols.struct_member(decl, member))
+                .and_then(|decl| self.symbols.struct_member(&self.modules, decl, member))
                 .ok_or(TypeErr {
                     msg: "Invalid member for struct",
                     span: span.clone(),
@@ -330,10 +330,12 @@ impl TypeChecker<'_> {
         if visiting.contains(&decl) {
             return false;
         }
-        let Some(members) = self.symbols.struct_members(decl) else {
-            return false;
-        };
-        let members: Vec<Type> = members.iter().map(|(_, ty)| ty.clone()).collect();
+        let members: Vec<Type> = self
+            .symbols
+            .struct_members(&self.modules, decl)
+            .iter()
+            .map(|m| m.node.typename.clone())
+            .collect();
         visiting.push(decl);
         let ok = members.iter().all(|ty| match ty {
             Type::Struct(inner) => match self.symbols.struct_decl_of(inner) {
@@ -416,7 +418,8 @@ impl TypeChecker<'_> {
                     span: field.span.clone(),
                 });
             }
-            let Some(field_type) = decl.and_then(|d| self.symbols.struct_member(d, &field.node))
+            let Some(field_type) =
+                decl.and_then(|d| self.symbols.struct_member(&self.modules, d, &field.node))
             else {
                 return Err(TypeErr {
                     msg: "Invalid member for struct",
@@ -430,7 +433,7 @@ impl TypeChecker<'_> {
                 });
             }
         }
-        if Some(fields.len()) != decl.and_then(|d| self.symbols.struct_member_count(d)) {
+        if Some(fields.len()) != decl.map(|d| self.symbols.struct_members(&self.modules, d).len()) {
             return Err(TypeErr {
                 msg: "Struct literal must initialize every member",
                 span: span.clone(),
@@ -622,7 +625,8 @@ mod tests {
 
         let (symbols, program) = analyze(source);
         let module = &program.modules[0].module;
-        let mut checker = TypeChecker::new(&symbols);
+        let mut checker =
+            TypeChecker::new(&symbols, program.modules.iter().map(|m| &m.module).collect());
         checker.visit_module(module);
         let result = checker.check();
         assert!(
@@ -664,7 +668,8 @@ mod tests {
 
         let (symbols, program) = analyze(source);
         let module = &program.modules[0].module;
-        let mut checker = TypeChecker::new(&symbols);
+        let mut checker =
+            TypeChecker::new(&symbols, program.modules.iter().map(|m| &m.module).collect());
         checker.visit_module(module);
         let result = checker.check();
         assert!(result.is_err(), "source_text: {}", source);
@@ -679,7 +684,8 @@ mod tests {
 
         let (symbols, program) = analyze(source);
         let module = &program.modules[0].module;
-        let mut checker = TypeChecker::new(&symbols);
+        let mut checker =
+            TypeChecker::new(&symbols, program.modules.iter().map(|m| &m.module).collect());
         checker.visit_module(module);
 
         let errors = checker.check().expect_err("expected a type error");
@@ -807,7 +813,8 @@ mod tests {
 
         let (symbols, program) = analyze(source);
         let module = &program.modules[0].module;
-        let mut checker = TypeChecker::new(&symbols);
+        let mut checker =
+            TypeChecker::new(&symbols, program.modules.iter().map(|m| &m.module).collect());
         checker.visit_module(module);
 
         let errors = checker
@@ -993,7 +1000,8 @@ mod tests {
         "#;
         let (symbols, program) = analyze(source);
         let module = &program.modules[0].module;
-        let mut checker = TypeChecker::new(&symbols);
+        let mut checker =
+            TypeChecker::new(&symbols, program.modules.iter().map(|m| &m.module).collect());
         checker.visit_module(module);
         checker.check().expect("check");
         let (_, method) = checker.method_calls.iter().next().expect("one method call");
@@ -1441,7 +1449,8 @@ mod tests {
         "#;
         let (symbols, program) = analyze(source);
         let module = &program.modules[0].module;
-        let mut checker = TypeChecker::new(&symbols);
+        let mut checker =
+            TypeChecker::new(&symbols, program.modules.iter().map(|m| &m.module).collect());
         checker.visit_module(module);
         checker.check().expect("check");
 

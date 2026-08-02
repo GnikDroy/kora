@@ -13,6 +13,7 @@ pub use builtins::is_reference;
 
 pub struct TypeChecker<'a> {
     symbols: &'a SymbolTable,
+    modules: Vec<&'a Module>,
     current_return_type: Option<Type>,
     errors: Vec<TypeErr>,
     pub types: HashMap<NodeId, Type>,
@@ -22,9 +23,10 @@ pub struct TypeChecker<'a> {
 }
 
 impl<'a> TypeChecker<'a> {
-    pub fn new(symbols: &'a SymbolTable) -> TypeChecker<'a> {
+    pub fn new(symbols: &'a SymbolTable, modules: Vec<&'a Module>) -> TypeChecker<'a> {
         TypeChecker {
             symbols,
+            modules,
             current_return_type: None,
             errors: Vec::new(),
             types: HashMap::new(),
@@ -65,7 +67,8 @@ mod test_support {
     pub(crate) fn check_cases(cases: &[(&str, bool)]) {
         for (source, expect_ok) in cases {
             let (symbols, program) = analyze(source);
-            let mut checker = TypeChecker::new(&symbols);
+            let mut checker =
+                TypeChecker::new(&symbols, program.modules.iter().map(|m| &m.module).collect());
             checker.visit_module(&program.modules[0].module);
             assert_eq!(checker.check().is_ok(), *expect_ok, "source: {}", source);
         }
@@ -73,7 +76,8 @@ mod test_support {
 
     pub(crate) fn program_type_checks(mut program: LoadedProgram) -> bool {
         let symbols = resolve_program(&mut program).expect("resolve");
-        let mut checker = TypeChecker::new(&symbols);
+        let mut checker =
+            TypeChecker::new(&symbols, program.modules.iter().map(|m| &m.module).collect());
         for module in &program.modules {
             checker.visit_module(&module.module);
         }

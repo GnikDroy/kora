@@ -18,10 +18,14 @@ impl<'ctx> CodeGen<'ctx, '_> {
         if let Some(ty) = self.struct_types.get(&decl) {
             return Ok(*ty);
         }
-        let members = self.program.symbols.struct_members(decl).unwrap().to_vec();
+        let members = self
+            .program
+            .symbols
+            .struct_members(&self.modules, decl)
+            .to_vec();
         let field_types = members
             .iter()
-            .map(|(_, ty)| self.basic_type(ty, span))
+            .map(|m| self.basic_type(&m.node.typename, span))
             .collect::<Result<Vec<_>, _>>()?;
         let ty = self.context.opaque_struct_type(&self.program.emitted[&decl]);
         ty.set_body(&field_types, false);
@@ -32,10 +36,9 @@ impl<'ctx> CodeGen<'ctx, '_> {
     pub(super) fn struct_member_index(&self, decl: NodeId, member: &str) -> u32 {
         self.program
             .symbols
-            .struct_members(decl)
-            .unwrap()
+            .struct_members(&self.modules, decl)
             .iter()
-            .position(|(name, _)| name == member)
+            .position(|m| m.node.name == member)
             .unwrap() as u32
     }
 
@@ -79,9 +82,13 @@ impl<'ctx> CodeGen<'ctx, '_> {
         self.builder.position_at_end(entry);
 
         let object = self.gc_malloc(struct_type.size_of().unwrap(), "new");
-        let members = self.program.symbols.struct_members(decl).unwrap().to_vec();
-        for (index, (member, member_type)) in members.iter().enumerate() {
-            let value = match member_type {
+        let members = self
+            .program
+            .symbols
+            .struct_members(&self.modules, decl)
+            .to_vec();
+        for (index, member) in members.iter().enumerate() {
+            let value = match &member.node.typename {
                 Type::Struct(inner) => {
                     let inner_decl = self.struct_decl(inner);
                     let inner_default = self.struct_constructor(inner_decl, span)?;
@@ -93,7 +100,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
             };
             let field = self
                 .builder
-                .build_struct_gep(struct_type, object, index as u32, member)
+                .build_struct_gep(struct_type, object, index as u32, &member.node.name)
                 .unwrap();
             self.builder.build_store(field, value).unwrap();
         }

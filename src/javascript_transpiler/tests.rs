@@ -24,7 +24,8 @@ fn transpile_with_async(source: &str, async_externs: HashSet<String>) -> String 
         .unwrap_or_else(|errs| panic!("resolve: {errs:?}"));
     let module = &program.modules[0].module;
 
-    let mut checker = TypeChecker::new(&symbols);
+    let mut checker =
+        TypeChecker::new(&symbols, program.modules.iter().map(|m| &m.module).collect());
     checker.visit_module(module);
     checker
         .check()
@@ -46,7 +47,7 @@ fn transpile_with_async(source: &str, async_externs: HashSet<String>) -> String 
         async_externs,
         &emitted,
     );
-    let struct_members = super::struct_member_map(&symbols);
+    let struct_members = super::struct_member_map(&symbols, &program);
     let mut transpiler = JavascriptTranspiler {
         types: checker.types,
         method_calls,
@@ -397,7 +398,7 @@ fn transpile_program(
         super::method_call_names(&compiled.symbols, &compiled.method_calls, &compiled.emitted);
     let function_call_names =
         super::function_call_names(&compiled.symbols, &compiled.program, &compiled.emitted);
-    let struct_members = super::struct_member_map(&compiled.symbols);
+    let struct_members = super::struct_member_map(&compiled.symbols, &compiled.program);
     let modules: Vec<&parser::Module> =
         compiled.program.modules.iter().map(|m| &m.module).collect();
     let async_fns = super::resolve_async_fns(

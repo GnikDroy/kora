@@ -96,7 +96,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                     let member = self
                         .program
                         .symbols
-                        .struct_member(decl, &field.node)
+                        .struct_member(&self.modules, decl, &field.node)
                         .unwrap();
                     let value = self.lower_expression_expecting(value, &member)?;
                     let index = self.struct_member_index(decl, &field.node);
