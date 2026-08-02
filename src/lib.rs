@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 mod instantiate;
+mod ir;
 mod lexer;
 mod loader;
 mod mangle;
