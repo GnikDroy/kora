@@ -1,10 +1,9 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
 
+use crate::instantiate::InstanceOrigins;
 use crate::loader::LoadedProgram;
 use crate::parser::{NodeId, Type};
-
-pub(crate) type InstanceOrigins = HashMap<NodeId, (String, Vec<Type>)>;
 
 pub(crate) fn mangle(prefix: &str, name: &str) -> String {
     if prefix.is_empty() {

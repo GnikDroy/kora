@@ -1,4 +1,4 @@
-use super::{Chain, Instantiator, TypeSubstitutions};
+use super::{InstantiationStack, Instantiator, TypeSubstitutions};
 use crate::parser::{
     Expression, Function, GenericFunction, GenericImpl, GenericStruct, Impl, NodeId, Span, Spanned,
     Statement, Struct, StructRef, Type,
@@ -187,7 +187,7 @@ impl Instantiator<'_> {
         generic: &str,
         decl: &mut Spanned<Struct>,
         args: &[Type],
-        chain: &mut Chain,
+        stack: &mut InstantiationStack,
     ) {
         let def = &self.generic_structs[generic];
         let params: Vec<String> = def
@@ -198,7 +198,7 @@ impl Instantiator<'_> {
             .map(|p| p.node.clone())
             .collect();
         let subst: TypeSubstitutions = params.into_iter().zip(args.iter().cloned()).collect();
-        self.concretize_struct_members(&subst, decl, chain);
+        self.concretize_struct_members(&subst, decl, stack);
     }
 
     pub(super) fn instance_impls(
@@ -206,7 +206,7 @@ impl Instantiator<'_> {
         generic: &str,
         target: NodeId,
         args: &[Type],
-        chain: &mut Chain,
+        stack: &mut InstantiationStack,
     ) -> Vec<(usize, Spanned<Impl>)> {
         let scaffolds: Vec<(usize, Vec<String>, Spanned<Impl>)> = self.generic_structs[generic]
             .impls
@@ -228,7 +228,7 @@ impl Instantiator<'_> {
                 let subst: TypeSubstitutions =
                     params.into_iter().zip(args.iter().cloned()).collect();
                 for method in imp.node.functions.iter_mut() {
-                    self.concretize_function(module, &subst, method, chain);
+                    self.concretize_function(module, &subst, method, stack);
                 }
                 (module, imp)
             })
@@ -241,7 +241,7 @@ impl Instantiator<'_> {
         generic: &str,
         decl: &mut Spanned<Function>,
         args: &[Type],
-        chain: &mut Chain,
+        stack: &mut InstantiationStack,
     ) {
         let def = &self.generic_fns[&(module, generic.to_string())];
         let params: Vec<String> = def
@@ -252,17 +252,17 @@ impl Instantiator<'_> {
             .map(|p| p.node.clone())
             .collect();
         let subst: TypeSubstitutions = params.into_iter().zip(args.iter().cloned()).collect();
-        self.concretize_function(module, &subst, decl, chain);
+        self.concretize_function(module, &subst, decl, stack);
     }
 
     pub(super) fn concretize_program(&mut self) {
         let empty = TypeSubstitutions::new();
         for m in 0..self.program.modules.len() {
-            let mut chain = Chain::new();
+            let mut stack = InstantiationStack::new();
 
             let mut functions = std::mem::take(&mut self.program.modules[m].module.functions);
             for func in functions.iter_mut() {
-                self.concretize_function(m, &empty, func, &mut chain);
+                self.concretize_function(m, &empty, func, &mut stack);
             }
             functions.extend(std::mem::take(
                 &mut self.program.modules[m].module.functions,
@@ -271,14 +271,14 @@ impl Instantiator<'_> {
 
             let mut structs = std::mem::take(&mut self.program.modules[m].module.structs);
             for decl in structs.iter_mut() {
-                self.concretize_struct_members(&empty, decl, &mut chain);
+                self.concretize_struct_members(&empty, decl, &mut stack);
             }
             structs.extend(std::mem::take(&mut self.program.modules[m].module.structs));
             self.program.modules[m].module.structs = structs;
 
             let mut impls = std::mem::take(&mut self.program.modules[m].module.impls);
             for imp in impls.iter_mut() {
-                self.concretize_impl_methods(m, &empty, imp, &mut chain);
+                self.concretize_impl_methods(m, &empty, imp, &mut stack);
             }
             impls.extend(std::mem::take(&mut self.program.modules[m].module.impls));
             self.program.modules[m].module.impls = impls;
@@ -290,28 +290,28 @@ impl Instantiator<'_> {
         module: usize,
         subst: &TypeSubstitutions,
         func: &mut Spanned<Function>,
-        chain: &mut Chain,
+        stack: &mut InstantiationStack,
     ) {
         let span = func.span.clone();
         if let Some(ty) = func.node.return_type.as_mut() {
-            self.concretize_type(subst, ty, &span, chain);
+            self.concretize_type(subst, ty, &span, stack);
         }
         for pair in func.node.arguments.iter_mut() {
             let span = pair.span.clone();
-            self.concretize_type(subst, &mut pair.node.typename, &span, chain);
+            self.concretize_type(subst, &mut pair.node.typename, &span, stack);
         }
-        self.concretize_statement(module, subst, &mut func.node.statement, chain);
+        self.concretize_statement(module, subst, &mut func.node.statement, stack);
     }
 
     pub(super) fn concretize_struct_members(
         &mut self,
         subst: &TypeSubstitutions,
         decl: &mut Spanned<Struct>,
-        chain: &mut Chain,
+        stack: &mut InstantiationStack,
     ) {
         for member in decl.node.members.iter_mut() {
             let span = member.span.clone();
-            self.concretize_type(subst, &mut member.node.typename, &span, chain);
+            self.concretize_type(subst, &mut member.node.typename, &span, stack);
         }
     }
 
@@ -320,14 +320,14 @@ impl Instantiator<'_> {
         module: usize,
         subst: &TypeSubstitutions,
         imp: &mut Spanned<Impl>,
-        chain: &mut Chain,
+        stack: &mut InstantiationStack,
     ) {
         let struct_ref = &mut imp.node.struct_ref;
         if struct_ref.target.is_none() {
             struct_ref.target = self.concrete_structs.get(&struct_ref.name.node).copied();
         }
         for method in imp.node.functions.iter_mut() {
-            self.concretize_function(module, subst, method, chain);
+            self.concretize_function(module, subst, method, stack);
         }
     }
 
@@ -336,43 +336,43 @@ impl Instantiator<'_> {
         module: usize,
         subst: &TypeSubstitutions,
         stmt: &mut Spanned<Statement>,
-        chain: &mut Chain,
+        stack: &mut InstantiationStack,
     ) {
         let span = stmt.span.clone();
         match &mut stmt.node {
             Statement::Empty | Statement::Break | Statement::Continue => {}
-            Statement::Simple(expr) => self.concretize_expression(module, subst, expr, chain),
+            Statement::Simple(expr) => self.concretize_expression(module, subst, expr, stack),
             Statement::Return(expr) => {
                 if let Some(expr) = expr.as_mut() {
-                    self.concretize_expression(module, subst, expr, chain);
+                    self.concretize_expression(module, subst, expr, stack);
                 }
             }
             Statement::Let(_, ty, expr) => {
                 if let Some(ty) = ty.as_mut() {
-                    self.concretize_type(subst, ty, &span, chain);
+                    self.concretize_type(subst, ty, &span, stack);
                 }
-                self.concretize_expression(module, subst, expr, chain);
+                self.concretize_expression(module, subst, expr, stack);
             }
             Statement::While(cond, body) => {
-                self.concretize_expression(module, subst, cond, chain);
-                self.concretize_statement(module, subst, body, chain);
+                self.concretize_expression(module, subst, cond, stack);
+                self.concretize_statement(module, subst, body, stack);
             }
             Statement::For(init, cond, step, body) => {
-                self.concretize_statement(module, subst, init, chain);
-                self.concretize_expression(module, subst, cond, chain);
-                self.concretize_expression(module, subst, step, chain);
-                self.concretize_statement(module, subst, body, chain);
+                self.concretize_statement(module, subst, init, stack);
+                self.concretize_expression(module, subst, cond, stack);
+                self.concretize_expression(module, subst, step, stack);
+                self.concretize_statement(module, subst, body, stack);
             }
             Statement::If(cond, if_case, else_case) => {
-                self.concretize_expression(module, subst, cond, chain);
-                self.concretize_statement(module, subst, if_case, chain);
+                self.concretize_expression(module, subst, cond, stack);
+                self.concretize_statement(module, subst, if_case, stack);
                 if let Some(else_case) = else_case.as_mut() {
-                    self.concretize_statement(module, subst, else_case, chain);
+                    self.concretize_statement(module, subst, else_case, stack);
                 }
             }
             Statement::Compound(stmts) => {
                 for stmt in stmts.iter_mut() {
-                    self.concretize_statement(module, subst, stmt, chain);
+                    self.concretize_statement(module, subst, stmt, stack);
                 }
             }
         }
@@ -383,7 +383,7 @@ impl Instantiator<'_> {
         module: usize,
         subst: &TypeSubstitutions,
         expr: &mut Spanned<Expression>,
-        chain: &mut Chain,
+        stack: &mut InstantiationStack,
     ) {
         let span = expr.span.clone();
         let mut replacement = None;
@@ -396,46 +396,46 @@ impl Instantiator<'_> {
             | Expression::NoneLiteral
             | Expression::Identifier(_) => {}
             Expression::Unwrap(inner) | Expression::Unary(_, inner) => {
-                self.concretize_expression(module, subst, inner, chain)
+                self.concretize_expression(module, subst, inner, stack)
             }
             Expression::Array(exprs) => {
                 for expr in exprs.iter_mut() {
-                    self.concretize_expression(module, subst, expr, chain);
+                    self.concretize_expression(module, subst, expr, stack);
                 }
             }
             Expression::Binary(left, _, right) | Expression::ArrayIndex(left, right) => {
-                self.concretize_expression(module, subst, left, chain);
-                self.concretize_expression(module, subst, right, chain);
+                self.concretize_expression(module, subst, left, stack);
+                self.concretize_expression(module, subst, right, stack);
             }
             Expression::Call(callee, args) => {
-                self.concretize_expression(module, subst, callee, chain);
+                self.concretize_expression(module, subst, callee, stack);
                 for arg in args.iter_mut() {
-                    self.concretize_expression(module, subst, arg, chain);
+                    self.concretize_expression(module, subst, arg, stack);
                 }
             }
             Expression::Cast(inner, ty) => {
-                self.concretize_expression(module, subst, inner, chain);
-                self.concretize_type(subst, ty, &span, chain);
+                self.concretize_expression(module, subst, inner, stack);
+                self.concretize_type(subst, ty, &span, stack);
             }
-            Expression::Access(inner, _) => self.concretize_expression(module, subst, inner, chain),
+            Expression::Access(inner, _) => self.concretize_expression(module, subst, inner, stack),
             Expression::Construct(ty, size) => {
-                self.concretize_type(subst, ty, &span, chain);
+                self.concretize_type(subst, ty, &span, stack);
                 if let Some(size) = size.as_mut() {
-                    self.concretize_expression(module, subst, size, chain);
+                    self.concretize_expression(module, subst, size, stack);
                 }
             }
             Expression::StructLiteral(ty, fields) => {
-                self.concretize_type(subst, ty, &span, chain);
+                self.concretize_type(subst, ty, &span, stack);
                 for (_, value) in fields.iter_mut() {
-                    self.concretize_expression(module, subst, value, chain);
+                    self.concretize_expression(module, subst, value, stack);
                 }
             }
             Expression::TypeApplication(callee, args) => {
                 for arg in args.iter_mut() {
-                    self.concretize_type(subst, arg, &span, chain);
+                    self.concretize_type(subst, arg, &span, stack);
                 }
                 replacement =
-                    self.resolve_type_application(module, expr.id, callee, args, &span, chain);
+                    self.resolve_type_application(module, expr.id, callee, args, &span, stack);
             }
         }
         if let Some(node) = replacement {
@@ -448,7 +448,7 @@ impl Instantiator<'_> {
         subst: &TypeSubstitutions,
         ty: &mut Type,
         span: &Span,
-        chain: &mut Chain,
+        stack: &mut InstantiationStack,
     ) {
         let mut replacement = None;
         match ty {
@@ -473,7 +473,7 @@ impl Instantiator<'_> {
                 let generic_name = name.node.clone();
                 let name_span = name.span.clone();
                 for arg in args.iter_mut() {
-                    self.concretize_type(subst, arg, span, chain);
+                    self.concretize_type(subst, arg, span, stack);
                 }
                 if subst.contains_key(&generic_name) {
                     self.error(
@@ -486,7 +486,7 @@ impl Instantiator<'_> {
                         &name_span,
                     );
                 } else if let Some(decl) =
-                    self.instantiate_struct(&generic_name, args, &name_span, chain)
+                    self.instantiate_struct(&generic_name, args, &name_span, stack)
                 {
                     replacement = Some(Type::Struct(StructRef {
                         name: Spanned::new(generic_name, name_span),
@@ -494,9 +494,9 @@ impl Instantiator<'_> {
                     }));
                 }
             }
-            Type::Array(inner) => self.concretize_type(subst, inner, span, chain),
+            Type::Array(inner) => self.concretize_type(subst, inner, span, stack),
             Type::Optional(inner) => {
-                self.concretize_type(subst, inner, span, chain);
+                self.concretize_type(subst, inner, span, stack);
                 if matches!(**inner, Type::Optional(_)) {
                     self.error(
                         "instantiation produces a nested optional; the argument is already optional"
@@ -507,10 +507,10 @@ impl Instantiator<'_> {
             }
             Type::Function(ret, args) => {
                 if let Some(ret) = ret.as_mut() {
-                    self.concretize_type(subst, ret, span, chain);
+                    self.concretize_type(subst, ret, span, stack);
                 }
                 for arg in args.iter_mut() {
-                    self.concretize_type(subst, arg, span, chain);
+                    self.concretize_type(subst, arg, span, stack);
                 }
             }
         }
@@ -527,7 +527,7 @@ impl Instantiator<'_> {
         callee: &Spanned<Expression>,
         args: &[Type],
         span: &Span,
-        chain: &mut Chain,
+        stack: &mut InstantiationStack,
     ) -> Option<Expression> {
         match &callee.node {
             Expression::Identifier(name) => {
@@ -538,7 +538,7 @@ impl Instantiator<'_> {
                     );
                     return None;
                 }
-                let decl = self.instantiate_function(module, name, args, span, chain)?;
+                let decl = self.instantiate_function(module, name, args, span, stack)?;
                 self.resolutions.insert(mention, decl);
                 Some(Expression::Identifier(name.clone()))
             }
@@ -561,7 +561,7 @@ impl Instantiator<'_> {
                     );
                     return None;
                 }
-                let decl = self.instantiate_function(target, member, args, span, chain)?;
+                let decl = self.instantiate_function(target, member, args, span, stack)?;
                 self.resolutions.insert(mention, decl);
                 Some(Expression::Access(inner.clone(), member.clone()))
             }

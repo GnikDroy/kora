@@ -7,7 +7,6 @@ pub use errors::*;
 use std::collections::{HashMap, HashSet};
 
 use crate::loader::LoadedProgram;
-use crate::mangle::InstanceOrigins;
 use crate::parser::{NodeId, Span, Type};
 
 use collect::{GenericFns, GenericStructs, collect};
@@ -15,8 +14,11 @@ use concretize::{scaffold_function, scaffold_struct};
 
 const DEPTH_LIMIT: usize = 64;
 
+pub type InstanceOrigins = HashMap<NodeId, (String, Vec<Type>)>;
+
 pub(crate) type TypeSubstitutions = HashMap<String, Type>;
-pub(crate) type Chain = Vec<(String, Span)>;
+
+pub(crate) type InstantiationStack = Vec<(String, Span)>;
 
 #[derive(Default)]
 pub struct Instantiated {
@@ -32,15 +34,13 @@ pub struct Instantiator<'p> {
 
     // usize here is the module index
     imports: Vec<HashMap<String, usize>>,
+    concrete_structs: HashMap<String, NodeId>,
 
     generic_structs: GenericStructs,
     generic_fns: GenericFns,
-    concrete_structs: HashMap<String, NodeId>,
 
     struct_registry: HashMap<(String, Vec<Type>), NodeId>,
-
-    // usize here is the module index
-    fn_registry: HashMap<(usize, String, Vec<Type>), NodeId>,
+    fn_registry: HashMap<(usize, String, Vec<Type>), NodeId>, // usize here is the module index
 
     resolutions: HashMap<NodeId, NodeId>,
     fn_instances: HashSet<NodeId>,
@@ -143,7 +143,7 @@ impl<'p> Instantiator<'p> {
         name: &str,
         args: &[Type],
         use_span: &Span,
-        chain: &mut Chain,
+        stack: &mut InstantiationStack,
     ) -> Option<NodeId> {
         let key = (name.to_string(), args.to_vec());
         if let Some(&decl) = self.struct_registry.get(&key) {
@@ -162,12 +162,12 @@ impl<'p> Instantiator<'p> {
             );
             return None;
         }
-        let display = self.display_instance(name, args);
-        if chain.len() >= DEPTH_LIMIT {
+        let display = display_instance(name, args, &self.origins);
+        if stack.len() >= DEPTH_LIMIT {
             self.error(
                 format!(
                     "instantiation depth limit ({DEPTH_LIMIT}) exceeded at `{display}`: {}",
-                    chain_summary(chain)
+                    stack_summary(stack)
                 ),
                 use_span,
             );
@@ -188,14 +188,14 @@ impl<'p> Instantiator<'p> {
             .instances
             .push((display.clone(), use_span.clone()));
 
-        chain.push((display, use_span.clone()));
-        self.instance_struct(name, &mut decl, args, chain);
+        stack.push((display, use_span.clone()));
+        self.instance_struct(name, &mut decl, args, stack);
         let id = decl.id;
         self.program.modules[module].module.structs.push(decl);
-        for (impl_module, imp) in self.instance_impls(name, id, args, chain) {
+        for (impl_module, imp) in self.instance_impls(name, id, args, stack) {
             self.program.modules[impl_module].module.impls.push(imp);
         }
-        chain.pop();
+        stack.pop();
         Some(id)
     }
 
@@ -205,7 +205,7 @@ impl<'p> Instantiator<'p> {
         name: &str,
         args: &[Type],
         use_span: &Span,
-        chain: &mut Chain,
+        stack: &mut InstantiationStack,
     ) -> Option<NodeId> {
         let key = (module, name.to_string(), args.to_vec());
         if let Some(&decl) = self.fn_registry.get(&key) {
@@ -224,12 +224,12 @@ impl<'p> Instantiator<'p> {
             );
             return None;
         }
-        let display = self.display_instance(name, args);
-        if chain.len() >= DEPTH_LIMIT {
+        let display = display_instance(name, args, &self.origins);
+        if stack.len() >= DEPTH_LIMIT {
             self.error(
                 format!(
                     "instantiation depth limit ({DEPTH_LIMIT}) exceeded at `{display}`: {}",
-                    chain_summary(chain)
+                    stack_summary(stack)
                 ),
                 use_span,
             );
@@ -248,46 +248,46 @@ impl<'p> Instantiator<'p> {
             .instances
             .push((display.clone(), use_span.clone()));
 
-        chain.push((display, use_span.clone()));
-        self.instance_function(module, name, &mut decl, args, chain);
-        chain.pop();
+        stack.push((display, use_span.clone()));
+        self.instance_function(module, name, &mut decl, args, stack);
+        stack.pop();
         let id = decl.id;
         self.program.modules[module].module.functions.push(decl);
         Some(id)
     }
 
-    fn display_type(&self, ty: &Type) -> String {
-        match ty {
-            Type::Int => "int".to_string(),
-            Type::Real => "real".to_string(),
-            Type::Bool => "bool".to_string(),
-            Type::Char => "char".to_string(),
-            Type::Opaque => "opaque".to_string(),
-            Type::Array(inner) => format!("[{}]", self.display_type(inner)),
-            Type::Optional(inner) => format!("{}?", self.display_type(inner)),
-            Type::Struct(sr) => sr
-                .target
-                .and_then(|t| self.origins.get(&t))
-                .map(|(generic, args)| self.display_instance(generic, args))
-                .unwrap_or_else(|| sr.name.node.clone()),
-            Type::Generic(name, args) => self.display_instance(&name.node, args),
-            Type::Function(_, _) => "fn".to_string(),
-        }
-    }
-
-    fn display_instance(&self, name: &str, args: &[Type]) -> String {
-        let args = args
-            .iter()
-            .map(|a| self.display_type(a))
-            .collect::<Vec<_>>()
-            .join(", ");
-        format!("{name}<{args}>")
-    }
-
 }
 
-fn chain_summary(chain: &Chain) -> String {
-    let names: Vec<&str> = chain.iter().map(|(name, _)| name.as_str()).collect();
+pub(crate) fn display_type(ty: &Type, origins: &InstanceOrigins) -> String {
+    match ty {
+        Type::Int => "int".to_string(),
+        Type::Real => "real".to_string(),
+        Type::Bool => "bool".to_string(),
+        Type::Char => "char".to_string(),
+        Type::Opaque => "opaque".to_string(),
+        Type::Array(inner) => format!("[{}]", display_type(inner, origins)),
+        Type::Optional(inner) => format!("{}?", display_type(inner, origins)),
+        Type::Struct(sr) => sr
+            .target
+            .and_then(|t| origins.get(&t))
+            .map(|(generic, args)| display_instance(generic, args, origins))
+            .unwrap_or_else(|| sr.name.node.clone()),
+        Type::Generic(name, args) => display_instance(&name.node, args, origins),
+        Type::Function(_, _) => "fn".to_string(),
+    }
+}
+
+fn display_instance(name: &str, args: &[Type], origins: &InstanceOrigins) -> String {
+    let args = args
+        .iter()
+        .map(|a| display_type(a, origins))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("{name}<{args}>")
+}
+
+fn stack_summary(stack: &InstantiationStack) -> String {
+    let names: Vec<&str> = stack.iter().map(|(name, _)| name.as_str()).collect();
     if names.len() <= 6 {
         names.join(" -> ")
     } else {
@@ -515,7 +515,10 @@ mod tests {
             .iter()
             .find(|s| s.node.name == "box")
             .unwrap();
-        assert_eq!(out.origins[&box_decl.id], ("box".to_string(), vec![Type::Int]));
+        assert_eq!(
+            out.origins[&box_decl.id],
+            ("box".to_string(), vec![Type::Int])
+        );
         assert!(matches!(
             &uses.node.members[0].node.typename,
             Type::Struct(sr) if sr.target == Some(box_decl.id)

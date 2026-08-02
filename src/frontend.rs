@@ -3,10 +3,9 @@ use std::error::Error;
 use std::fmt;
 use std::path::Path;
 
-use crate::instantiate::{GenericNote, InstantiateErr};
+use crate::instantiate::{GenericNote, InstanceOrigins, InstantiateErr};
 use crate::lexer::{LexerErr, Position};
 use crate::loader::{LoadErr, LoadedProgram, Loader};
-use crate::mangle::InstanceOrigins;
 use crate::parser::{ASTVisitor, ExternFunction, NodeId, ParseErr, Span, Type};
 use crate::semantic_analyzer::{
     ArrayMethod, Resolver, ReturnChecker, SymbolId, SymbolTable, TypeChecker, TypeErr,
