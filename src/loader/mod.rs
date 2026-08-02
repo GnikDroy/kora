@@ -1,14 +1,16 @@
 //! Builds the source graph
 
 mod errors;
+mod paths;
 pub use errors::*;
 
 use std::collections::{HashMap, VecDeque};
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 use crate::CompileErr;
 use crate::lexer::Lexer;
 use crate::parser::{Module, Parser, SourceId, Span};
+use paths::{invalid_component, module_prefix, resolve_path};
 
 #[derive(Debug)]
 pub struct SourceEntry {
@@ -28,54 +30,13 @@ pub struct LoadedModule {
     pub id: SourceId,
     pub module: Module,
     pub imports: Vec<ResolvedImport>,
+    pub prefix: String,
 }
 
 #[derive(Debug)]
 pub struct LoadedProgram {
     pub sources: Vec<SourceEntry>,
     pub modules: Vec<LoadedModule>,
-}
-
-fn resolve_path(importer: &Path, rel: &str) -> Option<PathBuf> {
-    let mut joined = importer
-        .parent()
-        .unwrap_or_else(|| Path::new(""))
-        .to_path_buf();
-    joined.push(rel);
-
-    let mut out = PathBuf::new();
-    for component in joined.components() {
-        match component {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                if !out.pop() {
-                    // None when we try to escape root.
-                    return None;
-                }
-            }
-            other => out.push(other.as_os_str()),
-        }
-    }
-    Some(out)
-}
-
-fn invalid_component(rel: &str) -> Option<String> {
-    for component in Path::new(rel).components() {
-        let Component::Normal(name) = component else {
-            continue;
-        };
-        let name = name.to_string_lossy();
-        let name = name.strip_suffix(".kora").unwrap_or(&name);
-        let mut chars = name.chars();
-        let valid = chars
-            .next()
-            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
-            && chars.all(|c| c.is_ascii_alphanumeric() || c == '_');
-        if !valid {
-            return Some(name.to_string());
-        }
-    }
-    None
 }
 
 pub struct Loader<P> {
@@ -193,10 +154,21 @@ impl<P: Fn(&Path) -> Option<String>> Loader<P> {
             });
         }
 
+        let prefix = if id.0 == 0 {
+            String::new()
+        } else {
+            let root = self.sources[0]
+                .path
+                .parent()
+                .unwrap_or_else(|| Path::new(""));
+            module_prefix(&path, root)
+        };
+
         self.modules.push(LoadedModule {
             id,
             module,
             imports,
+            prefix,
         });
     }
 

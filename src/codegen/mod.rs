@@ -66,7 +66,7 @@ pub fn lower<'ctx>(
         array_type: None,
         array_equality_fns: HashMap::new(),
         default_fns: HashMap::new(),
-        emitted: crate::mangle::emitted_names(&program.program, &program.origins),
+        emitted: crate::mangle::emitted_symbols(&program.program, &program.origins),
         frame: None,
     };
     for module in program.program.modules.iter() {

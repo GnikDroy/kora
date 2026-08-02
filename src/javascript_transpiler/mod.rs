@@ -18,7 +18,7 @@ pub fn transpile(
     compiled: crate::CompiledProgram,
     async_externs: HashSet<String>,
 ) -> Result<String, String> {
-    let emitted = crate::mangle::emitted_names(&compiled.program, &compiled.origins);
+    let emitted = crate::mangle::emitted_symbols(&compiled.program, &compiled.origins);
     let method_calls = method_call_names(&compiled.symbols, &compiled.method_calls, &emitted);
     let function_call_names = function_call_names(&compiled.symbols, &compiled.program, &emitted);
     let struct_members = struct_member_map(&compiled.symbols);

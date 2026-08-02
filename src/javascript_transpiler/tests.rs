@@ -36,7 +36,7 @@ fn transpile_with_async(source: &str, async_externs: HashSet<String>) -> String 
         .check()
         .unwrap_or_else(|errs| panic!("return check: {errs:?}"));
 
-    let emitted = crate::mangle::emitted_names(&program, &instances.origins);
+    let emitted = crate::mangle::emitted_symbols(&program, &instances.origins);
     let method_calls = super::method_call_names(&symbols, &checker.method_calls, &emitted);
     let function_call_names = super::function_call_names(&symbols, &program, &emitted);
     let async_fns = super::resolve_async_fns(
@@ -393,7 +393,7 @@ fn transpile_program(
     })
     .unwrap_or_else(|e| panic!("compile: {e:?}"));
 
-    let emitted = crate::mangle::emitted_names(&compiled.program, &compiled.origins);
+    let emitted = crate::mangle::emitted_symbols(&compiled.program, &compiled.origins);
     let method_calls =
         super::method_call_names(&compiled.symbols, &compiled.method_calls, &emitted);
     let function_call_names = super::function_call_names(&compiled.symbols, &compiled.program, &emitted);
