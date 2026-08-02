@@ -1,68 +1,12 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
-use crate::{
-    javascript_transpiler::JavascriptTranspiler,
-    loader::Loader,
-    parser::{self, ASTVisitor},
-    semantic_analyzer::{Resolver, ReturnChecker, TypeChecker},
-};
-
 fn transpile(source: &str) -> String {
     transpile_with_async(source, HashSet::new())
 }
 
 fn transpile_with_async(source: &str, async_externs: HashSet<String>) -> String {
-    let map: HashMap<String, String> = [("main.kora".to_string(), source.to_string())].into();
-    let provider = move |p: &Path| p.to_str().and_then(|s| map.get(s)).cloned();
-    let mut program = Loader::new(&provider).load("main.kora").expect("load");
-    let instances = crate::instantiate::Instantiator::new(&mut program)
-        .run()
-        .expect("instantiate");
-    let symbols = Resolver::new()
-        .resolve_program(&program, &instances)
-        .unwrap_or_else(|errs| panic!("resolve: {errs:?}"));
-    let module = &program.modules[0].module;
-
-    let mut checker =
-        TypeChecker::new(&symbols, program.modules.iter().map(|m| &m.module).collect());
-    checker.visit_module(module);
-    checker
-        .check()
-        .unwrap_or_else(|errs| panic!("type check: {errs:?}"));
-
-    let mut return_checker = ReturnChecker::new();
-    return_checker.visit_module(module);
-    return_checker
-        .check()
-        .unwrap_or_else(|errs| panic!("return check: {errs:?}"));
-
-    let emitted = crate::mangle::emitted_symbols(&program, &instances.origins);
-    let method_calls = super::method_call_names(&symbols, &checker.method_calls, &emitted);
-    let function_call_names = super::function_call_names(&symbols, &program, &emitted);
-    let async_fns = super::resolve_async_fns(
-        &[module],
-        &function_call_names,
-        &method_calls,
-        async_externs,
-        &emitted,
-    );
-    let struct_members = super::struct_member_map(&symbols, &program);
-    let mut transpiler = JavascriptTranspiler {
-        types: checker.types,
-        method_calls,
-        array_method_calls: checker.array_method_calls,
-        struct_members,
-        function_call_names,
-        async_fns,
-        emitted,
-        ..JavascriptTranspiler::default()
-    };
-    transpiler.visit_module(module);
-    transpiler
-        .get_source()
-        .map(|s| s.to_string())
-        .unwrap_or_else(|errs| panic!("transpile: {errs:?}"))
+    transpile_program("main.kora", vec![("main.kora", source.to_string())], async_externs)
 }
 
 #[test]
@@ -387,42 +331,13 @@ fn transpile_program(
     files: Vec<(&str, String)>,
     async_externs: HashSet<String>,
 ) -> String {
-    use std::path::Path;
     let map: HashMap<String, String> = files.into_iter().map(|(k, v)| (k.to_string(), v)).collect();
     let compiled = crate::compile(entry, |p: &Path| {
         p.to_str().and_then(|s| map.get(s)).cloned()
     })
     .unwrap_or_else(|e| panic!("compile: {e:?}"));
 
-    let method_calls =
-        super::method_call_names(&compiled.symbols, &compiled.method_calls, &compiled.emitted);
-    let function_call_names =
-        super::function_call_names(&compiled.symbols, &compiled.program, &compiled.emitted);
-    let struct_members = super::struct_member_map(&compiled.symbols, &compiled.program);
-    let modules: Vec<&parser::Module> =
-        compiled.program.modules.iter().map(|m| &m.module).collect();
-    let async_fns = super::resolve_async_fns(
-        &modules,
-        &function_call_names,
-        &method_calls,
-        async_externs,
-        &compiled.emitted,
-    );
-    let mut transpiler = JavascriptTranspiler {
-        types: compiled.types,
-        method_calls,
-        array_method_calls: compiled.array_method_calls,
-        struct_members,
-        function_call_names,
-        async_fns,
-        emitted: compiled.emitted,
-        ..JavascriptTranspiler::default()
-    };
-    transpiler.emit_program(&modules);
-    transpiler
-        .get_source()
-        .map(|s| s.to_string())
-        .unwrap_or_else(|e| panic!("transpile: {e:?}"))
+    super::transpile(compiled, async_externs).unwrap_or_else(|e| panic!("transpile: {e}"))
 }
 
 #[test]

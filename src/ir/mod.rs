@@ -1,6 +1,5 @@
 mod lower;
 
-#[allow(unused_imports)]
 pub(crate) use lower::lower;
 
 use std::collections::HashMap;
@@ -114,6 +113,14 @@ impl Index<ExternId> for Program {
 
     fn index(&self, id: ExternId) -> &ExternDef {
         &self.externs[id.0 as usize]
+    }
+}
+
+impl Index<LocalId> for FunctionDef {
+    type Output = Local;
+
+    fn index(&self, id: LocalId) -> &Local {
+        &self.locals[id.0 as usize]
     }
 }
 

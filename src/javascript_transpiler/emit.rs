@@ -1,7 +1,9 @@
-use super::JavascriptTranspiler;
-use super::error::TranspilerErr;
-use crate::parser::*;
-use crate::semantic_analyzer::ArrayMethod;
+use std::collections::HashSet;
+
+use crate::ir::{
+    ArrayOp, BinOp, Block, CastKind, Expression, ExpressionKind, ExternDef, FunctionDef, LocalId,
+    Place, PlaceKind, Program, Statement, StructId, Type, TypeId, UnOp,
+};
 
 const INTRINSICS: &str = "\
 function __kora_panic(message) {
@@ -69,626 +71,611 @@ function __kora_runtime_check_len(n) {
 }
 ";
 
-fn compares_structurally(t: Option<&Type>) -> bool {
-    match t {
-        Some(Type::Array(_)) => true,
-        Some(Type::Optional(inner)) => matches!(**inner, Type::Array(_)),
-        _ => false,
-    }
+pub(crate) fn emit(program: &Program, async_fns: HashSet<String>) -> String {
+    let mut emitter = Emitter {
+        program,
+        async_fns,
+        func: None,
+        out: String::new(),
+    };
+    emitter.program();
+    emitter.out
 }
 
-impl JavascriptTranspiler {
-    #[rustfmt::skip]
-    fn repr_unary_operator(op: &UnaryOp) -> &'static str {
-        use UnaryOp::*;
-        match op {
-            Negate => "-",
-            Not    => "!",
-        }
-    }
-
-    #[rustfmt::skip]
-    fn repr_binary_operator(op: &BinaryOp) -> &'static str {
-        use BinaryOp::*;
-        match op {
-            Assign       => "=",
-            Add          => "+",
-            Subtract     => "-",
-            Multiply     => "*",
-            Divide       => "/",
-            Modulo       => "%",
-            Equality     => "===",
-            NotEquality  => "!==",
-            And          => "&&",
-            Or           => "||",
-            Greater      => ">",
-            GreaterEqual => ">=",
-            Less         => "<",
-            LessEqual    => "<=",
-            BitAnd       => "&",
-            BitOr        => "|",
-            BitXor       => "^",
-            ShiftLeft    => "<<",
-            ShiftRight   => ">>",
-            Cast         => panic!(),
-        }
-    }
-
-    fn operand(&mut self, e: &Spanned<Expression>) {
-        if matches!(e.node, Expression::Binary(..) | Expression::Unary(..)) {
-            self.source.push('(');
-            self.visit_expression(e);
-            self.source.push(')');
-        } else {
-            self.visit_expression(e);
-        }
-    }
-
-    /// NOTE: Type checker rejects struct cycles, so we terminate.
-    fn emit_default(&mut self, ty: &Type) {
-        match ty {
-            Type::Struct(sr) => self.emit_struct_zero(sr.target),
-            Type::Array(_) => self.source.push_str("[]"),
-            Type::Optional(_) | Type::Opaque => self.source.push_str("null"),
-            Type::Real => self.source.push_str("0.0"),
-            Type::Bool => self.source.push_str("false"),
-            Type::Char => self.source.push_str("\"\\0\""),
-            _ => self.source.push('0'),
-        }
-    }
-
-    fn emit_struct_zero(&mut self, decl: Option<NodeId>) {
-        let members = decl
-            .and_then(|d| self.struct_members.get(&d).cloned())
-            .unwrap_or_default();
-        self.source.push_str("({");
-        for (i, (field, ty)) in members.iter().enumerate() {
-            if i > 0 {
-                self.source.push(',');
-            }
-            self.source.push_str(field);
-            self.source.push(':');
-            self.emit_default(ty);
-        }
-        self.source.push_str("})");
-    }
-
-    pub fn emit_program(&mut self, modules: &[&Module]) {
-        for module in modules {
-            walk_module(self, module);
-        }
-        self.source.push('\n');
-        self.source.push_str(INTRINSICS);
-    }
+struct Emitter<'a> {
+    program: &'a Program,
+    async_fns: HashSet<String>,
+    func: Option<&'a FunctionDef>,
+    out: String,
 }
 
-impl ASTVisitor for JavascriptTranspiler {
-    fn visit_module(&mut self, module: &Module) {
-        self.emit_program(&[module]);
+impl<'a> Emitter<'a> {
+    fn program(&mut self) {
+        let program = self.program;
+        for ext in &program.externs {
+            self.extern_guard(ext);
+        }
+        for func in &program.functions {
+            self.function(func);
+        }
+        self.out.push('\n');
+        self.out.push_str(INTRINSICS);
     }
 
-    fn visit_extern_function(&mut self, func: &Spanned<ExternFunction>) {
-        let name = &self.emitted[&func.id];
-        self.source.push_str(&format!(
+    fn extern_guard(&mut self, ext: &ExternDef) {
+        let name = &ext.symbol;
+        self.out.push_str(&format!(
             "var {name} = typeof {name} === \"function\" ? {name} : __kora_missing_extern(\"{name}\");"
         ));
     }
 
-    fn visit_struct(&mut self, _: &Spanned<Struct>) {}
+    fn local_name(&self, id: LocalId) -> &'a str {
+        &self.func.expect("emitting outside a function")[id].name
+    }
 
-    fn visit_function(&mut self, func: &Spanned<Function>) {
-        let name = self.emitted[&func.id].clone();
-        let arg_list: String = func
-            .node
-            .arguments
-            .iter()
-            .map(|arg| arg.node.name.as_str())
-            .collect::<Vec<_>>()
-            .join(", ");
-        let async_prefix = if self.async_fns.contains(&name) {
+    fn function(&mut self, func: &'a FunctionDef) {
+        self.func = Some(func);
+        let async_prefix = if self.async_fns.contains(&func.symbol) {
             "async "
         } else {
             ""
         };
-        self.source
-            .push_str(&format!("{}function {}({})", async_prefix, name, arg_list));
+        let args: String = func.locals[..func.params]
+            .iter()
+            .map(|l| l.name.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        self.out
+            .push_str(&format!("{}function {}({})", async_prefix, func.symbol, args));
+        self.out.push('{');
+        self.block(&func.body);
+        self.out.push('}');
+    }
 
-        match &func.node.statement.node {
-            Statement::Compound(_) => {
-                self.visit_statement(&func.node.statement);
+    fn braces(&mut self, block: &Block) {
+        self.out.push('{');
+        self.block(block);
+        self.out.push('}');
+    }
+
+    fn block(&mut self, block: &Block) {
+        for stmt in block {
+            self.statement(stmt);
+        }
+    }
+
+    fn statement(&mut self, stmt: &Statement) {
+        match stmt {
+            Statement::Let(local, expr) => {
+                self.out.push_str(&format!("let {} = ", self.local_name(*local)));
+                self.expr(expr);
+                self.out.push(';');
             }
-            _ => {
-                self.source.push('{');
-                self.visit_statement(&func.node.statement);
-                self.source.push('}');
+            Statement::Expression(expr) => {
+                self.expr(expr);
+                self.out.push(';');
             }
-        }
-    }
-
-    fn visit_statement(&mut self, stmt: &Spanned<Statement>) {
-        walk_statement(self, stmt);
-        let needs_semicolon = matches!(
-            &stmt.node,
-            Statement::Simple(_)
-                | Statement::Return(_)
-                | Statement::Let(_, _, _)
-                | Statement::Break
-                | Statement::Continue
-        );
-        if needs_semicolon {
-            self.source.push(';');
-        }
-    }
-
-    fn visit_let_statement(
-        &mut self,
-        name: &Spanned<String>,
-        _typename: Option<&Type>,
-        expr: &Spanned<Expression>,
-    ) {
-        self.source.push_str(&format!("let {} = ", name.node));
-        self.visit_expression(expr);
-    }
-
-    fn visit_return_statement(&mut self, expr: Option<&Spanned<Expression>>, _span: &Span) {
-        self.source.push_str("return");
-        if let Some(expr) = expr {
-            self.source.push(' ');
-            self.visit_expression(expr);
-        }
-    }
-
-    fn visit_compound_statement(&mut self, stmts: &[Spanned<Statement>]) {
-        self.source.push('{');
-        walk_compound_statement(self, stmts);
-        self.source.push('}');
-    }
-
-    fn visit_while_statement(&mut self, cond: &Spanned<Expression>, stmt: &Spanned<Statement>) {
-        self.source.push_str("while (");
-        self.visit_expression(cond);
-        self.source.push(')');
-        self.visit_statement(stmt);
-    }
-
-    fn visit_for_statement(
-        &mut self,
-        init: &Spanned<Statement>,
-        cond: &Spanned<Expression>,
-        step: &Spanned<Expression>,
-        body: &Spanned<Statement>,
-    ) {
-        self.source.push_str("for (");
-        walk_statement(self, init);
-        self.source.push(';');
-        self.visit_expression(cond);
-        self.source.push(';');
-        self.visit_expression(step);
-        self.source.push(')');
-        self.visit_statement(body);
-    }
-
-    fn visit_break_statement(&mut self, _span: &Span) {
-        self.source.push_str("break");
-    }
-
-    fn visit_continue_statement(&mut self, _span: &Span) {
-        self.source.push_str("continue");
-    }
-
-    fn visit_if_statement(
-        &mut self,
-        cond: &Spanned<Expression>,
-        if_case: &Spanned<Statement>,
-        else_case: Option<&Spanned<Statement>>,
-    ) {
-        self.source.push_str("if (");
-        self.visit_expression(cond);
-        self.source.push(')');
-        self.visit_statement(if_case);
-        if let Some(stmt) = else_case {
-            self.source.push_str("else ");
-            self.visit_statement(stmt);
-        }
-    }
-
-    fn visit_integer_literal(&mut self, num: &isize) {
-        self.source.push_str(&num.to_string());
-    }
-
-    fn visit_real_literal(&mut self, num: &f64) {
-        self.source.push_str(&num.to_string());
-    }
-
-    fn visit_boolean_literal(&mut self, b: &bool) {
-        self.source.push_str(if *b { "true" } else { "false" });
-    }
-
-    fn visit_char_literal(&mut self, c: &u8) {
-        let c = *c as char;
-        self.source.push('\'');
-        match c {
-            '\\' => self.source.push_str("\\\\"),
-            '\'' => self.source.push_str("\\'"),
-            '\n' => self.source.push_str("\\n"),
-            '\r' => self.source.push_str("\\r"),
-            '\t' => self.source.push_str("\\t"),
-            '\0' => self.source.push_str("\\0"),
-            _ => self.source.push(c),
-        }
-        self.source.push('\'');
-    }
-
-    fn visit_string_literal(&mut self, s: &String) {
-        // Kora's [char] is a mutable char array; a bare JS string would
-        // silently ignore `s[i] = 'x'`.
-        self.source.push_str("Array.from(");
-        self.source.push('"');
-        for c in s.chars() {
-            match c {
-                '\\' => self.source.push_str("\\\\"),
-                '"' => self.source.push_str("\\\""),
-                '\n' => self.source.push_str("\\n"),
-                '\r' => self.source.push_str("\\r"),
-                '\t' => self.source.push_str("\\t"),
-                '\0' => self.source.push_str("\\0"),
-                _ => self.source.push(c),
+            Statement::Return(expr) => {
+                self.out.push_str("return");
+                if let Some(expr) = expr {
+                    self.out.push(' ');
+                    self.expr(expr);
+                }
+                self.out.push(';');
+            }
+            Statement::Break => self.out.push_str("break;"),
+            Statement::Continue => self.out.push_str("continue;"),
+            Statement::While { cond, body } => {
+                self.out.push_str("while (");
+                self.expr(cond);
+                self.out.push(')');
+                self.braces(body);
+            }
+            Statement::For {
+                init,
+                cond,
+                step,
+                body,
+            } => {
+                self.out.push_str("for (");
+                self.for_init(init);
+                self.out.push(';');
+                self.expr(cond);
+                self.out.push(';');
+                self.expr(step);
+                self.out.push(')');
+                self.braces(body);
+            }
+            Statement::If {
+                cond,
+                then,
+                otherwise,
+            } => {
+                self.out.push_str("if (");
+                self.expr(cond);
+                self.out.push(')');
+                self.braces(then);
+                if let Some(otherwise) = otherwise {
+                    self.out.push_str("else ");
+                    self.braces(otherwise);
+                }
             }
         }
-        self.source.push('"');
-        self.source.push(')');
     }
 
-    fn visit_none_literal(&mut self) {
-        self.source.push_str("null");
-    }
-
-    fn visit_unwrap_expression(&mut self, expr: &Spanned<Expression>) {
-        self.source.push_str("__kora_runtime_unwrap(");
-        self.visit_expression(expr);
-        self.source.push(')');
-    }
-
-    fn visit_identifier(&mut self, s: &String) {
-        self.source.push_str(s.as_str());
-    }
-
-    fn visit_array(&mut self, exprs: &[Spanned<Expression>]) {
-        self.source.push('[');
-        for (i, expr) in exprs.iter().enumerate() {
+    fn for_init(&mut self, init: &Block) {
+        for (i, stmt) in init.iter().enumerate() {
             if i > 0 {
-                self.source.push(',');
+                self.out.push(',');
             }
-            self.visit_expression(expr);
+            match stmt {
+                Statement::Let(local, expr) => {
+                    self.out.push_str(&format!("let {} = ", self.local_name(*local)));
+                    self.expr(expr);
+                }
+                Statement::Expression(expr) => self.expr(expr),
+                _ => unreachable!("a for-init lowers to declarations and expressions"),
+            }
         }
-        self.source.push(']');
     }
 
-    fn visit_binary_expression(
-        &mut self,
-        left: &Spanned<Expression>,
-        op: &BinaryOp,
-        right: &Spanned<Expression>,
-    ) {
-        if matches!(op, BinaryOp::Assign)
-            && let Expression::ArrayIndex(array, index) = &left.node
-        {
-            self.source.push_str("__kora_runtime_index_set(");
-            self.visit_expression(array);
-            self.source.push(',');
-            self.visit_expression(index);
-            self.source.push(',');
-            self.visit_expression(right);
-            self.source.push(')');
-            return;
+    fn operand(&mut self, expr: &Expression) {
+        let compound = matches!(
+            expr.kind,
+            ExpressionKind::Binary { .. }
+                | ExpressionKind::And(..)
+                | ExpressionKind::Or(..)
+                | ExpressionKind::Unary { .. }
+                | ExpressionKind::Assign { .. }
+        );
+        if compound {
+            self.out.push('(');
+            self.expr(expr);
+            self.out.push(')');
+        } else {
+            self.expr(expr);
         }
+    }
 
-        if matches!(op, BinaryOp::Equality | BinaryOp::NotEquality)
-            && !matches!(left.node, Expression::NoneLiteral)
-            && !matches!(right.node, Expression::NoneLiteral)
-            && (compares_structurally(self.types.get(&left.id))
-                || compares_structurally(self.types.get(&right.id)))
-        {
-            if matches!(op, BinaryOp::NotEquality) {
-                self.source.push('!');
+    fn expr(&mut self, expr: &Expression) {
+        match &expr.kind {
+            ExpressionKind::Int(v) => self.out.push_str(&v.to_string()),
+            ExpressionKind::Real(v) => self.out.push_str(&v.to_string()),
+            ExpressionKind::Bool(b) => self.out.push_str(if *b { "true" } else { "false" }),
+            ExpressionKind::Char(c) => self.char_literal(*c),
+            ExpressionKind::Str(s) => self.string_literal(s),
+            ExpressionKind::None => self.out.push_str("null"),
+            ExpressionKind::Array(items) => {
+                self.out.push('[');
+                for (i, item) in items.iter().enumerate() {
+                    if i > 0 {
+                        self.out.push(',');
+                    }
+                    self.expr(item);
+                }
+                self.out.push(']');
             }
-            self.source.push_str("__kora_runtime_equality_intrinsic(");
-            self.visit_expression(left);
-            self.source.push(',');
-            self.visit_expression(right);
-            self.source.push(')');
-            return;
+            ExpressionKind::Local(local) => {
+                self.out.push_str(self.local_name(*local));
+            }
+            ExpressionKind::Field { object, index } => {
+                let name = self.field_name(object.ty, *index);
+                self.operand(object);
+                self.out.push('.');
+                self.out.push_str(&name);
+            }
+            ExpressionKind::Index { array, index } => {
+                self.out.push_str("__kora_runtime_index(");
+                self.expr(array);
+                self.out.push(',');
+                self.expr(index);
+                self.out.push(')');
+            }
+            ExpressionKind::Assign { place, value } => self.assign(place, value),
+            ExpressionKind::Binary { op, left, right } => self.binary(*op, left, right),
+            ExpressionKind::And(left, right) => {
+                self.operand(left);
+                self.out.push_str("&&");
+                self.operand(right);
+            }
+            ExpressionKind::Or(left, right) => {
+                self.operand(left);
+                self.out.push_str("||");
+                self.operand(right);
+            }
+            ExpressionKind::Unary { op, operand } => {
+                self.out.push_str(match op {
+                    UnOp::IntNeg | UnOp::RealNeg => "-",
+                    UnOp::BoolNot => "!",
+                });
+                self.operand(operand);
+            }
+            ExpressionKind::Cast { kind, operand } => self.cast(*kind, operand),
+            ExpressionKind::Call { function, args } => {
+                let symbol = self.program[*function].symbol.clone();
+                self.call(&symbol, args);
+            }
+            ExpressionKind::CallExtern { function, args } => {
+                let symbol = self.program[*function].symbol.clone();
+                self.call(&symbol, args);
+            }
+            ExpressionKind::ArrayOp { op, receiver, args } => self.array_op(*op, receiver, args),
+            ExpressionKind::Copy(inner) => {
+                if matches!(self.program.types[inner.ty], Type::Struct(_)) {
+                    self.out.push_str("({...");
+                    self.expr(inner);
+                    self.out.push_str("})");
+                } else {
+                    self.out.push_str("Array.from(");
+                    self.expr(inner);
+                    self.out.push(')');
+                }
+            }
+            ExpressionKind::StructLit { struct_, fields } => self.struct_literal(*struct_, fields),
+            ExpressionKind::DefaultStruct(struct_) => self.struct_zero(*struct_),
+            ExpressionKind::ArrayNew { len } => self.array_new(expr.ty, len),
+            ExpressionKind::Wrap(inner) => self.expr(inner),
+            ExpressionKind::Unwrap(inner) => {
+                self.out.push_str("__kora_runtime_unwrap(");
+                self.expr(inner);
+                self.out.push(')');
+            }
         }
+    }
 
-        // Optional comparison: `x == none`, `x != none`, or two optionals.
-        // Loose `==`/`!=` so a `none` (null) matches an uninitialized field
-        // (undefined) from a bare `new Struct`.
-        if matches!(op, BinaryOp::Equality | BinaryOp::NotEquality)
-            && (matches!(left.node, Expression::NoneLiteral)
-                || matches!(right.node, Expression::NoneLiteral)
-                || matches!(self.types.get(&left.id), Some(Type::Optional(_)))
-                || matches!(self.types.get(&right.id), Some(Type::Optional(_))))
-        {
+    fn call(&mut self, symbol: &str, args: &[Expression]) {
+        let is_async = self.async_fns.contains(symbol);
+        if is_async {
+            self.out.push_str("(await ");
+        }
+        self.out.push_str(symbol);
+        self.out.push('(');
+        for (i, arg) in args.iter().enumerate() {
+            if i > 0 {
+                self.out.push(',');
+            }
+            self.expr(arg);
+        }
+        self.out.push(')');
+        if is_async {
+            self.out.push(')');
+        }
+    }
+
+    fn array_op(&mut self, op: ArrayOp, receiver: &Expression, args: &[Expression]) {
+        match op {
+            ArrayOp::Pop => {
+                self.out.push_str("__kora_runtime_pop(");
+                self.expr(receiver);
+                self.out.push(')');
+            }
+            ArrayOp::Insert => {
+                self.out.push_str("__kora_runtime_insert(");
+                self.expr(receiver);
+                self.out.push(',');
+                self.expr(&args[0]);
+                self.out.push(',');
+                self.expr(&args[1]);
+                self.out.push(')');
+            }
+            ArrayOp::Remove => {
+                self.out.push_str("__kora_runtime_remove(");
+                self.expr(receiver);
+                self.out.push(',');
+                self.expr(&args[0]);
+                self.out.push(')');
+            }
+            ArrayOp::Len => {
+                self.operand(receiver);
+                self.out.push_str(".length");
+            }
+            ArrayOp::Push => {
+                self.operand(receiver);
+                self.out.push_str(".push(");
+                self.expr(&args[0]);
+                self.out.push(')');
+            }
+            ArrayOp::Slice => {
+                self.operand(receiver);
+                self.out.push_str(".slice(");
+                self.expr(&args[0]);
+                self.out.push(',');
+                self.expr(&args[1]);
+                self.out.push(')');
+            }
+            // JS .concat is pure, so spread-push.
+            ArrayOp::Extend => {
+                self.operand(receiver);
+                self.out.push_str(".push(...");
+                self.expr(&args[0]);
+                self.out.push(')');
+            }
+        }
+    }
+
+    fn binary(&mut self, op: BinOp, left: &Expression, right: &Expression) {
+        if op == BinOp::ArrayConcat {
             self.operand(left);
-            self.source.push_str(if matches!(op, BinaryOp::Equality) {
-                "=="
-            } else {
-                "!="
-            });
-            self.operand(right);
+            self.out.push_str(".concat(");
+            self.expr(right);
+            self.out.push(')');
             return;
         }
 
-        // `+` on arrays is pure concatenation. JS `+` would string-coerce,
-        // so emit the (pure) `.concat`.
-        if matches!(op, BinaryOp::Add) && matches!(self.types.get(&left.id), Some(Type::Array(_))) {
-            self.operand(left);
-            self.source.push_str(".concat(");
-            self.visit_expression(right);
-            self.source.push(')');
+        if matches!(op, BinOp::ArrayEq | BinOp::ArrayNe) {
+            if op == BinOp::ArrayNe {
+                self.out.push('!');
+            }
+            self.out.push_str("__kora_runtime_equality_intrinsic(");
+            self.expr(left);
+            self.out.push(',');
+            self.expr(right);
+            self.out.push(')');
             return;
         }
 
-        // 64-bit-correct bitwise: compute in BigInt, then wrap back to i64.
-        use BinaryOp::{BitAnd, BitOr, BitXor, ShiftLeft, ShiftRight};
-        if matches!(op, BitAnd | BitOr | BitXor | ShiftLeft | ShiftRight) {
-            self.source.push_str("Number(BigInt.asIntN(64,BigInt(");
-            self.visit_expression(left);
-            self.source.push(')');
-            self.source
-                .push_str(JavascriptTranspiler::repr_binary_operator(op));
-            self.source.push_str("BigInt(");
-            self.visit_expression(right);
-            self.source.push_str(")))");
+        if matches!(op, BinOp::OptionalEq | BinOp::OptionalNe) {
+            return self.optional_compare(op, left, right);
+        }
+
+        if let Some(bitwise) = bitwise_operator(op) {
+            self.out.push_str("Number(BigInt.asIntN(64,BigInt(");
+            self.expr(left);
+            self.out.push(')');
+            self.out.push_str(bitwise);
+            self.out.push_str("BigInt(");
+            self.expr(right);
+            self.out.push_str(")))");
             return;
         }
 
-        let int_div =
-            matches!(op, BinaryOp::Divide) && self.types.get(&left.id) == Some(&Type::Int);
-        if int_div || matches!(op, BinaryOp::Modulo) {
-            self.source.push_str(if int_div {
+        if op == BinOp::IntDiv || op == BinOp::IntMod {
+            self.out.push_str(if op == BinOp::IntDiv {
                 "__kora_runtime_div("
             } else {
                 "__kora_runtime_mod("
             });
-            self.visit_expression(left);
-            self.source.push(',');
-            self.visit_expression(right);
-            self.source.push(')');
+            self.expr(left);
+            self.out.push(',');
+            self.expr(right);
+            self.out.push(')');
             return;
         }
+
         self.operand(left);
-        self.source
-            .push_str(JavascriptTranspiler::repr_binary_operator(op));
+        self.out.push_str(infix_operator(op));
         self.operand(right);
     }
 
-    fn visit_unary_expression(&mut self, op: &UnaryOp, expr: &Spanned<Expression>) {
-        self.source
-            .push_str(JavascriptTranspiler::repr_unary_operator(op));
-        self.operand(expr);
-    }
-
-    fn visit_call_expression(&mut self, expr: &Spanned<Expression>, exprs: &[Spanned<Expression>]) {
-        // `copy(x)` shallow copy of an aggregate, by argument type.
-        if matches!(&expr.node, Expression::Identifier(name) if name == "copy") {
-            let arg = &exprs[0];
-            let (before, after) = match self.types.get(&arg.id) {
-                Some(Type::Struct(_)) => ("({...", "})"),
-                _ => ("Array.from(", ")"),
-            };
-            self.source.push_str(before);
-            self.visit_expression(arg);
-            self.source.push_str(after);
+    fn optional_compare(&mut self, op: BinOp, left: &Expression, right: &Expression) {
+        let has_none =
+            matches!(left.kind, ExpressionKind::None) || matches!(right.kind, ExpressionKind::None);
+        let arrays = self.optional_inner_is_array(left) || self.optional_inner_is_array(right);
+        if !has_none && arrays {
+            if op == BinOp::OptionalNe {
+                self.out.push('!');
+            }
+            self.out.push_str("__kora_runtime_equality_intrinsic(");
+            self.expr(left);
+            self.out.push(',');
+            self.expr(right);
+            self.out.push(')');
             return;
         }
-
-        if let Some(method) = self.array_method_calls.get(&expr.id).copied() {
-            let Expression::Access(obj, _) = &expr.node else {
-                unreachable!("array method calls are calls on an access expression");
-            };
-            match method {
-                ArrayMethod::Pop => {
-                    self.source.push_str("__kora_runtime_pop(");
-                    self.visit_expression(obj);
-                    self.source.push(')');
-                    return;
-                }
-                ArrayMethod::Insert => {
-                    self.source.push_str("__kora_runtime_insert(");
-                    self.visit_expression(obj);
-                    self.source.push(',');
-                    self.visit_expression(&exprs[0]);
-                    self.source.push(',');
-                    self.visit_expression(&exprs[1]);
-                    self.source.push(')');
-                    return;
-                }
-                ArrayMethod::Remove => {
-                    self.source.push_str("__kora_runtime_remove(");
-                    self.visit_expression(obj);
-                    self.source.push(',');
-                    self.visit_expression(&exprs[0]);
-                    self.source.push(')');
-                    return;
-                }
-                _ => {}
-            }
-            self.operand(obj);
-            match method {
-                ArrayMethod::Len => self.source.push_str(".length"),
-                ArrayMethod::Push => {
-                    self.source.push_str(".push(");
-                    self.visit_expression(&exprs[0]);
-                    self.source.push(')');
-                }
-                ArrayMethod::Slice => {
-                    self.source.push_str(".slice(");
-                    self.visit_expression(&exprs[0]);
-                    self.source.push(',');
-                    self.visit_expression(&exprs[1]);
-                    self.source.push(')');
-                }
-                // Mutating append-many; JS `.concat` is pure, so spread-push.
-                ArrayMethod::Extend => {
-                    self.source.push_str(".push(...");
-                    self.visit_expression(&exprs[0]);
-                    self.source.push(')');
-                }
-                ArrayMethod::Pop | ArrayMethod::Insert | ArrayMethod::Remove => unreachable!(),
-            }
-            return;
-        }
-
-        // `p.age(x)` becomes `Person$age(p, x)`; the object is self.
-        if let Some(name) = self.method_calls.get(&expr.id) {
-            let name = name.clone();
-            let Expression::Access(obj, _) = &expr.node else {
-                unreachable!("method calls are calls on an access expression");
-            };
-            let is_async = self.async_fns.contains(&name);
-            if is_async {
-                self.source.push_str("(await ");
-            }
-            self.source.push_str(&name);
-            self.source.push('(');
-            self.visit_expression(obj);
-            for expr in exprs.iter() {
-                self.source.push(',');
-                self.visit_expression(expr);
-            }
-            self.source.push(')');
-            if is_async {
-                self.source.push(')');
-            }
-            return;
-        }
-
-        if let Some(name) = self.function_call_names.get(&expr.id) {
-            let name = name.clone();
-            let is_async = self.async_fns.contains(&name);
-            if is_async {
-                self.source.push_str("(await ");
-            }
-            self.source.push_str(&name);
-            self.source.push('(');
-            for (i, expr) in exprs.iter().enumerate() {
-                if i > 0 {
-                    self.source.push(',');
-                }
-                self.visit_expression(expr);
-            }
-            self.source.push(')');
-            if is_async {
-                self.source.push(')');
-            }
-            return;
-        }
-
-        // Only await calls into functions we know are async.
-        let is_async = match &expr.node {
-            Expression::Identifier(name) => self.async_fns.contains(name),
-            _ => false,
-        };
-        if is_async {
-            self.source.push_str("(await ");
-        }
-        self.visit_expression(expr);
-        self.source.push('(');
-        for (i, expr) in exprs.iter().enumerate() {
-            if i > 0 {
-                self.source.push(',');
-            }
-            self.visit_expression(expr);
-        }
-        self.source.push(')');
-        if is_async {
-            self.source.push(')');
-        }
-    }
-
-    fn visit_array_index_expression(
-        &mut self,
-        left: &Spanned<Expression>,
-        right: &Spanned<Expression>,
-    ) {
-        self.source.push_str("__kora_runtime_index(");
-        self.visit_expression(left);
-        self.source.push(',');
-        self.visit_expression(right);
-        self.source.push(')');
-    }
-
-    fn visit_cast_expression(&mut self, expr: &Spanned<Expression>, typename: &Type) {
-        use Type::*;
-        let (before, after) = match (self.types.get(&expr.id), typename) {
-            (Some(Real), Int) => ("Math.trunc(", ")"),
-            (Some(Char), Int | Real) => ("(", ").charCodeAt(0)"),
-            (Some(Int), Real) => ("(", ")"),
-            (Some(Int), Char) => ("String.fromCharCode(", ")"),
-            (Some(Real), Char) => ("String.fromCharCode(Math.trunc(", "))"),
-            _ => {
-                self.errors.push(TranspilerErr {
-                    msg: "Casting to type not supported",
-                });
-                return;
-            }
-        };
-        self.source.push_str(before);
-        self.visit_expression(expr);
-        self.source.push_str(after);
-    }
-
-    fn visit_construct_expression(
-        &mut self,
-        typename: &Type,
-        size: &Option<Box<Spanned<Expression>>>,
-    ) {
-        match size {
-            Some(expr) => match typename {
-                Type::Struct(sr) => {
-                    self.source
-                        .push_str("Array.from({length:__kora_runtime_check_len(");
-                    self.visit_expression(expr);
-                    self.source.push_str(")},()=>");
-                    self.emit_struct_zero(sr.target);
-                    self.source.push(')');
-                }
-                _ => {
-                    self.source.push_str("new Array(__kora_runtime_check_len(");
-                    self.visit_expression(expr);
-                    self.source.push_str(")).fill(");
-                    self.emit_default(typename);
-                    self.source.push(')');
-                }
-            },
-            None => match typename {
-                Type::Struct(sr) => self.emit_struct_zero(sr.target),
-                _ => self.source.push_str("({})"),
-            },
-        }
-    }
-
-    fn visit_access_expression(&mut self, left: &Spanned<Expression>, member: &str) {
         self.operand(left);
-        self.source.push('.');
-        self.source.push_str(member);
+        self.out
+            .push_str(if op == BinOp::OptionalEq { "==" } else { "!=" });
+        self.operand(right);
     }
 
-    fn visit_struct_literal(
-        &mut self,
-        _typename: &Type,
-        fields: &[(Spanned<String>, Spanned<Expression>)],
-    ) {
-        self.source.push_str("({");
-        for (i, (name, value)) in fields.iter().enumerate() {
-            if i > 0 {
-                self.source.push(',');
-            }
-            self.source.push_str(&name.node);
-            self.source.push(':');
-            self.visit_expression(value);
+    fn optional_inner_is_array(&self, expr: &Expression) -> bool {
+        match self.program.types[expr.ty] {
+            Type::Optional(inner) => matches!(self.program.types[inner], Type::Array(_)),
+            _ => false,
         }
-        self.source.push_str("})");
+    }
+
+    fn cast(&mut self, kind: CastKind, operand: &Expression) {
+        let (before, after) = match kind {
+            CastKind::RealToInt => ("Math.trunc(", ")"),
+            CastKind::CharToInt | CastKind::CharToReal => ("(", ").charCodeAt(0)"),
+            CastKind::IntToReal => ("(", ")"),
+            CastKind::IntToChar => ("String.fromCharCode(", ")"),
+            CastKind::RealToChar => ("String.fromCharCode(Math.trunc(", "))"),
+        };
+        self.out.push_str(before);
+        self.expr(operand);
+        self.out.push_str(after);
+    }
+
+    fn assign(&mut self, place: &Place, value: &Expression) {
+        match &place.kind {
+            PlaceKind::Index { array, index } => {
+                self.out.push_str("__kora_runtime_index_set(");
+                self.place_read(array);
+                self.out.push(',');
+                self.expr(index);
+                self.out.push(',');
+                self.expr(value);
+                self.out.push(')');
+            }
+            PlaceKind::Local(local) => {
+                self.out.push_str(self.local_name(*local));
+                self.out.push('=');
+                self.operand(value);
+            }
+            PlaceKind::Field { object, index } => {
+                let name = self.field_name(object.ty, *index);
+                self.place_read(object);
+                self.out.push('.');
+                self.out.push_str(&name);
+                self.out.push('=');
+                self.operand(value);
+            }
+        }
+    }
+
+    fn place_read(&mut self, place: &Place) {
+        match &place.kind {
+            PlaceKind::Local(local) => {
+                self.out.push_str(self.local_name(*local));
+            }
+            PlaceKind::Field { object, index } => {
+                let name = self.field_name(object.ty, *index);
+                self.place_read(object);
+                self.out.push('.');
+                self.out.push_str(&name);
+            }
+            PlaceKind::Index { array, index } => {
+                self.out.push_str("__kora_runtime_index(");
+                self.place_read(array);
+                self.out.push(',');
+                self.expr(index);
+                self.out.push(')');
+            }
+        }
+    }
+
+    fn struct_literal(&mut self, struct_: StructId, fields: &[Expression]) {
+        self.out.push_str("({");
+        for (i, (field, value)) in self.program[struct_]
+            .fields
+            .iter()
+            .map(|f| f.name.clone())
+            .zip(fields)
+            .enumerate()
+        {
+            if i > 0 {
+                self.out.push(',');
+            }
+            self.out.push_str(&field);
+            self.out.push(':');
+            self.expr(value);
+        }
+        self.out.push_str("})");
+    }
+
+    /// NOTE: Type checker rejects struct cycles, so this terminates.
+    fn struct_zero(&mut self, struct_: StructId) {
+        let fields: Vec<(String, TypeId)> = self.program[struct_]
+            .fields
+            .iter()
+            .map(|f| (f.name.clone(), f.ty))
+            .collect();
+        self.out.push_str("({");
+        for (i, (field, ty)) in fields.iter().enumerate() {
+            if i > 0 {
+                self.out.push(',');
+            }
+            self.out.push_str(field);
+            self.out.push(':');
+            self.default(*ty);
+        }
+        self.out.push_str("})");
+    }
+
+    fn default(&mut self, ty: TypeId) {
+        match self.program.types[ty] {
+            Type::Struct(s) => self.struct_zero(s),
+            Type::Array(_) => self.out.push_str("[]"),
+            Type::Optional(_) | Type::Opaque => self.out.push_str("null"),
+            Type::Real => self.out.push_str("0.0"),
+            Type::Bool => self.out.push_str("false"),
+            Type::Char => self.out.push_str("\"\\0\""),
+            Type::Int | Type::Void => self.out.push('0'),
+        }
+    }
+
+    fn array_new(&mut self, ty: TypeId, len: &Expression) {
+        let Type::Array(elem) = self.program.types[ty] else {
+            unreachable!("array construction always has an array type");
+        };
+        if let Type::Struct(s) = self.program.types[elem] {
+            self.out
+                .push_str("Array.from({length:__kora_runtime_check_len(");
+            self.expr(len);
+            self.out.push_str(")},()=>");
+            self.struct_zero(s);
+            self.out.push(')');
+        } else {
+            self.out.push_str("new Array(__kora_runtime_check_len(");
+            self.expr(len);
+            self.out.push_str(")).fill(");
+            self.default(elem);
+            self.out.push(')');
+        }
+    }
+
+    fn field_name(&self, struct_ty: TypeId, index: u32) -> String {
+        let Type::Struct(s) = self.program.types[struct_ty] else {
+            unreachable!("field access is only lowered on struct receivers");
+        };
+        self.program[s].fields[index as usize].name.clone()
+    }
+
+    fn char_literal(&mut self, c: u8) {
+        let c = c as char;
+        self.out.push('\'');
+        match c {
+            '\\' => self.out.push_str("\\\\"),
+            '\'' => self.out.push_str("\\'"),
+            '\n' => self.out.push_str("\\n"),
+            '\r' => self.out.push_str("\\r"),
+            '\t' => self.out.push_str("\\t"),
+            '\0' => self.out.push_str("\\0"),
+            _ => self.out.push(c),
+        }
+        self.out.push('\'');
+    }
+
+    fn string_literal(&mut self, s: &str) {
+        // Kora's [char] is a mutable char array
+        // a bare JS string would silently ignore s[i] = 'x'.
+        self.out.push_str("Array.from(");
+        self.out.push('"');
+        for c in s.chars() {
+            match c {
+                '\\' => self.out.push_str("\\\\"),
+                '"' => self.out.push_str("\\\""),
+                '\n' => self.out.push_str("\\n"),
+                '\r' => self.out.push_str("\\r"),
+                '\t' => self.out.push_str("\\t"),
+                '\0' => self.out.push_str("\\0"),
+                _ => self.out.push(c),
+            }
+        }
+        self.out.push('"');
+        self.out.push(')');
+    }
+}
+
+fn bitwise_operator(op: BinOp) -> Option<&'static str> {
+    match op {
+        BinOp::IntBitAnd => Some("&"),
+        BinOp::IntBitOr => Some("|"),
+        BinOp::IntBitXor => Some("^"),
+        BinOp::IntShl => Some("<<"),
+        BinOp::IntShr => Some(">>"),
+        _ => None,
+    }
+}
+
+fn infix_operator(op: BinOp) -> &'static str {
+    use BinOp::*;
+    match op {
+        IntAdd | RealAdd => "+",
+        IntSub | RealSub => "-",
+        IntMul | RealMul => "*",
+        RealDiv => "/",
+        IntEq | RealEq | CharEq | BoolEq | OpaqueEq => "===",
+        IntNe | RealNe | CharNe | BoolNe | OpaqueNe => "!==",
+        IntLt | RealLt | CharLt => "<",
+        IntLe | RealLe | CharLe => "<=",
+        IntGt | RealGt | CharGt => ">",
+        IntGe | RealGe | CharGe => ">=",
+        IntDiv | IntMod | IntBitAnd | IntBitOr | IntBitXor | IntShl | IntShr | ArrayConcat
+        | ArrayEq | ArrayNe | OptionalEq | OptionalNe => {
+            unreachable!("handled before the plain-infix path")
+        }
     }
 }
