@@ -44,23 +44,7 @@ pub struct Instantiator<'p> {
 
 impl<'p> Instantiator<'p> {
     pub fn new(program: &'p mut LoadedProgram) -> Instantiator<'p> {
-        let indices: HashMap<_, _> = program
-            .modules
-            .iter()
-            .enumerate()
-            .map(|(i, m)| (m.id, i))
-            .collect();
-
-        let imports = program
-            .modules
-            .iter()
-            .map(|m| {
-                m.imports
-                    .iter()
-                    .map(|imp| (imp.local_name.clone(), indices[&imp.target]))
-                    .collect()
-            })
-            .collect();
+        let imports = program.modules.iter().map(|m| m.imports.clone()).collect();
 
         Instantiator {
             program,

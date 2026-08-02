@@ -393,10 +393,10 @@ fn transpile_program(
     })
     .unwrap_or_else(|e| panic!("compile: {e:?}"));
 
-    let emitted = crate::mangle::emitted_symbols(&compiled.program, &compiled.origins);
     let method_calls =
-        super::method_call_names(&compiled.symbols, &compiled.method_calls, &emitted);
-    let function_call_names = super::function_call_names(&compiled.symbols, &compiled.program, &emitted);
+        super::method_call_names(&compiled.symbols, &compiled.method_calls, &compiled.emitted);
+    let function_call_names =
+        super::function_call_names(&compiled.symbols, &compiled.program, &compiled.emitted);
     let struct_members = super::struct_member_map(&compiled.symbols);
     let modules: Vec<&parser::Module> =
         compiled.program.modules.iter().map(|m| &m.module).collect();
@@ -405,7 +405,7 @@ fn transpile_program(
         &function_call_names,
         &method_calls,
         async_externs,
-        &emitted,
+        &compiled.emitted,
     );
     let mut transpiler = JavascriptTranspiler {
         types: compiled.types,
@@ -414,7 +414,7 @@ fn transpile_program(
         struct_members,
         function_call_names,
         async_fns,
-        emitted,
+        emitted: compiled.emitted,
         ..JavascriptTranspiler::default()
     };
     transpiler.emit_program(&modules);

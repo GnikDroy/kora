@@ -3,7 +3,7 @@ use std::error::Error;
 use std::fmt;
 use std::path::Path;
 
-use crate::instantiate::{GenericRegion, InstanceOrigins, InstantiateErr};
+use crate::instantiate::{GenericRegion, InstantiateErr};
 use crate::lexer::{LexerErr, Position};
 use crate::loader::{LoadErr, LoadedProgram, Loader};
 use crate::parser::{ASTVisitor, ExternFunction, NodeId, ParseErr, Span, Type};
@@ -17,7 +17,7 @@ pub struct CompiledProgram {
     pub(crate) types: HashMap<NodeId, Type>,
     pub(crate) method_calls: HashMap<NodeId, SymbolId>,
     pub(crate) array_method_calls: HashMap<NodeId, ArrayMethod>,
-    pub(crate) origins: InstanceOrigins,
+    pub(crate) emitted: HashMap<NodeId, String>,
 }
 
 #[derive(Debug)]
@@ -177,13 +177,14 @@ where
         return Err(annotate_generic_errors(analyze_errors, &instances.regions));
     }
 
+    let emitted = crate::mangle::emitted_symbols(&program, &instances.origins);
     Ok(CompiledProgram {
         program,
         symbols,
         types,
         method_calls,
         array_method_calls,
-        origins: instances.origins,
+        emitted,
     })
 }
 
@@ -457,7 +458,7 @@ int g() { return abs(2); }",
                 assert!(!decl.node.name.contains("$$"), "{}", decl.node.name);
             }
         }
-        assert!(!compiled.origins.is_empty());
+        assert!(compiled.emitted.values().any(|s| s.contains("$$")));
     }
 
     #[test]

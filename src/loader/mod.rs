@@ -19,17 +19,11 @@ pub struct SourceEntry {
 }
 
 #[derive(Debug)]
-pub struct ResolvedImport {
-    pub local_name: String,
-    pub target: SourceId,
-    pub span: Span,
-}
-
-#[derive(Debug)]
 pub struct LoadedModule {
     pub id: SourceId,
     pub module: Module,
-    pub imports: Vec<ResolvedImport>,
+    /// Import alias -> the target's module index.
+    pub imports: HashMap<String, usize>,
     pub prefix: String,
 }
 
@@ -118,7 +112,7 @@ impl<P: Fn(&Path) -> Option<String>> Loader<P> {
             }
         };
 
-        let mut imports = Vec::new();
+        let mut imports = HashMap::new();
         for import in &module.imports {
             if let Some(component) = invalid_component(&import.node.path) {
                 self.errors.push(CompileErr::Load(LoadErr {
@@ -147,11 +141,8 @@ impl<P: Fn(&Path) -> Option<String>> Loader<P> {
                     .map(|stem| stem.to_string_lossy().into_owned())
                     .unwrap_or_default()
             });
-            imports.push(ResolvedImport {
-                local_name,
-                target,
-                span: import.span.clone(),
-            });
+            // modules land in SourceId order, so an id doubles as a module index
+            imports.insert(local_name, target.0 as usize);
         }
 
         let prefix = if id.0 == 0 {
@@ -237,11 +228,8 @@ mod tests {
         let main = module_of(&program, "main.kora");
         assert_eq!(main.id, SourceId(0));
         assert_eq!(main.imports.len(), 1);
-        assert_eq!(main.imports[0].local_name, "util");
         assert_eq!(
-            program.sources[main.imports[0].target.0 as usize]
-                .path
-                .to_str(),
+            program.sources[main.imports["util"]].path.to_str(),
             Some("util.kora")
         );
     }
@@ -257,7 +245,7 @@ mod tests {
         ]);
         let program = Loader::new(&p).load("main.kora").expect("load");
         let main = module_of(&program, "main.kora");
-        assert_eq!(main.imports[0].local_name, "u");
+        assert!(main.imports.contains_key("u"));
     }
 
     #[test]
@@ -276,7 +264,7 @@ mod tests {
 
         let b = module_of(&program, "b.kora");
         let c = module_of(&program, "c.kora");
-        assert_eq!(b.imports[0].target, c.imports[0].target);
+        assert_eq!(b.imports["d"], c.imports["d"]);
     }
 
     #[test]
@@ -369,11 +357,8 @@ mod tests {
         let program = Loader::new(&p).load("app/main.kora").expect("load");
         assert_eq!(program.modules.len(), 3);
         let main = module_of(&program, "main.kora");
-        assert_eq!(main.imports[0].local_name, "conv");
         assert_eq!(
-            program.sources[main.imports[0].target.0 as usize]
-                .path
-                .to_str(),
+            program.sources[main.imports["conv"]].path.to_str(),
             Some("std/conv")
         );
         assert!(module_of(&program, "std/math").imports.is_empty());

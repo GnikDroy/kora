@@ -41,7 +41,6 @@ pub struct CodeGen<'ctx, 'a> {
     array_type: Option<StructType<'ctx>>,
     array_equality_fns: HashMap<Type, FunctionValue<'ctx>>, // memoized `i1 @"eq.N"(ptr, ptr)` per array type
     default_fns: HashMap<NodeId, FunctionValue<'ctx>>,
-    emitted: HashMap<NodeId, String>,
     frame: Option<Frame<'ctx>>,
 }
 
@@ -66,7 +65,6 @@ pub fn lower<'ctx>(
         array_type: None,
         array_equality_fns: HashMap::new(),
         default_fns: HashMap::new(),
-        emitted: crate::mangle::emitted_symbols(&program.program, &program.origins),
         frame: None,
     };
     for module in program.program.modules.iter() {
@@ -96,7 +94,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
             .iter()
             .chain(module.impls.iter().flat_map(|i| i.node.functions.iter()))
         {
-            let name = self.emitted[&func.id].clone();
+            let name = self.program.emitted[&func.id].clone();
             self.declare_function(func.id, &name, &func.node.return_type, &func.node.arguments)?;
         }
         Ok(())

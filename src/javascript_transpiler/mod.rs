@@ -18,9 +18,9 @@ pub fn transpile(
     compiled: crate::CompiledProgram,
     async_externs: HashSet<String>,
 ) -> Result<String, String> {
-    let emitted = crate::mangle::emitted_symbols(&compiled.program, &compiled.origins);
-    let method_calls = method_call_names(&compiled.symbols, &compiled.method_calls, &emitted);
-    let function_call_names = function_call_names(&compiled.symbols, &compiled.program, &emitted);
+    let method_calls = method_call_names(&compiled.symbols, &compiled.method_calls, &compiled.emitted);
+    let function_call_names =
+        function_call_names(&compiled.symbols, &compiled.program, &compiled.emitted);
     let struct_members = struct_member_map(&compiled.symbols);
 
     let modules: Vec<&Module> = compiled.program.modules.iter().map(|m| &m.module).collect();
@@ -29,7 +29,7 @@ pub fn transpile(
         &function_call_names,
         &method_calls,
         async_externs,
-        &emitted,
+        &compiled.emitted,
     );
     let mut transpiler = JavascriptTranspiler {
         types: compiled.types,
@@ -38,7 +38,7 @@ pub fn transpile(
         struct_members,
         function_call_names,
         async_fns,
-        emitted,
+        emitted: compiled.emitted,
         ..JavascriptTranspiler::default()
     };
     transpiler.emit_program(&modules);

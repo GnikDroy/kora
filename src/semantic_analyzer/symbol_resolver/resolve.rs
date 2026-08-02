@@ -34,26 +34,7 @@ impl Resolver {
         instances: &Instantiated,
     ) -> Result<SymbolTable, Vec<TypeErr>> {
         let modules: Vec<&Module> = program.modules.iter().map(|m| &m.module).collect();
-        let index: HashMap<SourceId, usize> = program
-            .modules
-            .iter()
-            .enumerate()
-            .map(|(i, m)| (m.id, i))
-            .collect();
-        let imports = program
-            .modules
-            .iter()
-            .map(|m| {
-                m.imports
-                    .iter()
-                    .filter_map(|import| {
-                        index
-                            .get(&import.target)
-                            .map(|&target| (import.local_name.clone(), target))
-                    })
-                    .collect()
-            })
-            .collect();
+        let imports = program.modules.iter().map(|m| m.imports.clone()).collect();
         self.run(&modules, imports, instances)
     }
 
