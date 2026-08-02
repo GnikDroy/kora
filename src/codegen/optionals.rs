@@ -1,64 +1,53 @@
 use inkwell::IntPredicate;
 use inkwell::values::{BasicValue, BasicValueEnum, IntValue};
 
-use super::{CodeGen, CodegenErr};
-use crate::parser::*;
-use crate::semantic_analyzer::is_reference;
+use super::CodeGen;
+use crate::ir::{BinOp, Expression, ExpressionKind, Type, TypeId};
 
-impl<'ctx> CodeGen<'ctx, '_> {
-    pub(super) fn lower_none(
-        &mut self,
-        expr: &Spanned<Expression>,
-    ) -> Result<BasicValueEnum<'ctx>, CodegenErr> {
-        let ty = self.basic_type(&self.program.types[&expr.id], &expr.span)?;
-        Ok(ty.const_zero())
+impl<'ctx, 'a> CodeGen<'ctx, 'a> {
+    /// The inner of an optional type. The IR guarantees the caller holds one.
+    fn optional_inner(&self, optional: TypeId) -> TypeId {
+        let Type::Optional(inner) = self.program.types[optional] else {
+            unreachable!("expected an optional type");
+        };
+        inner
     }
 
     pub(super) fn lower_optional_wrap(
         &mut self,
         value: BasicValueEnum<'ctx>,
-        inner: &Type,
-        span: &Span,
-    ) -> Result<BasicValueEnum<'ctx>, CodegenErr> {
-        if is_reference(inner) {
-            return Ok(value);
+        optional: TypeId,
+    ) -> BasicValueEnum<'ctx> {
+        let inner = self.optional_inner(optional);
+        if self.is_reference(inner) {
+            return value;
         }
-        let optional = Type::Optional(Box::new(inner.clone()));
-        let ty = self.basic_type(&optional, span)?.into_struct_type();
+        let ty = self.basic_type(optional).into_struct_type();
         let tag = self.context.i8_type().const_int(1, false);
         let some = ty.const_zero();
-        let some = self
-            .builder
-            .build_insert_value(some, tag, 0, "some")
-            .unwrap();
+        let some = self.builder.build_insert_value(some, tag, 0, "some").unwrap();
         let some = self
             .builder
             .build_insert_value(some, value, 1, "some")
             .unwrap();
-        Ok(some.as_basic_value_enum())
+        some.as_basic_value_enum()
     }
 
-    pub(super) fn lower_unwrap(
-        &mut self,
-        operand: &Spanned<Expression>,
-    ) -> Result<BasicValueEnum<'ctx>, CodegenErr> {
-        let Type::Optional(inner) = &self.program.types[&operand.id] else {
-            unreachable!("type checker rejects unwrap of non-optionals");
-        };
-        let value = self.lower_expression(operand)?;
+    pub(super) fn lower_unwrap(&mut self, operand: &Expression) -> BasicValueEnum<'ctx> {
+        let inner = self.optional_inner(operand.ty);
+        let value = self.lower_expression(operand);
         let is_none = self.is_optional_none(value, inner);
         self.panic_if(is_none, "force-unwrapped a none value");
-        if is_reference(inner) {
-            return Ok(value);
+        if self.is_reference(inner) {
+            return value;
         }
-        Ok(self
-            .builder
+        self.builder
             .build_extract_value(value.into_struct_value(), 1, "unwrapped")
-            .unwrap())
+            .unwrap()
     }
 
-    fn is_optional_none(&mut self, value: BasicValueEnum<'ctx>, inner: &Type) -> IntValue<'ctx> {
-        if is_reference(inner) {
+    fn is_optional_none(&mut self, value: BasicValueEnum<'ctx>, inner: TypeId) -> IntValue<'ctx> {
+        if self.is_reference(inner) {
             return self
                 .builder
                 .build_is_null(value.into_pointer_value(), "is_none")
@@ -81,47 +70,43 @@ impl<'ctx> CodeGen<'ctx, '_> {
 
     pub(super) fn lower_optional_equality(
         &mut self,
-        left: &Spanned<Expression>,
-        op: BinaryOp,
-        right: &Spanned<Expression>,
-        span: &Span,
-    ) -> Result<BasicValueEnum<'ctx>, CodegenErr> {
-        let left_type = &self.program.types[&left.id];
-        let right_type = &self.program.types[&right.id];
-        let optional = if matches!(left_type, Type::Optional(_)) {
-            left_type
+        op: BinOp,
+        left: &Expression,
+        right: &Expression,
+    ) -> BasicValueEnum<'ctx> {
+        // Both operands were coerced to the optional type during IR lowering,
+        // so either side's type gives the shared inner.
+        let optional = if matches!(self.program.types[left.ty], Type::Optional(_)) {
+            left.ty
         } else {
-            right_type
+            right.ty
         };
-        let Type::Optional(inner) = optional else {
-            unreachable!();
-        };
+        let inner = self.optional_inner(optional);
 
-        let equal = if matches!(left.node, Expression::NoneLiteral) {
-            let value = self.lower_expression(right)?;
+        let equal = if matches!(left.kind, ExpressionKind::None) {
+            let value = self.lower_expression(right);
             self.is_optional_none(value, inner)
-        } else if matches!(right.node, Expression::NoneLiteral) {
-            let value = self.lower_expression(left)?;
+        } else if matches!(right.kind, ExpressionKind::None) {
+            let value = self.lower_expression(left);
             self.is_optional_none(value, inner)
         } else {
-            let a = self.lower_expression_expecting(left, optional)?;
-            let b = self.lower_expression_expecting(right, optional)?;
-            self.is_optional_values_equal(inner, a, b, span)?
+            let a = self.lower_expression(left);
+            let b = self.lower_expression(right);
+            self.is_optional_values_equal(inner, a, b)
         };
-        if op == BinaryOp::NotEquality {
-            return Ok(self.builder.build_not(equal, "ne").unwrap().into());
+        if op == BinOp::OptionalNe {
+            return self.builder.build_not(equal, "ne").unwrap().into();
         }
-        Ok(equal.into())
+        equal.into()
     }
 
     pub(super) fn is_optional_values_equal(
         &mut self,
-        inner: &Type,
+        inner: TypeId,
         a: BasicValueEnum<'ctx>,
         b: BasicValueEnum<'ctx>,
-        span: &Span,
-    ) -> Result<IntValue<'ctx>, CodegenErr> {
-        if !is_reference(inner) {
+    ) -> IntValue<'ctx> {
+        if !self.is_reference(inner) {
             let tag_a = self.is_optional_none(a, inner);
             let tag_b = self.is_optional_none(b, inner);
             let a = self
@@ -137,7 +122,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 .build_int_compare(IntPredicate::EQ, tag_a, tag_b, "tags_eq")
                 .unwrap();
 
-            let values_equal = match inner {
+            let values_equal = match self.program.types[inner] {
                 Type::Int | Type::Char | Type::Bool => self
                     .builder
                     .build_int_compare(
@@ -158,23 +143,20 @@ impl<'ctx> CodeGen<'ctx, '_> {
                     .unwrap(),
                 _ => unreachable!("type checker limits optional equality to comparable inners"),
             };
-            return Ok(self
+            return self
                 .builder
                 .build_and(tags_equal, values_equal, "eq")
-                .unwrap());
+                .unwrap();
         }
 
         let a = a.into_pointer_value();
         let b = b.into_pointer_value();
-        if matches!(inner, Type::Opaque) {
-            return Ok(self.pointers_equal(a, b));
+        if matches!(self.program.types[inner], Type::Opaque) {
+            return self.pointers_equal(a, b);
         }
         let a_null = self.builder.build_is_null(a, "a_null").unwrap();
         let b_null = self.builder.build_is_null(b, "b_null").unwrap();
-        let either_null = self
-            .builder
-            .build_or(a_null, b_null, "either_null")
-            .unwrap();
+        let either_null = self.builder.build_or(a_null, b_null, "either_null").unwrap();
         let both_null = self.builder.build_and(a_null, b_null, "both_null").unwrap();
 
         let function = self
@@ -191,17 +173,14 @@ impl<'ctx> CodeGen<'ctx, '_> {
             .unwrap();
 
         self.builder.position_at_end(compare);
-        let values_equal = match inner {
+        let values_equal = match self.program.types[inner] {
             Type::Array(_) => {
-                let eq = self.array_equality_fn(inner, span)?;
+                let eq = self.array_equality_fn(inner);
                 let call = self
                     .builder
                     .build_call(eq, &[a.into(), b.into()], "values_eq")
                     .unwrap();
-                let super::ValueKind::Basic(value) = call.try_as_basic_value() else {
-                    unreachable!();
-                };
-                value.into_int_value()
+                self.call_value(call).into_int_value()
             }
             _ => unreachable!("type checker limits optional structural equality to arrays"),
         };
@@ -214,6 +193,6 @@ impl<'ctx> CodeGen<'ctx, '_> {
             .build_phi(self.context.bool_type(), "eq")
             .unwrap();
         phi.add_incoming(&[(&both_null, entry_end), (&values_equal, compare_end)]);
-        Ok(phi.as_basic_value().into_int_value())
+        phi.as_basic_value().into_int_value()
     }
 }

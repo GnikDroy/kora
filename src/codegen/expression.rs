@@ -1,278 +1,260 @@
-use inkwell::values::{BasicValueEnum, IntValue, PointerValue, ValueKind};
+use inkwell::values::{BasicValueEnum, FunctionValue, IntValue, PointerValue, ValueKind};
 use inkwell::{FloatPredicate, IntPredicate};
 
-use super::{CodeGen, CodegenErr};
-use crate::parser::*;
-use crate::semantic_analyzer::is_intrinsic;
+use super::CodeGen;
+use crate::ir::{BinOp, CastKind, Expression, ExpressionKind, Place, PlaceKind, Type, UnOp};
 
-impl<'ctx> CodeGen<'ctx, '_> {
-    pub(super) fn lower_expression(
-        &mut self,
-        expr: &Spanned<Expression>,
-    ) -> Result<BasicValueEnum<'ctx>, CodegenErr> {
-        let span = &expr.span;
-        match &expr.node {
-            Expression::TypeApplication(_, _) => {
-                unreachable!("generics are instantiated before codegen")
+impl<'ctx, 'a> CodeGen<'ctx, 'a> {
+    pub(super) fn lower_expression(&mut self, expr: &Expression) -> BasicValueEnum<'ctx> {
+        match &expr.kind {
+            ExpressionKind::Int(v) => self.context.i64_type().const_int(*v as u64, true).into(),
+            ExpressionKind::Real(v) => self.context.f64_type().const_float(*v).into(),
+            ExpressionKind::Bool(v) => self.context.bool_type().const_int(*v as u64, false).into(),
+            ExpressionKind::Char(v) => self.context.i8_type().const_int(*v as u64, false).into(),
+            ExpressionKind::Str(s) => self.lower_string_literal(s),
+            ExpressionKind::None => self.basic_type(expr.ty).const_zero(),
+            ExpressionKind::Array(items) => self.lower_array_literal(expr.ty, items),
+            ExpressionKind::Local(local) => {
+                let ptr = self.frame().variables[local.index()];
+                let ty = self.basic_type(expr.ty);
+                self.builder.build_load(ty, ptr, "load").unwrap()
             }
-            Expression::IntegerLiteral(v) => {
-                Ok(self.context.i64_type().const_int(*v as u64, true).into())
+            ExpressionKind::Field { object, index } => {
+                let ptr = self.struct_field_ptr(object, *index);
+                let ty = self.basic_type(expr.ty);
+                self.builder.build_load(ty, ptr, "field").unwrap()
             }
-            Expression::RealLiteral(v) => Ok(self.context.f64_type().const_float(*v).into()),
-            Expression::BoolLiteral(v) => {
-                Ok(self.context.bool_type().const_int(*v as u64, false).into())
+            ExpressionKind::Index { array, index } => {
+                let base = self.lower_expression(array).into_pointer_value();
+                let idx = self.lower_expression(index).into_int_value();
+                let ptr = self.array_element_ptr(base, array.ty, idx);
+                let ty = self.basic_type(expr.ty);
+                self.builder.build_load(ty, ptr, "elem").unwrap()
             }
-            Expression::CharLiteral(v) => {
-                Ok(self.context.i8_type().const_int(*v as u64, false).into())
+            ExpressionKind::Assign { place, value } => {
+                let ptr = self.lower_lvalue(place);
+                let value = self.lower_expression(value);
+                self.builder.build_store(ptr, value).unwrap();
+                value
             }
-            Expression::Identifier(name) => {
-                let id = self.program.symbols.symbol_id_of_use(expr.id).unwrap();
-                let alloca = self.frame().variables.get(&id).ok_or(CodegenErr {
-                    msg: "functions cannot be used as values",
-                    span: span.clone(),
-                })?;
-                let ty = self.basic_type(&self.program.types[&expr.id], span)?;
-                Ok(self.builder.build_load(ty, *alloca, name).unwrap())
-            }
-            Expression::Binary(left, BinaryOp::Assign, right) => {
-                let target = self.lower_lvalue(left)?;
-                let expected = &self.program.types[&left.id];
-                let value = self.lower_expression_expecting(right, expected)?;
-                self.builder.build_store(target, value).unwrap();
-                Ok(value)
-            }
-            Expression::Binary(left, op @ (BinaryOp::And | BinaryOp::Or), right) => {
-                self.lower_short_circuit(left, *op == BinaryOp::And, right)
-            }
-            Expression::Binary(left, op, right) => self.lower_binary(left, *op, right, span),
-            Expression::Unary(op, operand) => {
-                let value = self.lower_expression(operand)?;
-                let result: BasicValueEnum = match (op, &self.program.types[&operand.id]) {
-                    (UnaryOp::Negate, Type::Int) => self
+            ExpressionKind::Binary { op, left, right } => self.lower_binary(*op, left, right),
+            ExpressionKind::And(left, right) => self.lower_short_circuit(left, true, right),
+            ExpressionKind::Or(left, right) => self.lower_short_circuit(left, false, right),
+            ExpressionKind::Unary { op, operand } => {
+                let value = self.lower_expression(operand);
+                match op {
+                    UnOp::IntNeg => self
                         .builder
                         .build_int_neg(value.into_int_value(), "neg")
                         .unwrap()
                         .into(),
-                    (UnaryOp::Negate, Type::Real) => self
+                    UnOp::RealNeg => self
                         .builder
                         .build_float_neg(value.into_float_value(), "neg")
                         .unwrap()
                         .into(),
-                    (UnaryOp::Not, Type::Bool) => self
+                    UnOp::BoolNot => self
                         .builder
                         .build_not(value.into_int_value(), "not")
                         .unwrap()
                         .into(),
-                    _ => unreachable!("type checker rejects other unary operands"),
-                };
-                Ok(result)
-            }
-            Expression::Cast(operand, target) => self.lower_cast(operand, target),
-            Expression::Call(callee, args) => Ok(self
-                .lower_call(callee, args, span)?
-                .expect("type checker rejects void calls in value position")),
-            Expression::StringLiteral(s) => Ok(self.lower_string_literal(s)),
-            Expression::Array(elems) => self.lower_array_literal(expr, elems),
-            Expression::ArrayIndex(array, index) => {
-                let ptr = self.array_element_pointer(array, index, span)?;
-                let ty = self.basic_type(&self.program.types[&expr.id], span)?;
-                Ok(self.builder.build_load(ty, ptr, "elem").unwrap())
-            }
-            Expression::NoneLiteral => self.lower_none(expr),
-            Expression::Unwrap(operand) => self.lower_unwrap(operand),
-            Expression::Access(obj, member) => {
-                let ptr = self.struct_member_pointer(obj, member, span)?;
-                let ty = self.basic_type(&self.program.types[&expr.id], span)?;
-                Ok(self.builder.build_load(ty, ptr, member).unwrap())
-            }
-            Expression::StructLiteral(typename, fields) => {
-                let Type::Struct(sr) = typename else {
-                    unreachable!("struct literals always carry a struct type");
-                };
-                let decl = self.struct_decl(sr);
-                let struct_type = self.struct_type(decl, span)?;
-                let object = self.gc_malloc(struct_type.size_of().unwrap(), "new");
-                for (field, value) in fields.iter() {
-                    let member = self
-                        .program
-                        .symbols
-                        .struct_member(&self.modules, decl, &field.node)
-                        .unwrap();
-                    let value = self.lower_expression_expecting(value, &member)?;
-                    let index = self.struct_member_index(decl, &field.node);
-                    let ptr = self
-                        .builder
-                        .build_struct_gep(struct_type, object, index, &field.node)
-                        .unwrap();
-                    self.builder.build_store(ptr, value).unwrap();
                 }
-                Ok(object.into())
             }
-            Expression::Construct(typename, size) => match (typename, size) {
-                (_, Some(size)) => self.lower_array_construct(typename, size, span),
-                (Type::Struct(sr), None) => {
-                    let decl = self.struct_decl(sr);
-                    let default = self.struct_constructor(decl, span)?;
-                    let call = self.builder.build_call(default, &[], "new").unwrap();
-                    Ok(self.call_value(call))
-                }
-                _ => unreachable!("type checker rejects bare `new` on non-structs"),
-            },
+            ExpressionKind::Cast { kind, operand } => self.lower_cast(*kind, operand),
+            ExpressionKind::Call { function, args } => {
+                let function = self.function_value(*function);
+                self.call_function(function, args)
+                    .expect("type checker rejects void calls in value position")
+            }
+            ExpressionKind::CallExtern { function, args } => {
+                let function = self.extern_value(*function);
+                self.call_function(function, args)
+                    .expect("type checker rejects void calls in value position")
+            }
+            ExpressionKind::ArrayOp { op, receiver, args } => self
+                .lower_array_op(*op, receiver, args)
+                .expect("type checker rejects void array ops in value position"),
+            ExpressionKind::Copy(inner) => self.lower_copy(inner),
+            ExpressionKind::StructLit { struct_, fields } => {
+                self.lower_struct_literal(*struct_, fields)
+            }
+            ExpressionKind::DefaultStruct(struct_) => {
+                let default = self.struct_constructor(*struct_);
+                let call = self.builder.build_call(default, &[], "new").unwrap();
+                self.call_value(call)
+            }
+            ExpressionKind::ArrayNew { len } => self.lower_array_construct(expr.ty, len),
+            ExpressionKind::Wrap(inner) => {
+                let value = self.lower_expression(inner);
+                self.lower_optional_wrap(value, expr.ty)
+            }
+            ExpressionKind::Unwrap(inner) => self.lower_unwrap(inner),
         }
     }
 
     /// An expression in statement position, where a void call is legal.
-    pub(super) fn lower_expression_or_void(
-        &mut self,
-        expr: &Spanned<Expression>,
-    ) -> Result<(), CodegenErr> {
-        match &expr.node {
-            Expression::Call(callee, args) => {
-                self.lower_call(callee, args, &expr.span)?;
-                Ok(())
+    pub(super) fn lower_expression_or_void(&mut self, expr: &Expression) {
+        match &expr.kind {
+            ExpressionKind::Call { function, args } => {
+                let function = self.function_value(*function);
+                self.call_function(function, args);
             }
-            _ => self.lower_expression(expr).map(|_| ()),
+            ExpressionKind::CallExtern { function, args } => {
+                let function = self.extern_value(*function);
+                self.call_function(function, args);
+            }
+            ExpressionKind::ArrayOp { op, receiver, args } => {
+                self.lower_array_op(*op, receiver, args);
+            }
+            _ => {
+                self.lower_expression(expr);
+            }
         }
     }
 
-    pub(super) fn lower_expression_expecting(
+    fn call_function(
         &mut self,
-        expr: &Spanned<Expression>,
-        expected: &Type,
-    ) -> Result<BasicValueEnum<'ctx>, CodegenErr> {
-        let value = self.lower_expression(expr)?;
-        let actual = &self.program.types[&expr.id];
-        if actual == expected {
-            return Ok(value);
+        function: FunctionValue<'ctx>,
+        args: &[Expression],
+    ) -> Option<BasicValueEnum<'ctx>> {
+        let mut arg_values = Vec::with_capacity(args.len());
+        for arg in args {
+            arg_values.push(self.lower_expression(arg).into());
         }
-        if let Type::Optional(inner) = expected
-            && actual == &**inner
-        {
-            return self.lower_optional_wrap(value, inner, &expr.span);
+        let call = self.builder.build_call(function, &arg_values, "").unwrap();
+        match call.try_as_basic_value() {
+            ValueKind::Basic(value) => Some(value),
+            ValueKind::Instruction(_) => None,
         }
-        Ok(value)
     }
 
-    fn lower_lvalue(
-        &mut self,
-        expr: &Spanned<Expression>,
-    ) -> Result<PointerValue<'ctx>, CodegenErr> {
-        match &expr.node {
-            Expression::Identifier(_) => {
-                let id = self.program.symbols.symbol_id_of_use(expr.id).unwrap();
-                Ok(self.frame().variables[&id])
+    pub(super) fn lower_lvalue(&mut self, place: &Place) -> PointerValue<'ctx> {
+        match &place.kind {
+            PlaceKind::Local(local) => self.frame().variables[local.index()],
+            PlaceKind::Field { object, index } => {
+                let struct_type = self.struct_type_of(object.ty);
+                let base = self.read_place(object).into_pointer_value();
+                self.builder
+                    .build_struct_gep(struct_type, base, *index, "field")
+                    .unwrap()
             }
-            Expression::ArrayIndex(array, index) => {
-                self.array_element_pointer(array, index, &expr.span)
+            PlaceKind::Index { array, index } => {
+                let base = self.read_place(array).into_pointer_value();
+                let idx = self.lower_expression(index).into_int_value();
+                self.array_element_ptr(base, array.ty, idx)
             }
-            Expression::Access(obj, member) => self.struct_member_pointer(obj, member, &expr.span),
-            _ => unreachable!("type checker rejects other assignment targets"),
         }
+    }
+
+    fn read_place(&mut self, place: &Place) -> BasicValueEnum<'ctx> {
+        let ptr = self.lower_lvalue(place);
+        let ty = self.basic_type(place.ty);
+        self.builder.build_load(ty, ptr, "place").unwrap()
     }
 
     fn lower_binary(
         &mut self,
-        left: &Spanned<Expression>,
-        op: BinaryOp,
-        right: &Spanned<Expression>,
-        span: &Span,
-    ) -> Result<BasicValueEnum<'ctx>, CodegenErr> {
-        use BinaryOp::*;
-
-        if matches!(op, Equality | NotEquality)
-            && (matches!(self.program.types[&left.id], Type::Optional(_))
-                || matches!(self.program.types[&right.id], Type::Optional(_)))
-        {
-            return self.lower_optional_equality(left, op, right, span);
+        op: BinOp,
+        left: &Expression,
+        right: &Expression,
+    ) -> BasicValueEnum<'ctx> {
+        match op {
+            BinOp::ArrayConcat => {
+                let l = self.lower_expression(left).into_pointer_value();
+                let r = self.lower_expression(right).into_pointer_value();
+                self.array_concat(left.ty, l, r)
+            }
+            BinOp::ArrayEq | BinOp::ArrayNe => {
+                let l = self.lower_expression(left).into_pointer_value();
+                let r = self.lower_expression(right).into_pointer_value();
+                self.array_equality(op, left.ty, l, r)
+            }
+            BinOp::OptionalEq | BinOp::OptionalNe => self.lower_optional_equality(op, left, right),
+            _ => self.lower_scalar_binary(op, left, right),
         }
+    }
 
-        let operand_type = &self.program.types[&left.id];
-        let lhs = self.lower_expression(left)?;
-        let rhs = self.lower_expression(right)?;
+    fn lower_scalar_binary(
+        &mut self,
+        op: BinOp,
+        left: &Expression,
+        right: &Expression,
+    ) -> BasicValueEnum<'ctx> {
+        use BinOp::*;
+        let l = self.lower_expression(left);
+        let r = self.lower_expression(right);
 
-        let value: BasicValueEnum = match operand_type {
-            Type::Int | Type::Char | Type::Bool => {
-                let l = lhs.into_int_value();
-                let r = rhs.into_int_value();
-                if matches!(op, Divide | Modulo) {
-                    self.check_nonzero_divisor(r);
-                }
-                // Char is unsigned; Int is signed. Bool only reaches ==/!=.
-                let signed = *operand_type == Type::Int;
-                let b = &self.builder;
-                #[rustfmt::skip]
-                let result = match (op, signed) {
-                    (Add, _)      => b.build_int_add(l, r, "add").unwrap(),
-                    (Subtract, _) => b.build_int_sub(l, r, "sub").unwrap(),
-                    (Multiply, _) => b.build_int_mul(l, r, "mul").unwrap(),
-                    (Divide, _)   => b.build_int_signed_div(l, r, "div").unwrap(),
-                    (Modulo, _)   => b.build_int_signed_rem(l, r, "rem").unwrap(),
-                    (BitAnd, _)     => b.build_and(l, r, "and").unwrap(),
-                    (BitOr, _)      => b.build_or(l, r, "or").unwrap(),
-                    (BitXor, _)     => b.build_xor(l, r, "xor").unwrap(),
-                    (ShiftLeft, _)  => b.build_left_shift(l, r, "shl").unwrap(),
-                    (ShiftRight, _) => b.build_right_shift(l, r, true, "shr").unwrap(),
-                    (Equality, _)     => b.build_int_compare(IntPredicate::EQ, l, r, "eq").unwrap(),
-                    (NotEquality, _)  => b.build_int_compare(IntPredicate::NE, l, r, "ne").unwrap(),
-                    (Greater, true)       => b.build_int_compare(IntPredicate::SGT, l, r, "gt").unwrap(),
-                    (Greater, false)      => b.build_int_compare(IntPredicate::UGT, l, r, "gt").unwrap(),
-                    (Less, true)          => b.build_int_compare(IntPredicate::SLT, l, r, "lt").unwrap(),
-                    (Less, false)         => b.build_int_compare(IntPredicate::ULT, l, r, "lt").unwrap(),
-                    (GreaterEqual, true)  => b.build_int_compare(IntPredicate::SGE, l, r, "ge").unwrap(),
-                    (GreaterEqual, false) => b.build_int_compare(IntPredicate::UGE, l, r, "ge").unwrap(),
-                    (LessEqual, true)     => b.build_int_compare(IntPredicate::SLE, l, r, "le").unwrap(),
-                    (LessEqual, false)    => b.build_int_compare(IntPredicate::ULE, l, r, "le").unwrap(),
-                    _ => unreachable!("type checker rejects other int operators"),
-                };
-                result.into()
-            }
-            Type::Real => {
-                let l = lhs.into_float_value();
-                let r = rhs.into_float_value();
-                let b = &self.builder;
-                #[rustfmt::skip]
-                let result: BasicValueEnum = match op {
-                    Add      => b.build_float_add(l, r, "add").unwrap().into(),
-                    Subtract => b.build_float_sub(l, r, "sub").unwrap().into(),
-                    Multiply => b.build_float_mul(l, r, "mul").unwrap().into(),
-                    Divide   => b.build_float_div(l, r, "div").unwrap().into(),
-                    Equality     => b.build_float_compare(FloatPredicate::OEQ, l, r, "eq").unwrap().into(),
-                    NotEquality  => b.build_float_compare(FloatPredicate::UNE, l, r, "ne").unwrap().into(),
-                    Greater      => b.build_float_compare(FloatPredicate::OGT, l, r, "gt").unwrap().into(),
-                    Less         => b.build_float_compare(FloatPredicate::OLT, l, r, "lt").unwrap().into(),
-                    GreaterEqual => b.build_float_compare(FloatPredicate::OGE, l, r, "ge").unwrap().into(),
-                    LessEqual    => b.build_float_compare(FloatPredicate::OLE, l, r, "le").unwrap().into(),
-                    _ => unreachable!("type checker rejects other real operators"),
-                };
-                result
-            }
-            Type::Array(_) => {
-                let l = lhs.into_pointer_value();
-                let r = rhs.into_pointer_value();
-                return self.lower_array_binary(operand_type, op, l, r, span);
-            }
-            Type::Opaque => {
-                let eq = self.pointers_equal(lhs.into_pointer_value(), rhs.into_pointer_value());
-                let result = if op == NotEquality {
-                    self.builder.build_not(eq, "ne").unwrap()
+        match op {
+            IntDiv | IntMod => {
+                let l = l.into_int_value();
+                let r = r.into_int_value();
+                self.check_nonzero_divisor(r);
+                let value = if op == IntDiv {
+                    self.builder.build_int_signed_div(l, r, "div").unwrap()
                 } else {
-                    eq
+                    self.builder.build_int_signed_rem(l, r, "rem").unwrap()
                 };
-                result.into()
+                value.into()
             }
-            _ => unreachable!("type checker rejects operators on other types"),
-        };
-        Ok(value)
+            OpaqueEq | OpaqueNe => {
+                let eq = self.pointers_equal(l.into_pointer_value(), r.into_pointer_value());
+                if op == OpaqueNe {
+                    self.builder.build_not(eq, "ne").unwrap().into()
+                } else {
+                    eq.into()
+                }
+            }
+            _ => {
+                let b = &self.builder;
+                #[rustfmt::skip]
+                let value: BasicValueEnum = match op {
+                    IntAdd => b.build_int_add(l.into_int_value(), r.into_int_value(), "add").unwrap().into(),
+                    IntSub => b.build_int_sub(l.into_int_value(), r.into_int_value(), "sub").unwrap().into(),
+                    IntMul => b.build_int_mul(l.into_int_value(), r.into_int_value(), "mul").unwrap().into(),
+                    IntBitAnd => b.build_and(l.into_int_value(), r.into_int_value(), "and").unwrap().into(),
+                    IntBitOr  => b.build_or(l.into_int_value(), r.into_int_value(), "or").unwrap().into(),
+                    IntBitXor => b.build_xor(l.into_int_value(), r.into_int_value(), "xor").unwrap().into(),
+                    IntShl    => b.build_left_shift(l.into_int_value(), r.into_int_value(), "shl").unwrap().into(),
+                    IntShr    => b.build_right_shift(l.into_int_value(), r.into_int_value(), true, "shr").unwrap().into(),
+                    IntEq => b.build_int_compare(IntPredicate::EQ, l.into_int_value(), r.into_int_value(), "eq").unwrap().into(),
+                    IntNe => b.build_int_compare(IntPredicate::NE, l.into_int_value(), r.into_int_value(), "ne").unwrap().into(),
+                    IntLt => b.build_int_compare(IntPredicate::SLT, l.into_int_value(), r.into_int_value(), "lt").unwrap().into(),
+                    IntLe => b.build_int_compare(IntPredicate::SLE, l.into_int_value(), r.into_int_value(), "le").unwrap().into(),
+                    IntGt => b.build_int_compare(IntPredicate::SGT, l.into_int_value(), r.into_int_value(), "gt").unwrap().into(),
+                    IntGe => b.build_int_compare(IntPredicate::SGE, l.into_int_value(), r.into_int_value(), "ge").unwrap().into(),
+                    CharEq => b.build_int_compare(IntPredicate::EQ, l.into_int_value(), r.into_int_value(), "eq").unwrap().into(),
+                    CharNe => b.build_int_compare(IntPredicate::NE, l.into_int_value(), r.into_int_value(), "ne").unwrap().into(),
+                    CharLt => b.build_int_compare(IntPredicate::ULT, l.into_int_value(), r.into_int_value(), "lt").unwrap().into(),
+                    CharLe => b.build_int_compare(IntPredicate::ULE, l.into_int_value(), r.into_int_value(), "le").unwrap().into(),
+                    CharGt => b.build_int_compare(IntPredicate::UGT, l.into_int_value(), r.into_int_value(), "gt").unwrap().into(),
+                    CharGe => b.build_int_compare(IntPredicate::UGE, l.into_int_value(), r.into_int_value(), "ge").unwrap().into(),
+                    BoolEq => b.build_int_compare(IntPredicate::EQ, l.into_int_value(), r.into_int_value(), "eq").unwrap().into(),
+                    BoolNe => b.build_int_compare(IntPredicate::NE, l.into_int_value(), r.into_int_value(), "ne").unwrap().into(),
+                    RealAdd => b.build_float_add(l.into_float_value(), r.into_float_value(), "add").unwrap().into(),
+                    RealSub => b.build_float_sub(l.into_float_value(), r.into_float_value(), "sub").unwrap().into(),
+                    RealMul => b.build_float_mul(l.into_float_value(), r.into_float_value(), "mul").unwrap().into(),
+                    RealDiv => b.build_float_div(l.into_float_value(), r.into_float_value(), "div").unwrap().into(),
+                    RealEq => b.build_float_compare(FloatPredicate::OEQ, l.into_float_value(), r.into_float_value(), "eq").unwrap().into(),
+                    RealNe => b.build_float_compare(FloatPredicate::UNE, l.into_float_value(), r.into_float_value(), "ne").unwrap().into(),
+                    RealLt => b.build_float_compare(FloatPredicate::OLT, l.into_float_value(), r.into_float_value(), "lt").unwrap().into(),
+                    RealLe => b.build_float_compare(FloatPredicate::OLE, l.into_float_value(), r.into_float_value(), "le").unwrap().into(),
+                    RealGt => b.build_float_compare(FloatPredicate::OGT, l.into_float_value(), r.into_float_value(), "gt").unwrap().into(),
+                    RealGe => b.build_float_compare(FloatPredicate::OGE, l.into_float_value(), r.into_float_value(), "ge").unwrap().into(),
+                    _ => unreachable!("array, optional, div/mod, and opaque ops are handled elsewhere"),
+                };
+                value
+            }
+        }
     }
 
     fn lower_short_circuit(
         &mut self,
-        left: &Spanned<Expression>,
+        left: &Expression,
         is_and: bool,
-        right: &Spanned<Expression>,
-    ) -> Result<BasicValueEnum<'ctx>, CodegenErr> {
+        right: &Expression,
+    ) -> BasicValueEnum<'ctx> {
         let function = self.frame().function;
-        let lhs = self.lower_expression(left)?.into_int_value();
+        let lhs = self.lower_expression(left).into_int_value();
         let lhs_block = self.builder.get_insert_block().unwrap();
 
         let rhs_block = self.context.append_basic_block(function, "sc_rhs");
@@ -292,11 +274,9 @@ impl<'ctx> CodeGen<'ctx, '_> {
         };
 
         self.builder.position_at_end(rhs_block);
-        let rhs = self.lower_expression(right)?.into_int_value();
+        let rhs = self.lower_expression(right).into_int_value();
         let rhs_end_block = self.builder.get_insert_block().unwrap();
-        self.builder
-            .build_unconditional_branch(merge_block)
-            .unwrap();
+        self.builder.build_unconditional_branch(merge_block).unwrap();
 
         self.builder.position_at_end(merge_block);
         let phi = self
@@ -304,41 +284,30 @@ impl<'ctx> CodeGen<'ctx, '_> {
             .build_phi(self.context.bool_type(), "sc")
             .unwrap();
         phi.add_incoming(&[(&short_value, lhs_block), (&rhs, rhs_end_block)]);
-        Ok(phi.as_basic_value())
+        phi.as_basic_value()
     }
 
-    fn lower_cast(
-        &mut self,
-        operand: &Spanned<Expression>,
-        target: &Type,
-    ) -> Result<BasicValueEnum<'ctx>, CodegenErr> {
-        use Type::*;
-        let from = &self.program.types[&operand.id];
-        let value = self.lower_expression(operand)?;
+    fn lower_cast(&mut self, kind: CastKind, operand: &Expression) -> BasicValueEnum<'ctx> {
+        let value = self.lower_expression(operand);
         let b = &self.builder;
-
-        let result: BasicValueEnum = match (from, target) {
-            (Int, Real) => b
+        match kind {
+            CastKind::IntToReal => b
                 .build_signed_int_to_float(value.into_int_value(), self.context.f64_type(), "cast")
                 .unwrap()
                 .into(),
-            (Real, Int) => b
-                .build_float_to_signed_int(
-                    value.into_float_value(),
-                    self.context.i64_type(),
-                    "cast",
-                )
+            CastKind::RealToInt => b
+                .build_float_to_signed_int(value.into_float_value(), self.context.i64_type(), "cast")
                 .unwrap()
                 .into(),
-            (Int, Char) => b
+            CastKind::IntToChar => b
                 .build_int_truncate(value.into_int_value(), self.context.i8_type(), "cast")
                 .unwrap()
                 .into(),
-            (Char, Int) => b
+            CastKind::CharToInt => b
                 .build_int_z_extend(value.into_int_value(), self.context.i64_type(), "cast")
                 .unwrap()
                 .into(),
-            (Char, Real) => b
+            CastKind::CharToReal => b
                 .build_unsigned_int_to_float(
                     value.into_int_value(),
                     self.context.f64_type(),
@@ -346,7 +315,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 )
                 .unwrap()
                 .into(),
-            (Real, Char) => b
+            CastKind::RealToChar => b
                 .build_float_to_unsigned_int(
                     value.into_float_value(),
                     self.context.i8_type(),
@@ -354,79 +323,21 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 )
                 .unwrap()
                 .into(),
-            _ => unreachable!("type checker rejects other casts"),
-        };
-        Ok(result)
-    }
-
-    fn lower_call(
-        &mut self,
-        callee: &Spanned<Expression>,
-        args: &[Spanned<Expression>],
-        span: &Span,
-    ) -> Result<Option<BasicValueEnum<'ctx>>, CodegenErr> {
-        let (function, receiver, callee_symbol) = match &callee.node {
-            Expression::Identifier(name) => {
-                if is_intrinsic(name) {
-                    return self.lower_copy(&args[0], span).map(Some);
-                }
-                let id = self.program.symbols.symbol_id_of_use(callee.id).unwrap();
-                (self.functions[&id], None, id)
-            }
-            Expression::Access(obj, _) => {
-                if let Some(&method) = self.program.array_method_calls.get(&callee.id) {
-                    return self.lower_array_method(method, obj, args, span);
-                }
-                if let Some(&method) = self.program.method_calls.get(&callee.id) {
-                    (self.functions[&method], Some(obj), method)
-                } else {
-                    // A module-qualified call
-                    let id = self.program.symbols.symbol_id_of_use(callee.id).unwrap();
-                    (self.functions[&id], None, id)
-                }
-            }
-            _ => unreachable!("type checker rejects other callees"),
-        };
-
-        // A method's receiver is its first argument. remaining arguments coerce.
-        let Some(Type::Function(_, parameters)) =
-            self.program.symbols.symbol(callee_symbol).ty.clone()
-        else {
-            unreachable!("callees are declared with a function type");
-        };
-        let parameters = &parameters[parameters.len() - args.len()..];
-        let mut arg_values = Vec::with_capacity(args.len() + 1);
-        if let Some(obj) = receiver {
-            arg_values.push(self.lower_expression(obj)?.into());
-        }
-        for (arg, parameter) in args.iter().zip(parameters) {
-            arg_values.push(self.lower_expression_expecting(arg, parameter)?.into());
-        }
-
-        let call = self.builder.build_call(function, &arg_values, "").unwrap();
-        match call.try_as_basic_value() {
-            ValueKind::Basic(value) => Ok(Some(value)),
-            ValueKind::Instruction(_) => Ok(None),
         }
     }
 
     /// `copy(x)` universal shallow copy of an aggregate.
-    fn lower_copy(
-        &mut self,
-        arg: &Spanned<Expression>,
-        span: &Span,
-    ) -> Result<BasicValueEnum<'ctx>, CodegenErr> {
-        match &self.program.types[&arg.id] {
-            Type::Struct(sr) => {
-                let decl = self.struct_decl(sr);
-                let struct_type = self.struct_type(decl, span)?;
+    fn lower_copy(&mut self, arg: &Expression) -> BasicValueEnum<'ctx> {
+        match self.program.types[arg.ty] {
+            Type::Struct(_) => {
+                let struct_type = self.struct_type_of(arg.ty);
                 let size = struct_type.size_of().unwrap();
-                let source = self.lower_expression(arg)?.into_pointer_value();
+                let source = self.lower_expression(arg).into_pointer_value();
                 let copy = self.gc_malloc(size, "copy");
                 self.builder.build_memcpy(copy, 1, source, 1, size).unwrap();
-                Ok(copy.into())
+                copy.into()
             }
-            Type::Array(_) => self.lower_array_copy(arg, span),
+            Type::Array(_) => self.lower_array_copy(arg),
             _ => unreachable!("type checker rejects copy of scalars"),
         }
     }

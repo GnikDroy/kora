@@ -28,57 +28,60 @@ use inkwell::values::{
 };
 
 use crate::frontend::CompiledProgram;
-use crate::parser::*;
-use crate::semantic_analyzer::{SymbolId, is_reference};
+use crate::ir::{self, ExternId, FunctionDef, FunctionId, Program, StructId, Type, TypeId};
 
 pub struct CodeGen<'ctx, 'a> {
     context: &'ctx Context,
     module: LlvmModule<'ctx>,
     builder: Builder<'ctx>,
-    program: &'a CompiledProgram,
-    modules: Vec<&'a Module>,
-    functions: HashMap<SymbolId, FunctionValue<'ctx>>,
-    struct_types: HashMap<NodeId, StructType<'ctx>>,
+    program: &'a Program,
+    struct_types: HashMap<StructId, StructType<'ctx>>,
     array_type: Option<StructType<'ctx>>,
-    array_equality_fns: HashMap<Type, FunctionValue<'ctx>>, // memoized `i1 @"eq.N"(ptr, ptr)` per array type
-    default_fns: HashMap<NodeId, FunctionValue<'ctx>>,
+    array_equality_fns: HashMap<TypeId, FunctionValue<'ctx>>, // memoized `i1 @"eq.N"(ptr, ptr)` per array type
+    default_fns: HashMap<StructId, FunctionValue<'ctx>>,
     frame: Option<Frame<'ctx>>,
 }
 
 struct Frame<'ctx> {
     function: FunctionValue<'ctx>,
-    return_type: Option<Type>,
-    variables: HashMap<SymbolId, PointerValue<'ctx>>,
+    return_type: TypeId,
+    variables: Vec<PointerValue<'ctx>>, // indexed by LocalId
     loops: Vec<(BasicBlock<'ctx>, BasicBlock<'ctx>)>,
 }
 
 pub fn lower<'ctx>(
     context: &'ctx Context,
-    program: &CompiledProgram,
+    compiled: &CompiledProgram,
 ) -> Result<LlvmModule<'ctx>, CodegenErr> {
+    let program = ir::lower(compiled);
     let mut codegen = CodeGen {
         context,
         module: context.create_module("kora"),
         builder: context.create_builder(),
-        program,
-        modules: program.program.modules.iter().map(|m| &m.module).collect(),
-        functions: HashMap::new(),
+        program: &program,
         struct_types: HashMap::new(),
         array_type: None,
         array_equality_fns: HashMap::new(),
         default_fns: HashMap::new(),
         frame: None,
     };
-    for module in program.program.modules.iter() {
-        codegen.declare_module(&module.module)?;
-    }
-    for module in program.program.modules.iter() {
-        codegen.lower_module(&module.module)?;
-    }
+    codegen.run();
     Ok(codegen.module)
 }
 
-impl<'ctx> CodeGen<'ctx, '_> {
+impl<'ctx, 'a> CodeGen<'ctx, 'a> {
+    fn run(&mut self) {
+        for ext in &self.program.externs {
+            self.declare_extern_function(ext);
+        }
+        for func in &self.program.functions {
+            self.declare_function(func);
+        }
+        for func in &self.program.functions {
+            self.lower_function(func);
+        }
+    }
+
     fn frame(&self) -> &Frame<'ctx> {
         self.frame.as_ref().unwrap()
     }
@@ -87,142 +90,97 @@ impl<'ctx> CodeGen<'ctx, '_> {
         self.frame.as_mut().unwrap()
     }
 
-    fn declare_module(&mut self, module: &Module) -> Result<(), CodegenErr> {
-        for func in module.extern_functions.iter() {
-            self.declare_extern_function(func);
-        }
-        for func in module
-            .functions
-            .iter()
-            .chain(module.impls.iter().flat_map(|i| i.node.functions.iter()))
-        {
-            let name = self.program.emitted[&func.id].clone();
-            self.declare_function(func.id, &name, &func.node.return_type, &func.node.arguments)?;
-        }
-        Ok(())
+    /// The LLVM module is the function symbol table; every function is declared
+    /// under its final emitted symbol, so calls resolve by name.
+    pub(super) fn function_value(&self, id: FunctionId) -> FunctionValue<'ctx> {
+        self.module.get_function(&self.program[id].symbol).unwrap()
     }
 
-    fn lower_module(&mut self, module: &Module) -> Result<(), CodegenErr> {
-        for func in module.functions.iter() {
-            self.lower_function(func)?;
-        }
-        for impl_ in module.impls.iter() {
-            for func in impl_.node.functions.iter() {
-                self.lower_function(func)?;
-            }
-        }
-        Ok(())
+    /// An extern's callable is its thunk when one was emitted, else the raw C
+    /// function under its own name.
+    pub(super) fn extern_value(&self, id: ExternId) -> FunctionValue<'ctx> {
+        let symbol = &self.program[id].symbol;
+        self.module
+            .get_function(&format!("{symbol}.thunk"))
+            .unwrap_or_else(|| self.module.get_function(symbol).unwrap())
     }
 
-    fn declare_function(
-        &mut self,
-        declaration_id: NodeId,
-        name: &str,
-        return_type: &Option<Type>,
-        arguments: &[Spanned<IdentifierTypePair>],
-    ) -> Result<FunctionValue<'ctx>, CodegenErr> {
-        let param_types = arguments
+    fn declare_function(&mut self, func: &FunctionDef) {
+        let param_types = func.locals[..func.params]
             .iter()
-            .map(|pair| {
-                self.basic_type(&pair.node.typename, &pair.span)
-                    .map(Into::into)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-
-        let function_type = match return_type {
-            Some(ty) => {
-                let span = arguments
-                    .first()
-                    .map(|pair| pair.span.clone())
-                    .unwrap_or_default();
-                self.basic_type(ty, &span)?.fn_type(&param_types, false)
-            }
-            None => self.context.void_type().fn_type(&param_types, false),
+            .map(|local| self.basic_type(local.ty).into())
+            .collect::<Vec<_>>();
+        let function_type = match self.program.types[func.ret] {
+            Type::Void => self.context.void_type().fn_type(&param_types, false),
+            _ => self.basic_type(func.ret).fn_type(&param_types, false),
         };
-
-        // dedupe externs (it is okay to extern declare multiple times)
-        let function = self
-            .module
-            .get_function(name)
-            .unwrap_or_else(|| self.module.add_function(name, function_type, None));
-        let id = self
-            .program
-            .symbols
-            .symbol_id_of_declaration(declaration_id)
-            .unwrap();
-        self.functions.insert(id, function);
-        Ok(function)
+        // A symbol is declared once; get-or-add stays defensive against dupes.
+        if self.module.get_function(&func.symbol).is_none() {
+            self.module.add_function(&func.symbol, function_type, None);
+        }
     }
 
-    fn lower_function(&mut self, func: &Spanned<Function>) -> Result<(), CodegenErr> {
-        let id = self
-            .program
-            .symbols
-            .symbol_id_of_declaration(func.id)
-            .unwrap();
-        let function = self.functions[&id];
+    fn lower_function(&mut self, func: &'a FunctionDef) {
+        let function = self.module.get_function(&func.symbol).unwrap();
         self.frame = Some(Frame {
             function,
-            return_type: func.node.return_type.clone(),
-            variables: HashMap::new(),
+            return_type: func.ret,
+            variables: Vec::new(),
             loops: Vec::new(),
         });
 
         let entry = self.context.append_basic_block(function, "entry");
         self.builder.position_at_end(entry);
 
-        for (i, pair) in func.node.arguments.iter().enumerate() {
-            let ty = self.basic_type(&pair.node.typename, &pair.span)?;
-            let alloca = self.entry_alloca(ty, &pair.node.name);
-            let value = function.get_nth_param(i as u32).unwrap();
-            self.builder.build_store(alloca, value).unwrap();
-            let id = self
-                .program
-                .symbols
-                .symbol_id_of_declaration(pair.id)
-                .unwrap();
-            self.frame_mut().variables.insert(id, alloca);
+        let mut variables = Vec::with_capacity(func.locals.len());
+        for local in &func.locals {
+            let ty = self.basic_type(local.ty);
+            variables.push(self.entry_alloca(ty, &local.name));
         }
+        for (i, slot) in variables.iter().take(func.params).enumerate() {
+            let value = function.get_nth_param(i as u32).unwrap();
+            self.builder.build_store(*slot, value).unwrap();
+        }
+        self.frame_mut().variables = variables;
 
-        self.lower_statement(&func.node.statement)?;
+        self.block(&func.body);
 
-        // The return checker guarantees non-void functions return on every branch
+        // The return checker guarantees non-void functions return on every branch.
         let block = self.builder.get_insert_block().unwrap();
         if block.get_terminator().is_none() {
-            match func.node.return_type {
-                None => self.builder.build_return(None).unwrap(),
-                Some(_) => self.builder.build_unreachable().unwrap(),
+            match self.program.types[func.ret] {
+                Type::Void => self.builder.build_return(None).unwrap(),
+                _ => self.builder.build_unreachable().unwrap(),
             };
         }
-        Ok(())
     }
 
-    fn basic_type(&self, ty: &Type, span: &Span) -> Result<BasicTypeEnum<'ctx>, CodegenErr> {
-        match ty {
-            Type::Int => Ok(self.context.i64_type().into()),
-            Type::Real => Ok(self.context.f64_type().into()),
-            Type::Bool => Ok(self.context.bool_type().into()),
-            Type::Char => Ok(self.context.i8_type().into()),
-            Type::Opaque => Ok(self.context.ptr_type(AddressSpace::default()).into()),
-            Type::Array(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
-            Type::Optional(inner) => {
-                if is_reference(inner) {
-                    return Ok(self.context.ptr_type(AddressSpace::default()).into());
-                }
-                let inner = self.basic_type(inner, span)?;
-                let tag = self.context.i8_type().into();
-                Ok(self.context.struct_type(&[tag, inner], false).into())
+    fn basic_type(&self, ty: TypeId) -> BasicTypeEnum<'ctx> {
+        match self.program.types[ty] {
+            Type::Int => self.context.i64_type().into(),
+            Type::Real => self.context.f64_type().into(),
+            Type::Bool => self.context.bool_type().into(),
+            Type::Char => self.context.i8_type().into(),
+            Type::Opaque | Type::Array(_) | Type::Struct(_) => {
+                self.context.ptr_type(AddressSpace::default()).into()
             }
-            Type::Struct(_) => Ok(self.context.ptr_type(AddressSpace::default()).into()),
-            Type::Generic(_, _) => Err(CodegenErr {
-                msg: "generic type was not instantiated",
-                span: span.clone(),
-            }),
-            Type::Function(_, _) => Err(CodegenErr {
-                msg: "functions cannot be used as values",
-                span: span.clone(),
-            }),
+            Type::Optional(inner) => {
+                if self.is_reference(inner) {
+                    return self.context.ptr_type(AddressSpace::default()).into();
+                }
+                let inner = self.basic_type(inner);
+                let tag = self.context.i8_type().into();
+                self.context.struct_type(&[tag, inner], false).into()
+            }
+            Type::Void => unreachable!("void is not a value type"),
         }
+    }
+
+    fn is_reference(&self, ty: TypeId) -> bool {
+        matches!(
+            self.program.types[ty],
+            Type::Array(_) | Type::Struct(_) | Type::Opaque
+        )
     }
 
     pub(super) fn pointers_equal(
@@ -303,13 +261,9 @@ impl<'ctx> CodeGen<'ctx, '_> {
         slot
     }
 
-    pub(super) fn type_layout(
-        &mut self,
-        ty: &Type,
-        span: &Span,
-    ) -> Result<(BasicTypeEnum<'ctx>, IntValue<'ctx>), CodegenErr> {
-        let ty = self.basic_type(ty, span)?;
-        Ok((ty, ty.size_of().unwrap()))
+    pub(super) fn type_layout(&mut self, ty: TypeId) -> (BasicTypeEnum<'ctx>, IntValue<'ctx>) {
+        let ty = self.basic_type(ty);
+        (ty, ty.size_of().unwrap())
     }
 
     fn entry_alloca(&self, ty: BasicTypeEnum<'ctx>, name: &str) -> PointerValue<'ctx> {

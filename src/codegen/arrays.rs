@@ -5,9 +5,8 @@ use inkwell::values::{
 };
 use inkwell::{FloatPredicate, IntPredicate};
 
-use super::{CodeGen, CodegenErr};
-use crate::parser::*;
-use crate::semantic_analyzer::ArrayMethod;
+use super::CodeGen;
+use crate::ir::{ArrayOp, BinOp, Expression, Type, TypeId};
 
 impl<'ctx, 'a> CodeGen<'ctx, 'a> {
     /// { i64 len, i64 cap, ptr buf }
@@ -66,8 +65,8 @@ impl<'ctx, 'a> CodeGen<'ctx, 'a> {
         }
     }
 
-    fn array_element_type(&self, expr: &Spanned<Expression>) -> &'a Type {
-        let Type::Array(elem) = &self.program.types[&expr.id] else {
+    fn array_elem(&self, array_ty: TypeId) -> TypeId {
+        let Type::Array(elem) = self.program.types[array_ty] else {
             unreachable!("expression is array-typed");
         };
         elem
@@ -97,28 +96,21 @@ impl<'ctx, 'a> CodeGen<'ctx, 'a> {
             .into_pointer_value()
     }
 
-    pub(super) fn array_new(
-        &mut self,
-        elem: &Type,
-        span: &Span,
-    ) -> Result<BasicValueEnum<'ctx>, CodegenErr> {
-        let (_, size) = self.type_layout(elem, span)?;
+    pub(super) fn array_new(&mut self, elem: TypeId) -> BasicValueEnum<'ctx> {
+        let (_, size) = self.type_layout(elem);
         let zero = self.context.i64_type().const_zero();
-        Ok(self
-            .array_fn_call("__kora_array_new", &[zero.into(), zero.into(), size.into()])
-            .unwrap())
+        self.array_fn_call("__kora_array_new", &[zero.into(), zero.into(), size.into()])
+            .unwrap()
     }
 
-    pub(super) fn array_element_pointer(
+    pub(super) fn array_element_ptr(
         &mut self,
-        array: &Spanned<Expression>,
-        index: &Spanned<Expression>,
-        span: &Span,
-    ) -> Result<PointerValue<'ctx>, CodegenErr> {
-        let elem = self.array_element_type(array);
-        let (elem_ty, _) = self.type_layout(elem, span)?;
-        let array = self.lower_expression(array)?.into_pointer_value();
-        let index = self.lower_expression(index)?.into_int_value();
+        array: PointerValue<'ctx>,
+        array_ty: TypeId,
+        index: IntValue<'ctx>,
+    ) -> PointerValue<'ctx> {
+        let elem = self.array_elem(array_ty);
+        let (elem_ty, _) = self.type_layout(elem);
         let len = self.array_len(array);
         let oob = self
             .builder
@@ -126,20 +118,20 @@ impl<'ctx, 'a> CodeGen<'ctx, 'a> {
             .unwrap();
         self.panic_if(oob, "index out of bounds");
         let buf = self.array_buf(array);
-        Ok(unsafe {
+        unsafe {
             self.builder
                 .build_gep(elem_ty, buf, &[index], "elem")
                 .unwrap()
-        })
+        }
     }
 
     pub(super) fn lower_array_literal(
         &mut self,
-        expr: &Spanned<Expression>,
-        elems: &[Spanned<Expression>],
-    ) -> Result<BasicValueEnum<'ctx>, CodegenErr> {
-        let elem = self.array_element_type(expr);
-        let (elem_ty, size) = self.type_layout(elem, &expr.span)?;
+        array_ty: TypeId,
+        elems: &[Expression],
+    ) -> BasicValueEnum<'ctx> {
+        let elem = self.array_elem(array_ty);
+        let (elem_ty, size) = self.type_layout(elem);
         let len = self.context.i64_type().const_int(elems.len() as u64, false);
         let zero = self.context.i64_type().const_zero();
         let array = self
@@ -148,7 +140,7 @@ impl<'ctx, 'a> CodeGen<'ctx, 'a> {
             .into_pointer_value();
         let buf = self.array_buf(array);
         for (i, elem_expr) in elems.iter().enumerate() {
-            let value = self.lower_expression_expecting(elem_expr, elem)?;
+            let value = self.lower_expression(elem_expr);
             let index = self.context.i64_type().const_int(i as u64, false);
             let slot = unsafe {
                 self.builder
@@ -157,7 +149,7 @@ impl<'ctx, 'a> CodeGen<'ctx, 'a> {
             };
             self.builder.build_store(slot, value).unwrap();
         }
-        Ok(array.into())
+        array.into()
     }
 
     pub(super) fn lower_string_literal(&mut self, s: &str) -> BasicValueEnum<'ctx> {
@@ -173,21 +165,20 @@ impl<'ctx, 'a> CodeGen<'ctx, 'a> {
 
     pub(super) fn lower_array_construct(
         &mut self,
-        typename: &Type,
-        size_expr: &Spanned<Expression>,
-        span: &Span,
-    ) -> Result<BasicValueEnum<'ctx>, CodegenErr> {
-        let (elem_ty, size) = self.type_layout(typename, span)?;
-        let n = self.lower_expression(size_expr)?.into_int_value();
+        array_ty: TypeId,
+        size_expr: &Expression,
+    ) -> BasicValueEnum<'ctx> {
+        let elem = self.array_elem(array_ty);
+        let (elem_ty, size) = self.type_layout(elem);
+        let n = self.lower_expression(size_expr).into_int_value();
         let zero = self.context.i64_type().const_zero();
         let array = self
             .array_fn_call("__kora_array_new", &[n.into(), zero.into(), size.into()])
             .unwrap()
             .into_pointer_value();
 
-        if let Type::Struct(sr) = typename {
-            let decl = self.struct_decl(sr);
-            let constructor = self.struct_constructor(decl, span)?;
+        if let Type::Struct(struct_) = self.program.types[elem] {
+            let constructor = self.struct_constructor(struct_);
             let buf = self.array_buf(array);
             let function = self.frame().function;
             let slot_index = self.entry_alloca(self.context.i64_type().into(), "i");
@@ -213,9 +204,7 @@ impl<'ctx, 'a> CodeGen<'ctx, 'a> {
 
             self.builder.position_at_end(body);
             let call = self.builder.build_call(constructor, &[], "new").unwrap();
-            let ValueKind::Basic(value) = call.try_as_basic_value() else {
-                unreachable!();
-            };
+            let value = self.call_value(call);
             let slot = unsafe { self.builder.build_gep(elem_ty, buf, &[i], "slot").unwrap() };
             self.builder.build_store(slot, value).unwrap();
             let one = self.context.i64_type().const_int(1, false);
@@ -225,38 +214,34 @@ impl<'ctx, 'a> CodeGen<'ctx, 'a> {
 
             self.builder.position_at_end(after);
         }
-        Ok(array.into())
+        array.into()
     }
 
-    pub(super) fn lower_array_method(
+    pub(super) fn lower_array_op(
         &mut self,
-        method: ArrayMethod,
-        obj: &Spanned<Expression>,
-        args: &[Spanned<Expression>],
-        span: &Span,
-    ) -> Result<Option<BasicValueEnum<'ctx>>, CodegenErr> {
-        let elem = self.array_element_type(obj);
-        let (elem_ty, size) = self.type_layout(elem, span)?;
-        let array = self.lower_expression(obj)?.into_pointer_value();
-        let value = match method {
-            ArrayMethod::Len => Some(self.array_len(array).into()),
-            ArrayMethod::Push => {
-                let value = self.lower_expression_expecting(&args[0], elem)?;
+        op: ArrayOp,
+        receiver: &Expression,
+        args: &[Expression],
+    ) -> Option<BasicValueEnum<'ctx>> {
+        let elem = self.array_elem(receiver.ty);
+        let (elem_ty, size) = self.type_layout(elem);
+        let array = self.lower_expression(receiver).into_pointer_value();
+        match op {
+            ArrayOp::Len => Some(self.array_len(array).into()),
+            ArrayOp::Push => {
+                let value = self.lower_expression(&args[0]);
                 let slot = self.spill(value);
-                self.array_fn_call(
-                    "__kora_array_push",
-                    &[array.into(), slot.into(), size.into()],
-                );
+                self.array_fn_call("__kora_array_push", &[array.into(), slot.into(), size.into()]);
                 None
             }
-            ArrayMethod::Pop => {
+            ArrayOp::Pop => {
                 let out = self.entry_alloca(elem_ty, "popped");
                 self.array_fn_call("__kora_array_pop", &[array.into(), out.into(), size.into()]);
                 Some(self.builder.build_load(elem_ty, out, "popped").unwrap())
             }
-            ArrayMethod::Insert => {
-                let index = self.lower_expression(&args[0])?;
-                let value = self.lower_expression_expecting(&args[1], elem)?;
+            ArrayOp::Insert => {
+                let index = self.lower_expression(&args[0]);
+                let value = self.lower_expression(&args[1]);
                 let slot = self.spill(value);
                 self.array_fn_call(
                     "__kora_array_insert",
@@ -264,8 +249,8 @@ impl<'ctx, 'a> CodeGen<'ctx, 'a> {
                 );
                 None
             }
-            ArrayMethod::Remove => {
-                let index = self.lower_expression(&args[0])?;
+            ArrayOp::Remove => {
+                let index = self.lower_expression(&args[0]);
                 let out = self.entry_alloca(elem_ty, "removed");
                 self.array_fn_call(
                     "__kora_array_remove",
@@ -273,95 +258,77 @@ impl<'ctx, 'a> CodeGen<'ctx, 'a> {
                 );
                 Some(self.builder.build_load(elem_ty, out, "removed").unwrap())
             }
-            ArrayMethod::Slice => {
-                let start = self.lower_expression(&args[0])?;
-                let end = self.lower_expression(&args[1])?;
+            ArrayOp::Slice => {
+                let start = self.lower_expression(&args[0]);
+                let end = self.lower_expression(&args[1]);
                 self.array_fn_call(
                     "__kora_array_slice",
                     &[array.into(), start.into(), end.into(), size.into()],
                 )
             }
-            ArrayMethod::Extend => {
-                let other = self.lower_expression(&args[0])?;
+            ArrayOp::Extend => {
+                let other = self.lower_expression(&args[0]);
                 self.array_fn_call(
                     "__kora_array_extend",
                     &[array.into(), other.into(), size.into()],
                 );
                 None
             }
-        };
-        Ok(value)
+        }
     }
 
-    pub(super) fn lower_array_copy(
-        &mut self,
-        arg: &Spanned<Expression>,
-        span: &Span,
-    ) -> Result<BasicValueEnum<'ctx>, CodegenErr> {
-        let elem = self.array_element_type(arg);
-        let (_, size) = self.type_layout(elem, span)?;
-        let array = self.lower_expression(arg)?;
-        Ok(self
-            .array_fn_call("__kora_array_copy", &[array.into(), size.into()])
-            .unwrap())
+    pub(super) fn lower_array_copy(&mut self, arg: &Expression) -> BasicValueEnum<'ctx> {
+        let elem = self.array_elem(arg.ty);
+        let (_, size) = self.type_layout(elem);
+        let array = self.lower_expression(arg);
+        self.array_fn_call("__kora_array_copy", &[array.into(), size.into()])
+            .unwrap()
     }
 
-    pub(super) fn lower_array_binary(
+    pub(super) fn array_concat(
         &mut self,
-        array_type: &Type,
-        op: BinaryOp,
+        array_ty: TypeId,
         lhs: PointerValue<'ctx>,
         rhs: PointerValue<'ctx>,
-        span: &Span,
-    ) -> Result<BasicValueEnum<'ctx>, CodegenErr> {
-        match op {
-            BinaryOp::Add => {
-                let Type::Array(elem) = array_type else {
-                    unreachable!();
-                };
-                let (_, size) = self.type_layout(elem, span)?;
-                Ok(self
-                    .array_fn_call(
-                        "__kora_array_concat",
-                        &[lhs.into(), rhs.into(), size.into()],
-                    )
-                    .unwrap())
-            }
-            BinaryOp::Equality | BinaryOp::NotEquality => {
-                let eq = self.array_equality_fn(array_type, span)?;
-                let call = self
-                    .builder
-                    .build_call(eq, &[lhs.into(), rhs.into()], "eq")
-                    .unwrap();
-                let ValueKind::Basic(value) = call.try_as_basic_value() else {
-                    unreachable!();
-                };
-                if op == BinaryOp::NotEquality {
-                    let ne = self
-                        .builder
-                        .build_not(value.into_int_value(), "ne")
-                        .unwrap();
-                    return Ok(ne.into());
-                }
-                Ok(value)
-            }
-            _ => unreachable!("type checker rejects other array operators"),
-        }
+    ) -> BasicValueEnum<'ctx> {
+        let elem = self.array_elem(array_ty);
+        let (_, size) = self.type_layout(elem);
+        self.array_fn_call(
+            "__kora_array_concat",
+            &[lhs.into(), rhs.into(), size.into()],
+        )
+        .unwrap()
     }
 
-    pub(super) fn array_equality_fn(
+    pub(super) fn array_equality(
         &mut self,
-        array_type: &Type,
-        span: &Span,
-    ) -> Result<FunctionValue<'ctx>, CodegenErr> {
-        if let Some(function) = self.array_equality_fns.get(array_type) {
-            return Ok(*function);
+        op: BinOp,
+        array_ty: TypeId,
+        lhs: PointerValue<'ctx>,
+        rhs: PointerValue<'ctx>,
+    ) -> BasicValueEnum<'ctx> {
+        let eq = self.array_equality_fn(array_ty);
+        let call = self
+            .builder
+            .build_call(eq, &[lhs.into(), rhs.into()], "eq")
+            .unwrap();
+        let value = self.call_value(call);
+        if op == BinOp::ArrayNe {
+            return self
+                .builder
+                .build_not(value.into_int_value(), "ne")
+                .unwrap()
+                .into();
         }
-        let Type::Array(elem) = array_type.clone() else {
-            unreachable!();
-        };
-        let elem = *elem;
-        let (elem_ty, _) = self.type_layout(&elem, span)?;
+        value
+    }
+
+    pub(super) fn array_equality_fn(&mut self, array_ty: TypeId) -> FunctionValue<'ctx> {
+        if let Some(function) = self.array_equality_fns.get(&array_ty) {
+            return *function;
+        }
+        let elem = self.array_elem(array_ty);
+        let (elem_ty, _) = self.type_layout(elem);
         let ptr = self.context.ptr_type(AddressSpace::default());
         let function = self.module.add_function(
             &format!("eq.{}", self.array_equality_fns.len()),
@@ -370,7 +337,7 @@ impl<'ctx, 'a> CodeGen<'ctx, 'a> {
                 .fn_type(&[ptr.into(), ptr.into()], false),
             None,
         );
-        self.array_equality_fns.insert(array_type.clone(), function);
+        self.array_equality_fns.insert(array_ty, function);
 
         let saved_block = self.builder.get_insert_block();
         let entry = self.context.append_basic_block(function, "entry");
@@ -396,10 +363,7 @@ impl<'ctx, 'a> CodeGen<'ctx, 'a> {
             .unwrap();
 
         self.builder.position_at_end(loop_cond);
-        let i = self
-            .builder
-            .build_phi(self.context.i64_type(), "i")
-            .unwrap();
+        let i = self.builder.build_phi(self.context.i64_type(), "i").unwrap();
         let iv = i.as_basic_value().into_int_value();
         let done = self
             .builder
@@ -414,7 +378,7 @@ impl<'ctx, 'a> CodeGen<'ctx, 'a> {
         let slot_b = unsafe { self.builder.build_gep(elem_ty, buf_b, &[iv], "pb").unwrap() };
         let elem_a = self.builder.build_load(elem_ty, slot_a, "ea").unwrap();
         let elem_b = self.builder.build_load(elem_ty, slot_b, "eb").unwrap();
-        let elem_eq = match &elem {
+        let elem_eq = match self.program.types[elem] {
             Type::Int | Type::Char | Type::Bool => self
                 .builder
                 .build_int_compare(
@@ -434,22 +398,17 @@ impl<'ctx, 'a> CodeGen<'ctx, 'a> {
                 )
                 .unwrap(),
             Type::Array(_) => {
-                let inner = self.array_equality_fn(&elem, span)?;
+                let inner = self.array_equality_fn(elem);
                 let call = self
                     .builder
                     .build_call(inner, &[elem_a.into(), elem_b.into()], "elem_eq")
                     .unwrap();
-                let ValueKind::Basic(value) = call.try_as_basic_value() else {
-                    unreachable!();
-                };
-                value.into_int_value()
+                self.call_value(call).into_int_value()
             }
             Type::Opaque => {
                 self.pointers_equal(elem_a.into_pointer_value(), elem_b.into_pointer_value())
             }
-            Type::Optional(opt_inner) => {
-                self.is_optional_values_equal(opt_inner, elem_a, elem_b, span)?
-            }
+            Type::Optional(opt_inner) => self.is_optional_values_equal(opt_inner, elem_a, elem_b),
             _ => unreachable!("type checker limits array equality to comparable elements"),
         };
         self.builder
@@ -474,6 +433,6 @@ impl<'ctx, 'a> CodeGen<'ctx, 'a> {
         if let Some(block) = saved_block {
             self.builder.position_at_end(block);
         }
-        Ok(function)
+        function
     }
 }

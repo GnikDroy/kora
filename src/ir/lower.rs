@@ -347,7 +347,10 @@ impl<'a> Lowering<'a> {
             }
             ast::Expression::Array(elems) => {
                 let ty = self.ty_of(expr);
-                let elems = elems.iter().map(|e| self.lower_expr(e)).collect();
+                let Type::Array(elem) = self.types[ty] else {
+                    unreachable!("array literals always carry an array type");
+                };
+                let elems = elems.iter().map(|e| self.lower_expecting(e, elem)).collect();
                 Expression::new(ty, span, ExpressionKind::Array(elems))
             }
             ast::Expression::Binary(left, op, right) => self.lower_binary(expr, left, *op, right),

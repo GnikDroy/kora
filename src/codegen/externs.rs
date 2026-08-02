@@ -3,7 +3,8 @@ use inkwell::types::{BasicType, BasicTypeEnum};
 use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, FunctionValue, PointerValue};
 
 use super::CodeGen;
-use crate::parser::*;
+use crate::ir::ExternDef;
+use crate::parser::ExternType;
 
 fn is_identity(ty: &ExternType) -> bool {
     use ExternType::*;
@@ -14,16 +15,19 @@ fn is_identity(ty: &ExternType) -> bool {
     }
 }
 
-impl<'ctx> CodeGen<'ctx, '_> {
-    pub(super) fn declare_extern_function(&mut self, func: &Spanned<ExternFunction>) {
-        let name = &func.node.name;
-        let param_types: Vec<_> = func
-            .node
-            .arguments
+fn optional_is_reference(inner: &ExternType) -> bool {
+    matches!(inner, ExternType::CString | ExternType::Opaque)
+}
+
+impl<'ctx, 'a> CodeGen<'ctx, 'a> {
+    pub(super) fn declare_extern_function(&mut self, ext: &ExternDef) -> FunctionValue<'ctx> {
+        let name = &ext.symbol;
+        let param_types: Vec<_> = ext
+            .params
             .iter()
-            .map(|arg| self.extern_llvm_type(&arg.node.typename).into())
+            .map(|ty| self.extern_llvm_type(ty).into())
             .collect();
-        let c_type = match &func.node.return_type {
+        let c_type = match &ext.ret {
             Some(ty) => self.extern_llvm_type(ty).fn_type(&param_types, false),
             None => self.context.void_type().fn_type(&param_types, false),
         };
@@ -32,23 +36,13 @@ impl<'ctx> CodeGen<'ctx, '_> {
             .get_function(name)
             .unwrap_or_else(|| self.module.add_function(name, c_type, None));
 
-        let symbol = self
-            .program
-            .symbols
-            .symbol_id_of_declaration(func.id)
-            .unwrap();
-        let identity = func
-            .node
-            .arguments
-            .iter()
-            .all(|a| is_identity(&a.node.typename))
-            && func.node.return_type.as_ref().is_none_or(is_identity);
-        let function = if identity {
+        let identity =
+            ext.params.iter().all(is_identity) && ext.ret.as_ref().is_none_or(is_identity);
+        if identity {
             c_fn
         } else {
-            self.extern_thunk(&func.node, c_fn)
-        };
-        self.functions.insert(symbol, function);
+            self.extern_thunk(ext, c_fn)
+        }
     }
 
     fn extern_llvm_type(&self, ty: &ExternType) -> BasicTypeEnum<'ctx> {
@@ -67,32 +61,39 @@ impl<'ctx> CodeGen<'ctx, '_> {
         }
     }
 
-    fn extern_thunk(
-        &mut self,
-        func: &ExternFunction,
-        c_fn: FunctionValue<'ctx>,
-    ) -> FunctionValue<'ctx> {
-        let thunk_name = format!("{}.thunk", func.name);
+    fn extern_kora_type(&self, ty: &ExternType) -> BasicTypeEnum<'ctx> {
+        use ExternType::*;
+        match ty {
+            Int8 | Int16 | Int32 | Int64 | UInt8 | UInt16 | UInt32 | UInt64 | CInt | CUInt
+            | CLong | CULong | CSize => self.context.i64_type().into(),
+            Float32 | Float64 => self.context.f64_type().into(),
+            Bool => self.context.bool_type().into(),
+            Char => self.context.i8_type().into(),
+            CString | Opaque => self.context.ptr_type(inkwell::AddressSpace::default()).into(),
+            Optional(inner) => {
+                if optional_is_reference(inner) {
+                    return self.context.ptr_type(inkwell::AddressSpace::default()).into();
+                }
+                let inner = self.extern_kora_type(inner);
+                let tag = self.context.i8_type().into();
+                self.context.struct_type(&[tag, inner], false).into()
+            }
+        }
+    }
+
+    fn extern_thunk(&mut self, ext: &ExternDef, c_fn: FunctionValue<'ctx>) -> FunctionValue<'ctx> {
+        let thunk_name = format!("{}.thunk", ext.symbol);
         if let Some(thunk) = self.module.get_function(&thunk_name) {
             return thunk;
         }
 
-        let span = Span::default();
-        let param_types: Vec<_> = func
-            .arguments
+        let param_types: Vec<_> = ext
+            .params
             .iter()
-            .map(|arg| {
-                let projected = arg.node.typename.projection();
-                self.basic_type(&projected, &span).unwrap().into()
-            })
+            .map(|ty| self.extern_kora_type(ty).into())
             .collect();
-        let thunk_type = match &func.return_type {
-            Some(ty) => {
-                let projected = ty.projection();
-                self.basic_type(&projected, &span)
-                    .unwrap()
-                    .fn_type(&param_types, false)
-            }
+        let thunk_type = match &ext.ret {
+            Some(ty) => self.extern_kora_type(ty).fn_type(&param_types, false),
             None => self.context.void_type().fn_type(&param_types, false),
         };
         let thunk = self
@@ -103,18 +104,18 @@ impl<'ctx> CodeGen<'ctx, '_> {
         let entry = self.context.append_basic_block(thunk, "entry");
         self.builder.position_at_end(entry);
 
-        let args: Vec<BasicMetadataValueEnum> = func
-            .arguments
+        let args: Vec<BasicMetadataValueEnum> = ext
+            .params
             .iter()
             .enumerate()
-            .map(|(i, arg)| {
+            .map(|(i, ty)| {
                 let value = thunk.get_nth_param(i as u32).unwrap();
-                self.marshal_argument(&arg.node.typename, value).into()
+                self.marshal_argument(ty, value).into()
             })
             .collect();
         let call = self.builder.build_call(c_fn, &args, "c").unwrap();
 
-        match &func.return_type {
+        match &ext.ret {
             None => self.builder.build_return(None).unwrap(),
             Some(ty) => {
                 let raw = self.call_value(call);
