@@ -133,8 +133,10 @@ impl<'a> Emitter<'a> {
             .map(|l| l.name.as_str())
             .collect::<Vec<_>>()
             .join(", ");
-        self.out
-            .push_str(&format!("{}function {}({})", async_prefix, func.symbol, args));
+        self.out.push_str(&format!(
+            "{}function {}({})",
+            async_prefix, func.symbol, args
+        ));
         self.out.push('{');
         self.block(&func.body);
         self.out.push('}');
@@ -155,7 +157,8 @@ impl<'a> Emitter<'a> {
     fn statement(&mut self, stmt: &Statement) {
         match stmt {
             Statement::Let(local, expr) => {
-                self.out.push_str(&format!("let {} = ", self.local_name(*local)));
+                self.out
+                    .push_str(&format!("let {} = ", self.local_name(*local)));
                 self.expr(expr);
                 self.out.push(';');
             }
@@ -218,7 +221,8 @@ impl<'a> Emitter<'a> {
             }
             match stmt {
                 Statement::Let(local, expr) => {
-                    self.out.push_str(&format!("let {} = ", self.local_name(*local)));
+                    self.out
+                        .push_str(&format!("let {} = ", self.local_name(*local)));
                     self.expr(expr);
                 }
                 Statement::Expression(expr) => self.expr(expr),

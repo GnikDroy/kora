@@ -646,8 +646,10 @@ mod tests {
 
         let (symbols, program) = analyze(source);
         let module = &program.modules[0].module;
-        let mut checker =
-            TypeChecker::new(&symbols, program.modules.iter().map(|m| &m.module).collect());
+        let mut checker = TypeChecker::new(
+            &symbols,
+            program.modules.iter().map(|m| &m.module).collect(),
+        );
         checker.visit_module(module);
         let result = checker.check();
         assert!(
@@ -689,8 +691,10 @@ mod tests {
 
         let (symbols, program) = analyze(source);
         let module = &program.modules[0].module;
-        let mut checker =
-            TypeChecker::new(&symbols, program.modules.iter().map(|m| &m.module).collect());
+        let mut checker = TypeChecker::new(
+            &symbols,
+            program.modules.iter().map(|m| &m.module).collect(),
+        );
         checker.visit_module(module);
         let result = checker.check();
         assert!(result.is_err(), "source_text: {}", source);
@@ -705,8 +709,10 @@ mod tests {
 
         let (symbols, program) = analyze(source);
         let module = &program.modules[0].module;
-        let mut checker =
-            TypeChecker::new(&symbols, program.modules.iter().map(|m| &m.module).collect());
+        let mut checker = TypeChecker::new(
+            &symbols,
+            program.modules.iter().map(|m| &m.module).collect(),
+        );
         checker.visit_module(module);
 
         let errors = checker.check().expect_err("expected a type error");
@@ -834,8 +840,10 @@ mod tests {
 
         let (symbols, program) = analyze(source);
         let module = &program.modules[0].module;
-        let mut checker =
-            TypeChecker::new(&symbols, program.modules.iter().map(|m| &m.module).collect());
+        let mut checker = TypeChecker::new(
+            &symbols,
+            program.modules.iter().map(|m| &m.module).collect(),
+        );
         checker.visit_module(module);
 
         let errors = checker
@@ -1021,8 +1029,10 @@ mod tests {
         "#;
         let (symbols, program) = analyze(source);
         let module = &program.modules[0].module;
-        let mut checker =
-            TypeChecker::new(&symbols, program.modules.iter().map(|m| &m.module).collect());
+        let mut checker = TypeChecker::new(
+            &symbols,
+            program.modules.iter().map(|m| &m.module).collect(),
+        );
         checker.visit_module(module);
         checker.check().expect("check");
         let (_, method) = checker.method_calls.iter().next().expect("one method call");
@@ -1470,8 +1480,10 @@ mod tests {
         "#;
         let (symbols, program) = analyze(source);
         let module = &program.modules[0].module;
-        let mut checker =
-            TypeChecker::new(&symbols, program.modules.iter().map(|m| &m.module).collect());
+        let mut checker = TypeChecker::new(
+            &symbols,
+            program.modules.iter().map(|m| &m.module).collect(),
+        );
         checker.visit_module(module);
         checker.check().expect("check");
 

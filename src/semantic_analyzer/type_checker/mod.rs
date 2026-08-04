@@ -67,8 +67,10 @@ mod test_support {
     pub(crate) fn check_cases(cases: &[(&str, bool)]) {
         for (source, expect_ok) in cases {
             let (symbols, program) = analyze(source);
-            let mut checker =
-                TypeChecker::new(&symbols, program.modules.iter().map(|m| &m.module).collect());
+            let mut checker = TypeChecker::new(
+                &symbols,
+                program.modules.iter().map(|m| &m.module).collect(),
+            );
             checker.visit_module(&program.modules[0].module);
             assert_eq!(checker.check().is_ok(), *expect_ok, "source: {}", source);
         }
@@ -76,8 +78,10 @@ mod test_support {
 
     pub(crate) fn program_type_checks(mut program: LoadedProgram) -> bool {
         let symbols = resolve_program(&mut program).expect("resolve");
-        let mut checker =
-            TypeChecker::new(&symbols, program.modules.iter().map(|m| &m.module).collect());
+        let mut checker = TypeChecker::new(
+            &symbols,
+            program.modules.iter().map(|m| &m.module).collect(),
+        );
         for module in &program.modules {
             checker.visit_module(&module.module);
         }

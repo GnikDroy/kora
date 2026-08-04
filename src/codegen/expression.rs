@@ -317,7 +317,9 @@ impl<'ctx, 'a> CodeGen<'ctx, 'a> {
         self.builder.position_at_end(rhs_block);
         let rhs = self.lower_expression(right).into_int_value();
         let rhs_end_block = self.builder.get_insert_block().unwrap();
-        self.builder.build_unconditional_branch(merge_block).unwrap();
+        self.builder
+            .build_unconditional_branch(merge_block)
+            .unwrap();
 
         self.builder.position_at_end(merge_block);
         let phi = self
@@ -337,7 +339,11 @@ impl<'ctx, 'a> CodeGen<'ctx, 'a> {
                 .unwrap()
                 .into(),
             CastKind::RealToInt => b
-                .build_float_to_signed_int(value.into_float_value(), self.context.i64_type(), "cast")
+                .build_float_to_signed_int(
+                    value.into_float_value(),
+                    self.context.i64_type(),
+                    "cast",
+                )
                 .unwrap()
                 .into(),
             CastKind::IntToChar => b

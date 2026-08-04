@@ -231,7 +231,10 @@ impl<'ctx, 'a> CodeGen<'ctx, 'a> {
             ArrayOp::Push => {
                 let value = self.lower_expression(&args[0]);
                 let slot = self.spill(value);
-                self.array_fn_call("__kora_array_push", &[array.into(), slot.into(), size.into()]);
+                self.array_fn_call(
+                    "__kora_array_push",
+                    &[array.into(), slot.into(), size.into()],
+                );
                 None
             }
             ArrayOp::Pop => {
@@ -363,7 +366,10 @@ impl<'ctx, 'a> CodeGen<'ctx, 'a> {
             .unwrap();
 
         self.builder.position_at_end(loop_cond);
-        let i = self.builder.build_phi(self.context.i64_type(), "i").unwrap();
+        let i = self
+            .builder
+            .build_phi(self.context.i64_type(), "i")
+            .unwrap();
         let iv = i.as_basic_value().into_int_value();
         let done = self
             .builder

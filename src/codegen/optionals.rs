@@ -25,7 +25,10 @@ impl<'ctx, 'a> CodeGen<'ctx, 'a> {
         let ty = self.basic_type(optional).into_struct_type();
         let tag = self.context.i8_type().const_int(1, false);
         let some = ty.const_zero();
-        let some = self.builder.build_insert_value(some, tag, 0, "some").unwrap();
+        let some = self
+            .builder
+            .build_insert_value(some, tag, 0, "some")
+            .unwrap();
         let some = self
             .builder
             .build_insert_value(some, value, 1, "some")
@@ -156,7 +159,10 @@ impl<'ctx, 'a> CodeGen<'ctx, 'a> {
         }
         let a_null = self.builder.build_is_null(a, "a_null").unwrap();
         let b_null = self.builder.build_is_null(b, "b_null").unwrap();
-        let either_null = self.builder.build_or(a_null, b_null, "either_null").unwrap();
+        let either_null = self
+            .builder
+            .build_or(a_null, b_null, "either_null")
+            .unwrap();
         let both_null = self.builder.build_and(a_null, b_null, "both_null").unwrap();
 
         let function = self

@@ -125,7 +125,10 @@ impl<'a> GlobalsCollector<'a> {
                         span: func.span.clone(),
                     });
                 }
-                if self.table.structs[&decl].methods.contains_key(&func.node.name) {
+                if self.table.structs[&decl]
+                    .methods
+                    .contains_key(&func.node.name)
+                {
                     self.errors.push(TypeErr {
                         msg: "Redeclaration of method",
                         span: func.span.clone(),
@@ -182,10 +185,7 @@ mod tests {
         let modules: Vec<&Module> = program.modules.iter().map(|m| &m.module).collect();
         assert_eq!(symbols.structs.len(), 1);
         let (&point, _) = symbols.structs.iter().next().unwrap();
-        assert_eq!(
-            symbols.struct_member(&modules, point, "x"),
-            Some(Type::Int)
-        );
+        assert_eq!(symbols.struct_member(&modules, point, "x"), Some(Type::Int));
         assert_eq!(
             symbols.struct_member(&modules, point, "y"),
             Some(Type::Array(Box::new(Type::Char)))

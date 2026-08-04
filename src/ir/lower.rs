@@ -141,7 +141,10 @@ impl<'a> Lowering<'a> {
                     .map(|ty| self.lower_type(ty))
                     .unwrap_or(Types::VOID);
                 self.fn_rets.push(ret);
-                if m == 0 && decl.node.name == "main" && module.functions.iter().any(|f| f.id == decl.id) {
+                if m == 0
+                    && decl.node.name == "main"
+                    && module.functions.iter().any(|f| f.id == decl.id)
+                {
                     self.entry = Some(id);
                 }
                 fn_decls.push(decl);
@@ -297,7 +300,11 @@ impl<'a> Lowering<'a> {
         }
     }
 
-    fn lower_expecting(&mut self, expr: &ast::Spanned<ast::Expression>, expected: TypeId) -> Expression {
+    fn lower_expecting(
+        &mut self,
+        expr: &ast::Spanned<ast::Expression>,
+        expected: TypeId,
+    ) -> Expression {
         // A bare `none` has no type of its own; it takes the expected one.
         if matches!(expr.node, ast::Expression::NoneLiteral) {
             return Expression::new(expected, expr.span.clone(), ExpressionKind::None);
@@ -319,9 +326,15 @@ impl<'a> Lowering<'a> {
             ast::Expression::IntegerLiteral(v) => {
                 Expression::new(Types::INT, span, ExpressionKind::Int(*v as i64))
             }
-            ast::Expression::RealLiteral(v) => Expression::new(Types::REAL, span, ExpressionKind::Real(*v)),
-            ast::Expression::BoolLiteral(v) => Expression::new(Types::BOOL, span, ExpressionKind::Bool(*v)),
-            ast::Expression::CharLiteral(v) => Expression::new(Types::CHAR, span, ExpressionKind::Char(*v)),
+            ast::Expression::RealLiteral(v) => {
+                Expression::new(Types::REAL, span, ExpressionKind::Real(*v))
+            }
+            ast::Expression::BoolLiteral(v) => {
+                Expression::new(Types::BOOL, span, ExpressionKind::Bool(*v))
+            }
+            ast::Expression::CharLiteral(v) => {
+                Expression::new(Types::CHAR, span, ExpressionKind::Char(*v))
+            }
             ast::Expression::StringLiteral(v) => {
                 let ty = self.types.intern(Type::Array(Types::CHAR));
                 Expression::new(ty, span, ExpressionKind::Str(v.clone()))
@@ -352,7 +365,10 @@ impl<'a> Lowering<'a> {
                 let Type::Array(elem) = self.types[ty] else {
                     unreachable!("array literals always carry an array type");
                 };
-                let elems = elems.iter().map(|e| self.lower_expecting(e, elem)).collect();
+                let elems = elems
+                    .iter()
+                    .map(|e| self.lower_expecting(e, elem))
+                    .collect();
                 Expression::new(ty, span, ExpressionKind::Array(elems))
             }
             ast::Expression::Binary(left, op, right) => self.lower_binary(expr, left, *op, right),
@@ -364,7 +380,14 @@ impl<'a> Lowering<'a> {
                     (ast::UnaryOp::Not, Type::Bool) => UnOp::BoolNot,
                     _ => unreachable!("type checker rejects other unary operands"),
                 };
-                Expression::new(operand.ty, span, ExpressionKind::Unary { op, operand: Box::new(operand) })
+                Expression::new(
+                    operand.ty,
+                    span,
+                    ExpressionKind::Unary {
+                        op,
+                        operand: Box::new(operand),
+                    },
+                )
             }
             ast::Expression::Cast(operand, target) => {
                 use ast::Type as T;
@@ -379,7 +402,14 @@ impl<'a> Lowering<'a> {
                 };
                 let ty = self.lower_type(target);
                 let operand = self.lower_expr(operand);
-                Expression::new(ty, span, ExpressionKind::Cast { kind, operand: Box::new(operand) })
+                Expression::new(
+                    ty,
+                    span,
+                    ExpressionKind::Cast {
+                        kind,
+                        operand: Box::new(operand),
+                    },
+                )
             }
             ast::Expression::Call(callee, args) => self.lower_call(expr, callee, args),
             ast::Expression::ArrayIndex(array, index) => {
@@ -391,7 +421,10 @@ impl<'a> Lowering<'a> {
                 Expression::new(
                     elem,
                     span,
-                    ExpressionKind::Index { array: Box::new(array), index: Box::new(index) },
+                    ExpressionKind::Index {
+                        array: Box::new(array),
+                        index: Box::new(index),
+                    },
                 )
             }
             ast::Expression::Access(object, member) => {
@@ -401,7 +434,14 @@ impl<'a> Lowering<'a> {
                 };
                 let index = self.field_indices[struct_.0 as usize][member];
                 let ty = self.structs[struct_.0 as usize].fields[index as usize].ty;
-                Expression::new(ty, span, ExpressionKind::Field { object: Box::new(object), index })
+                Expression::new(
+                    ty,
+                    span,
+                    ExpressionKind::Field {
+                        object: Box::new(object),
+                        index,
+                    },
+                )
             }
             ast::Expression::Construct(_, Some(size)) => {
                 let ty = self.ty_of(expr);
@@ -459,7 +499,10 @@ impl<'a> Lowering<'a> {
                 Expression::new(
                     place.ty,
                     span,
-                    ExpressionKind::Assign { place, value: Box::new(value) },
+                    ExpressionKind::Assign {
+                        place,
+                        value: Box::new(value),
+                    },
                 )
             }
             B::And | B::Or => {
@@ -482,11 +525,19 @@ impl<'a> Lowering<'a> {
                 if equality && let Some(target) = optional {
                     let l = self.lower_expecting(left, target);
                     let r = self.lower_expecting(right, target);
-                    let op = if op == B::Equality { BinOp::OptionalEq } else { BinOp::OptionalNe };
+                    let op = if op == B::Equality {
+                        BinOp::OptionalEq
+                    } else {
+                        BinOp::OptionalNe
+                    };
                     return Expression::new(
                         Types::BOOL,
                         span,
-                        ExpressionKind::Binary { op, left: Box::new(l), right: Box::new(r) },
+                        ExpressionKind::Binary {
+                            op,
+                            left: Box::new(l),
+                            right: Box::new(r),
+                        },
                     );
                 }
                 let l = self.lower_expr(left);
@@ -525,7 +576,11 @@ impl<'a> Lowering<'a> {
                 Expression::new(
                     ty,
                     span,
-                    ExpressionKind::Binary { op, left: Box::new(l), right: Box::new(r) },
+                    ExpressionKind::Binary {
+                        op,
+                        left: Box::new(l),
+                        right: Box::new(r),
+                    },
                 )
             }
         }
@@ -572,7 +627,10 @@ impl<'a> Lowering<'a> {
             return Expression::new(
                 self.fn_rets[function.0 as usize],
                 span,
-                ExpressionKind::Call { function, args: lowered },
+                ExpressionKind::Call {
+                    function,
+                    args: lowered,
+                },
             );
         }
 
@@ -610,7 +668,11 @@ impl<'a> Lowering<'a> {
             return Expression::new(
                 ret,
                 span,
-                ExpressionKind::ArrayOp { op, receiver: Box::new(receiver), args },
+                ExpressionKind::ArrayOp {
+                    op,
+                    receiver: Box::new(receiver),
+                    args,
+                },
             );
         }
 
@@ -663,7 +725,10 @@ impl<'a> Lowering<'a> {
             Expression::new(
                 ret,
                 span,
-                ExpressionKind::IndirectCall { callee: Box::new(callee_expr), args },
+                ExpressionKind::IndirectCall {
+                    callee: Box::new(callee_expr),
+                    args,
+                },
             )
         }
     }
@@ -675,7 +740,11 @@ impl<'a> Lowering<'a> {
                 let symbol = self.compiled.symbols.symbol_id_of_use(expr.id).unwrap();
                 let local = self.local_ids[&symbol];
                 let ty = self.ty_of(expr);
-                Place { ty, span, kind: PlaceKind::Local(local) }
+                Place {
+                    ty,
+                    span,
+                    kind: PlaceKind::Local(local),
+                }
             }
             ast::Expression::ArrayIndex(array, index) => {
                 let array = self.lower_place(array);
@@ -686,7 +755,10 @@ impl<'a> Lowering<'a> {
                 Place {
                     ty: elem,
                     span,
-                    kind: PlaceKind::Index { array: Box::new(array), index: Box::new(index) },
+                    kind: PlaceKind::Index {
+                        array: Box::new(array),
+                        index: Box::new(index),
+                    },
                 }
             }
             ast::Expression::Access(object, member) => {
@@ -699,7 +771,10 @@ impl<'a> Lowering<'a> {
                 Place {
                     ty,
                     span,
-                    kind: PlaceKind::Field { object: Box::new(object), index },
+                    kind: PlaceKind::Field {
+                        object: Box::new(object),
+                        index,
+                    },
                 }
             }
             _ => unreachable!("type checker rejects other assignment targets"),
@@ -765,8 +840,7 @@ mod tests {
     use std::path::Path;
 
     fn lower_source(source: &str) -> Program {
-        let map: HashMap<String, String> =
-            [("main.kora".to_string(), source.to_string())].into();
+        let map: HashMap<String, String> = [("main.kora".to_string(), source.to_string())].into();
         let compiled = crate::compile("main.kora", move |p: &Path| {
             p.to_str().and_then(|s| map.get(s)).cloned()
         })
@@ -820,7 +894,10 @@ mod tests {
         };
         assert!(matches!(
             cond.kind,
-            ExpressionKind::Binary { op: BinOp::OptionalEq, .. }
+            ExpressionKind::Binary {
+                op: BinOp::OptionalEq,
+                ..
+            }
         ));
     }
 

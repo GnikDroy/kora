@@ -6,7 +6,11 @@ fn transpile(source: &str) -> String {
 }
 
 fn transpile_with_async(source: &str, async_externs: HashSet<String>) -> String {
-    transpile_program("main.kora", vec![("main.kora", source.to_string())], async_externs)
+    transpile_program(
+        "main.kora",
+        vec![("main.kora", source.to_string())],
+        async_externs,
+    )
 }
 
 #[test]

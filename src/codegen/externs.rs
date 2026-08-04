@@ -69,10 +69,16 @@ impl<'ctx, 'a> CodeGen<'ctx, 'a> {
             Float32 | Float64 => self.context.f64_type().into(),
             Bool => self.context.bool_type().into(),
             Char => self.context.i8_type().into(),
-            CString | Opaque => self.context.ptr_type(inkwell::AddressSpace::default()).into(),
+            CString | Opaque => self
+                .context
+                .ptr_type(inkwell::AddressSpace::default())
+                .into(),
             Optional(inner) => {
                 if optional_is_reference(inner) {
-                    return self.context.ptr_type(inkwell::AddressSpace::default()).into();
+                    return self
+                        .context
+                        .ptr_type(inkwell::AddressSpace::default())
+                        .into();
                 }
                 let inner = self.extern_kora_type(inner);
                 let tag = self.context.i8_type().into();

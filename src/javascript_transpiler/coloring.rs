@@ -8,7 +8,10 @@ use crate::ir::{Block, Expression, ExpressionKind, Program, Statement};
 /// A function is async if it (transitively) calls an async extern, or value
 /// We start with host declared async externs and include every indirect function call
 /// that can possibly be async.
-pub(crate) fn resolve_async_fns(program: &Program, async_externs: HashSet<String>) -> HashSet<String> {
+pub(crate) fn resolve_async_fns(
+    program: &Program,
+    async_externs: HashSet<String>,
+) -> HashSet<String> {
     let async_possible = !async_externs.is_empty();
     let mut async_fns = async_externs;
 
@@ -56,7 +59,12 @@ fn collect_block(program: &Program, block: &Block, out: &mut HashSet<String>, in
     }
 }
 
-fn collect_stmt(program: &Program, stmt: &Statement, out: &mut HashSet<String>, indirect: &mut bool) {
+fn collect_stmt(
+    program: &Program,
+    stmt: &Statement,
+    out: &mut HashSet<String>,
+    indirect: &mut bool,
+) {
     match stmt {
         Statement::Let(_, e) | Statement::Expression(e) => collect_expr(program, e, out, indirect),
         Statement::Return(e) => {
@@ -94,7 +102,12 @@ fn collect_stmt(program: &Program, stmt: &Statement, out: &mut HashSet<String>, 
     }
 }
 
-fn collect_expr(program: &Program, expr: &Expression, out: &mut HashSet<String>, indirect: &mut bool) {
+fn collect_expr(
+    program: &Program,
+    expr: &Expression,
+    out: &mut HashSet<String>,
+    indirect: &mut bool,
+) {
     match &expr.kind {
         ExpressionKind::Call { function, args } => {
             out.insert(program[*function].symbol.clone());

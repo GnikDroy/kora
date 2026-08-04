@@ -53,7 +53,9 @@ pub(super) mod test_support {
         resolve_program(&mut program)
     }
 
-    pub(crate) fn resolve_program(program: &mut LoadedProgram) -> Result<SymbolTable, Vec<TypeErr>> {
+    pub(crate) fn resolve_program(
+        program: &mut LoadedProgram,
+    ) -> Result<SymbolTable, Vec<TypeErr>> {
         let instances = crate::instantiate::Instantiator::new(program)
             .run()
             .expect("instantiate");

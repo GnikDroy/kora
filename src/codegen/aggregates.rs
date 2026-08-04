@@ -15,7 +15,9 @@ impl<'ctx, 'a> CodeGen<'ctx, 'a> {
             .iter()
             .map(|f| self.basic_type(f.ty))
             .collect::<Vec<_>>();
-        let ty = self.context.opaque_struct_type(&self.program[struct_].symbol);
+        let ty = self
+            .context
+            .opaque_struct_type(&self.program[struct_].symbol);
         ty.set_body(&field_types, false);
         self.struct_types.insert(struct_, ty);
         ty
@@ -47,7 +49,9 @@ impl<'ctx, 'a> CodeGen<'ctx, 'a> {
         let struct_type = self.struct_type(struct_);
         let ptr = self.context.ptr_type(AddressSpace::default());
         let name = format!("default.{}", self.program[struct_].symbol);
-        let function = self.module.add_function(&name, ptr.fn_type(&[], false), None);
+        let function = self
+            .module
+            .add_function(&name, ptr.fn_type(&[], false), None);
         self.default_fns.insert(struct_, function);
 
         let saved_block = self.builder.get_insert_block();

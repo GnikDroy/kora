@@ -45,8 +45,8 @@ impl Resolver {
         instances: &Instantiated,
     ) -> Result<SymbolTable, Vec<TypeErr>> {
         self.resolutions = instances.resolutions.clone();
-        let globals = GlobalsCollector::new(&mut self.table, &mut self.errors, instances)
-            .collect(modules);
+        let globals =
+            GlobalsCollector::new(&mut self.table, &mut self.errors, instances).collect(modules);
         // A generic's type arguments can be undefined types, validate them
         for origin in instances.origins.values() {
             for arg in &origin.args {

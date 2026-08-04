@@ -272,8 +272,7 @@ fn regions(
     let mut regions = Vec::new();
     for (name, def) in structs.iter() {
         let instances = render(name, def.decl.id);
-        let spans =
-            std::iter::once(&def.decl.span).chain(def.impls.iter().map(|imp| &imp.span));
+        let spans = std::iter::once(&def.decl.span).chain(def.impls.iter().map(|imp| &imp.span));
         for span in spans {
             regions.push(GenericRegion {
                 span: span.clone(),
