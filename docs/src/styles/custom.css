@@ -1,3 +1,22 @@
+:root:root {
+  --sl-color-accent-low: #3a1512;
+  --sl-color-accent: #fb4934;
+  --sl-color-accent-high: #feb2a8;
+}
+:root:root[data-theme='light'] {
+  --sl-color-accent-low: #f7d0cc;
+  --sl-color-accent: #cc241d;
+  --sl-color-accent-high: #4c0f0a;
+}
+
+.site-title.site-title {
+  color: var(--sl-color-white);
+}
+
+body:has(.hero) {
+  overflow: hidden;
+}
+
 .content-panel:has(> .sl-container > .hero) {
   padding: 0;
 }
