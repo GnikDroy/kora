@@ -52,15 +52,16 @@ impl fmt::Display for BackendErr {
 }
 
 #[cfg(feature = "codegen")]
-pub fn native(program: &CompiledProgram, output: &Path) -> Result<(), BackendErr> {
+pub fn native(program: &CompiledProgram, output: &Path, opt: &str) -> Result<(), BackendErr> {
     let context = inkwell::context::Context::create();
     let llvm = codegen::lower(&context, program).map_err(BackendErr::Codegen)?;
-    codegen::link(&llvm, output).map_err(BackendErr::Link)
+    codegen::link(&llvm, output, opt).map_err(BackendErr::Link)
 }
 
 #[cfg(feature = "codegen")]
-pub fn llvm_ir(program: &CompiledProgram) -> Result<String, CodegenErr> {
+pub fn llvm_ir(program: &CompiledProgram, opt: &str) -> Result<String, BackendErr> {
     let context = inkwell::context::Context::create();
-    let llvm = codegen::lower(&context, program)?;
+    let llvm = codegen::lower(&context, program).map_err(BackendErr::Codegen)?;
+    codegen::optimize_ir(&llvm, opt).map_err(BackendErr::Link)?;
     Ok(llvm.print_to_string().to_string())
 }

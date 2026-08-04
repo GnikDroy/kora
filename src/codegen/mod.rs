@@ -4,6 +4,7 @@ mod errors;
 mod expression;
 mod externs;
 mod link;
+mod optimize;
 mod optionals;
 mod statement;
 
@@ -12,6 +13,7 @@ mod tests;
 
 pub use errors::*;
 pub use link::link;
+pub use optimize::optimize_ir;
 
 use std::collections::HashMap;
 

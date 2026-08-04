@@ -11,6 +11,10 @@ pub struct Args {
     #[cfg(feature = "codegen")]
     #[arg(long)]
     emit_llvm: bool,
+    #[cfg(feature = "codegen")]
+    #[arg(short = 'O', value_name = "LEVEL", default_value = "2",
+          value_parser = ["0", "1", "2", "3", "s", "z"])]
+    opt: String,
     #[arg(long)]
     emit_js: bool,
     #[arg(long = "async-extern", value_name = "NAME")]
@@ -51,7 +55,7 @@ pub fn run(args: &Args) -> Result<(), String> {
         }
         #[cfg(feature = "codegen")]
         if args.emit_llvm {
-            let ir = kora::backend::llvm_ir(&program).map_err(|e| e.to_string())?;
+            let ir = kora::backend::llvm_ir(&program, &args.opt).map_err(|e| e.to_string())?;
             write_artifact(args, "ll", &ir)?;
         }
         if args.emit_js {
@@ -83,7 +87,7 @@ fn build(args: &Args, program: kora::CompiledProgram) -> Result<(), String> {
         .output
         .clone()
         .unwrap_or_else(|| args.input.with_extension(""));
-    kora::backend::native(&program, &output).map_err(|e| e.to_string())
+    kora::backend::native(&program, &output, &args.opt).map_err(|e| e.to_string())
 }
 
 #[cfg(not(feature = "codegen"))]
