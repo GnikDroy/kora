@@ -145,6 +145,44 @@ void sleep(ms: int)   # sleep for the given milliseconds
 int  now()            # seconds since the Unix epoch
 ```
 
+## std/iter
+
+Higher-order helpers over arrays. Each takes a function value: because Kora
+functions are first-class, you pass behavior by naming a top-level function.
+
+
+```ruby
+[U]  map<T, U>(xs: [T], f: U(T))                  # f applied to each element
+[T]  filter<T>(xs: [T], pred: bool(T))            # elements where pred is true
+U    reduce<T, U>(xs: [T], init: U, f: U(U, T))   # fold left, starting from init
+void each<T>(xs: [T], f: void(T))                 # call f on each element, in order
+bool any<T>(xs: [T], pred: bool(T))               # true if pred holds for some element
+bool all<T>(xs: [T], pred: bool(T))               # true if pred holds for every element
+int  count<T>(xs: [T], pred: bool(T))             # number of elements satisfying pred
+T?   find<T>(xs: [T], pred: bool(T))              # first match, or none
+int? position<T>(xs: [T], pred: bool(T))          # index of first match, or none
+[T]  take_while<T>(xs: [T], pred: bool(T))        # longest leading run matching pred
+[T]  drop_while<T>(xs: [T], pred: bool(T))        # what remains after that run
+[U]  flat_map<T, U>(xs: [T], f: [U](T))           # map, then concatenate the results
+```
+
+Chain them by naming each step:
+
+```ruby
+import "std/iter";
+
+bool is_even(x: int)       { return x % 2 == 0; }
+int  square(x: int)        { return x * x; }
+int  add(a: int, b: int)   { return a + b; }
+
+int main() {
+    let xs      = [1, 2, 3, 4, 5, 6];
+    let evens   = iter.filter::<int>(xs, is_even);       # [2, 4, 6]
+    let squares = iter.map::<int, int>(evens, square);   # [4, 16, 36]
+    return iter.reduce::<int, int>(squares, 0, add);     # 56
+}
+```
+
 ## std/algorithm
 
 Generic sorting and searching. Both take a **comparator**: a struct value with a

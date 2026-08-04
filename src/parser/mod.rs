@@ -934,7 +934,7 @@ impl Parser {
         }
 
         Err(ParseErr {
-            msg: "Cannot parse multiple items. Ending token not found.",
+            msg: "Expected > to end type arguments: <type, ... >",
             token: self.tokens.last().cloned(),
         })
     }

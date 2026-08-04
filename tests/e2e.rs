@@ -2310,6 +2310,45 @@ fn test_std_collections_list() {
 }
 
 #[test]
+fn test_std_iter() {
+    let (stdout, stderr, code) = run(r#"
+        import "std/iter";
+        import "std/io";
+        import "std/conv";
+        int dbl(x: int) { return x * 2; }
+        bool is_even(x: int) { return x % 2 == 0; }
+        bool lt4(x: int) { return x < 4; }
+        int add(a: int, b: int) { return a + b; }
+        [int] dup(x: int) { return [x, x]; }
+        void show(x: int) { io.print(conv.int_to_string(x)); }
+        int main() {
+            let xs = [1, 2, 3, 4, 5, 6];
+            let d = iter.map::<int, int>(xs, dbl);
+            if (d.len() != 6 || d[5] != 12) { return 1; }
+            let e = iter.filter::<int>(xs, is_even);
+            if (e.len() != 3 || e[0] != 2 || e[2] != 6) { return 2; }
+            if (iter.reduce::<int, int>(xs, 0, add) != 21) { return 3; }
+            if (!iter.any::<int>(xs, is_even)) { return 4; }
+            if (iter.all::<int>(xs, is_even)) { return 5; }
+            if (iter.count::<int>(xs, is_even) != 3) { return 6; }
+            let f = iter.find::<int>(xs, is_even);
+            if (f == none || f! != 2) { return 7; }
+            let p = iter.position::<int>(xs, is_even);
+            if (p == none || p! != 1) { return 8; }
+            if (iter.take_while::<int>(xs, lt4).len() != 3) { return 9; }
+            let dw = iter.drop_while::<int>(xs, lt4);
+            if (dw.len() != 3 || dw[0] != 4) { return 10; }
+            let fm = iter.flat_map::<int, int>([1, 2], dup);
+            if (fm.len() != 4 || fm[3] != 2) { return 11; }
+            iter.each::<int>(e, show);
+            return 42;
+        }
+    "#);
+    assert_eq!(code, 42, "{stderr}");
+    assert_eq!(stdout, "2\n4\n6\n", "{stderr}");
+}
+
+#[test]
 fn test_std_collections_map() {
     let (_, _, code) = run(r#"
         import "std/collections/map";

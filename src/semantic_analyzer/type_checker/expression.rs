@@ -26,7 +26,7 @@ impl TypeChecker<'_> {
             }
         } else {
             Err(TypeErr {
-                msg: "Cannot infer type of empty array. An empty static array makes no sense either way.",
+                msg: "Cannot infer type of empty array.",
                 span: span.clone(),
             })
         }

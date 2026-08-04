@@ -1,0 +1,128 @@
+[U] map<T, U>(xs: [T], f: U(T)) {
+    let out: [U] = [];
+    let i = 0;
+    while (i < xs.len()) {
+        out.push(f(xs[i]));
+        i = i + 1;
+    }
+    return out;
+}
+
+[T] filter<T>(xs: [T], pred: bool(T)) {
+    let out: [T] = [];
+    let i = 0;
+    while (i < xs.len()) {
+        if (pred(xs[i])) {
+            out.push(xs[i]);
+        }
+        i = i + 1;
+    }
+    return out;
+}
+
+U reduce<T, U>(xs: [T], init: U, f: U(U, T)) {
+    let acc = init;
+    let i = 0;
+    while (i < xs.len()) {
+        acc = f(acc, xs[i]);
+        i = i + 1;
+    }
+    return acc;
+}
+
+void each<T>(xs: [T], f: void(T)) {
+    let i = 0;
+    while (i < xs.len()) {
+        f(xs[i]);
+        i = i + 1;
+    }
+}
+
+bool any<T>(xs: [T], pred: bool(T)) {
+    let i = 0;
+    while (i < xs.len()) {
+        if (pred(xs[i])) {
+            return true;
+        }
+        i = i + 1;
+    }
+    return false;
+}
+
+bool all<T>(xs: [T], pred: bool(T)) {
+    let i = 0;
+    while (i < xs.len()) {
+        if (!pred(xs[i])) {
+            return false;
+        }
+        i = i + 1;
+    }
+    return true;
+}
+
+T? find<T>(xs: [T], pred: bool(T)) {
+    let i = 0;
+    while (i < xs.len()) {
+        if (pred(xs[i])) {
+            return xs[i];
+        }
+        i = i + 1;
+    }
+    return none;
+}
+
+int? position<T>(xs: [T], pred: bool(T)) {
+    let i = 0;
+    while (i < xs.len()) {
+        if (pred(xs[i])) {
+            return i;
+        }
+        i = i + 1;
+    }
+    return none;
+}
+
+int count<T>(xs: [T], pred: bool(T)) {
+    let n = 0;
+    let i = 0;
+    while (i < xs.len()) {
+        if (pred(xs[i])) {
+            n = n + 1;
+        }
+        i = i + 1;
+    }
+    return n;
+}
+
+[T] take_while<T>(xs: [T], pred: bool(T)) {
+    let out: [T] = [];
+    let i = 0;
+    while (i < xs.len() && pred(xs[i])) {
+        out.push(xs[i]);
+        i = i + 1;
+    }
+    return out;
+}
+
+[T] drop_while<T>(xs: [T], pred: bool(T)) {
+    let out: [T] = [];
+    let i = 0;
+    while (i < xs.len() && pred(xs[i])) {
+        i = i + 1;
+    }
+    while (i < xs.len()) {
+        out.push(xs[i]);
+        i = i + 1;
+    }
+    return out;
+}
+
+[U] flat_map<T, U>(xs: [T], f: [U](T)) {
+    let out: [U] = [];
+    let i = 0;
+    while (i < xs.len()) {
+        out.extend(f(xs[i]));
+        i = i + 1;
+    }
+    return out;
+}
