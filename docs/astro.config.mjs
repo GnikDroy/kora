@@ -31,6 +31,7 @@ export default defineConfig({
         {
           label: 'Reference',
           items: [
+            { label: 'Architecture', slug: 'reference/architecture' },
             { label: 'Runtime Helpers', slug: 'reference/runtime-helpers' },
             { label: 'Playground Functions', slug: 'reference/playground-functions' },
           ],
