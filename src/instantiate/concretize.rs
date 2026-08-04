@@ -72,8 +72,8 @@ fn renumber_function(func: &mut Spanned<Function>) {
 fn renumber_type(ty: &mut Type) {
     match ty {
         Type::Struct(sr) => sr.name.id = NodeId::new(),
-        Type::Generic(name, args) => {
-            name.id = NodeId::new();
+        Type::Generic(sr, args) => {
+            sr.name.id = NodeId::new();
             for arg in args.iter_mut() {
                 renumber_type(arg);
             }
@@ -475,9 +475,9 @@ impl Instantiator<'_> {
                     }
                 }
             }
-            Type::Generic(name, args) => {
-                let generic_name = name.node.clone();
-                let name_span = name.span.clone();
+            Type::Generic(sr, args) => {
+                let generic_name = sr.name.node.clone();
+                let name_span = sr.name.span.clone();
                 for arg in args.iter_mut() {
                     self.concretize_type(subst, arg, span, stack);
                 }

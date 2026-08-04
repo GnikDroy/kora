@@ -235,7 +235,7 @@ pub(crate) fn display_type(ty: &Type, origins: &InstanceOrigins) -> String {
             .and_then(|t| origins.get(&t))
             .map(|origin| display_instance(&origin.generic, &origin.args, origins))
             .unwrap_or_else(|| sr.name.node.clone()),
-        Type::Generic(name, args) => display_instance(&name.node, args, origins),
+        Type::Generic(sr, args) => display_instance(&sr.name.node, args, origins),
         Type::Function(_, _) => "fn".to_string(),
     }
 }

@@ -142,7 +142,7 @@ fn encoded_type_name(ty: &Type, origins: &InstanceOrigins) -> String {
             .and_then(|t| origins.get(&t))
             .map(|origin| instance_base_name(&origin.generic, &origin.args, origins))
             .unwrap_or_else(|| sr.name.node.clone()),
-        Type::Generic(name, _) => name.node.clone(),
+        Type::Generic(sr, _) => sr.name.node.clone(),
         Type::Function(_, _) => "fn".to_string(),
     }
 }

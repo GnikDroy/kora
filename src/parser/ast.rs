@@ -285,7 +285,7 @@ pub enum Type {
     Array(Box<Type>),
     Optional(Box<Type>),
     Struct(StructRef),
-    Generic(Spanned<String>, Vec<Type>),
+    Generic(StructRef, Vec<Type>),
     Function(Option<Box<Type>>, Vec<Type>),
 }
 

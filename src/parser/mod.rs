@@ -970,7 +970,10 @@ impl Parser {
             Token::Identifier(name) => {
                 let name = Spanned::new(name, span);
                 if self.peek_is(Token::Symbol(Symbol::Less)) {
-                    Ok(Type::Generic(name, self.parse_type_arguments()?))
+                    Ok(Type::Generic(
+                        StructRef::unresolved(name),
+                        self.parse_type_arguments()?,
+                    ))
                 } else {
                     Ok(Type::Struct(StructRef::unresolved(name)))
                 }
@@ -1218,7 +1221,7 @@ impl Parser {
                     Type::Struct(StructRef::unresolved(param))
                 })
                 .collect();
-            Type::Generic(name, args)
+            Type::Generic(StructRef::unresolved(name), args)
         };
         let mut arguments = vec![Spanned::new(
             IdentifierTypePair {
