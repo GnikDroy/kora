@@ -22,6 +22,8 @@ in the browser with nothing to install.
   (`struct box<T>`, `T id<T>(x: T)`), instantiated with turbofish
   (`id::<int>(5)`, `new box<int>{ v: 1 }`). Instances are monomorphized, so
   generics cost nothing at runtime.
+- Functions are first class values. Pass, store, and return functions by value with the
+  for callbacks, dispatch tables, and higher-order functions.
 - Optionals (`T?`) instead of null. [The billion-dollar mistake](https://computerhistory.org/blog/in-memoriam-sir-antony-hoare-1934-2026/)
 - Runtime safety is a design choice: array indexing is
   bounds-checked, integer division by zero, `pop()` on an empty array, and
@@ -186,7 +188,8 @@ rettype     = "void" | type ;
 params      = [ param { "," param } [ "," ] ] ;
 param       = ident ":" type ;
 
-type        = basetype [ "?" ] ;                (* "?" makes it optional *)
+type        = rettype "(" [ type { "," type } [ "," ] ] ")" [ "?" ]  (* function type, e.g. int(int, int) *)
+            | basetype [ "?" ] ;                                      (* "?" makes it optional *)
 basetype    = "int" | "real" | "char" | "bool" | "string" | "opaque"
             | ident [ typeargs ]         (* struct name, or generic instance *)
             | "[" type "]" ;

@@ -2,6 +2,11 @@ importScripts("../runtime/kora_browser_runtime.js");
 
 const keysDown = new Set();
 let ctx = null;
+
+// string args arrive as UTF-8 byte arrays
+function decode_cstr(v) {
+  return Array.isArray(v) ? new TextDecoder().decode(new Uint8Array(v)) : String(v);
+}
 let canvasShown = false;
 let mouseX = 0;
 let mouseY = 0;
@@ -29,7 +34,7 @@ function draw_clear() {
 
 function set_color(c) {
   if (!ctx) return;
-  if (Array.isArray(c)) c = c.join("");
+  c = decode_cstr(c);
   ctx.fillStyle = c;
   ctx.strokeStyle = c;
 }
@@ -93,8 +98,7 @@ function canvas_height() {
 
 function text_width(s) {
   if (!ctx) return 0;
-  if (Array.isArray(s)) s = s.join("");
-  return Math.round(ctx.measureText(String(s)).width);
+  return Math.round(ctx.measureText(decode_cstr(s)).width);
 }
 
 function mouse_x() {
@@ -142,13 +146,11 @@ function fill_circle(x, y, r) {
 function draw_text(s, x, y) {
   if (!ctx) return;
   useCanvas();
-  if (Array.isArray(s)) s = s.join("");
-  ctx.fillText(String(s), x, y);
+  ctx.fillText(decode_cstr(s), x, y);
 }
 
 function is_key_down(key) {
-  if (Array.isArray(key)) key = key.join("");
-  return keysDown.has(key);
+  return keysDown.has(decode_cstr(key));
 }
 
 const CANVAS_IMPLS = {
