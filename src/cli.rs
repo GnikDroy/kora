@@ -19,6 +19,8 @@ pub struct Args {
     emit_js: bool,
     #[arg(long = "async-extern", value_name = "NAME")]
     async_externs: Vec<String>,
+    #[arg(last = true, value_name = "LINKER_ARG")]
+    link_args: Vec<String>,
 }
 
 impl Args {
@@ -46,6 +48,13 @@ pub fn run(args: &Args) -> Result<(), String> {
     )?;
 
     if args.emit_js || args.emit_llvm() {
+        if !args.link_args.is_empty() {
+            return Err(
+                "linker arguments after `--` only apply to a native build, not --emit-js or \
+                 --emit-llvm"
+                    .to_string(),
+            );
+        }
         if args.emit_js && args.emit_llvm() && args.output.is_some() {
             return Err(
                 "-o is ambiguous with both --emit-js and --emit-llvm; drop it to use \
@@ -87,13 +96,16 @@ fn build(args: &Args, program: kora::CompiledProgram) -> Result<(), String> {
         .output
         .clone()
         .unwrap_or_else(|| args.input.with_extension(""));
-    kora::backend::native(&program, &output, &args.opt).map_err(|e| e.to_string())
+    kora::backend::native(&program, &output, &args.opt, &args.link_args).map_err(|e| e.to_string())
 }
 
 #[cfg(not(feature = "codegen"))]
 fn build(args: &Args, _program: kora::CompiledProgram) -> Result<(), String> {
     if args.output.is_some() {
         return Err("-o requires --emit-js in a build without the native backend".to_string());
+    }
+    if !args.link_args.is_empty() {
+        return Err("linker arguments require the native backend (build with --features codegen)".to_string());
     }
     Ok(())
 }

@@ -50,7 +50,7 @@ fn run_program_with_stdin(files: &[(&str, &str)], stdin: &[u8]) -> (String, Stri
     let program = frontend(&dir, files);
 
     let binary = dir.join("main");
-    kora::backend::native(&program, &binary, "2").expect("build");
+    kora::backend::native(&program, &binary, "2", &[]).expect("build");
     let native = exec(&mut Command::new(&binary), stdin);
 
     let js = kora::backend::node_program(program, HashSet::new()).expect("emit js");
@@ -80,7 +80,7 @@ fn run_native_only(source: &str) -> (String, String, i32) {
     let dir = temp_dir();
     let program = frontend(&dir, &[("main.kora", source)]);
     let binary = dir.join("main");
-    kora::backend::native(&program, &binary, "2").expect("build");
+    kora::backend::native(&program, &binary, "2", &[]).expect("build");
     let out = exec(&mut Command::new(&binary), b"");
     std::fs::remove_dir_all(&dir).ok();
     out
@@ -107,6 +107,57 @@ fn test_native_libc_bindings() {
         "#,
     );
     assert_eq!(code, 31, "{stderr}");
+}
+
+#[test]
+fn test_native_link_passthrough() {
+    let dir = temp_dir();
+
+    let csrc = dir.join("ext.c");
+    std::fs::write(&csrc, "int kora_ext_answer(void) { return 42; }\n").unwrap();
+    let obj = dir.join("ext.o");
+    assert!(
+        Command::new("cc")
+            .arg("-c")
+            .arg(&csrc)
+            .arg("-o")
+            .arg(&obj)
+            .status()
+            .unwrap()
+            .success(),
+        "compile ext.c"
+    );
+    let archive = dir.join("libkoratest.a");
+    assert!(
+        Command::new("ar")
+            .arg("rcs")
+            .arg(&archive)
+            .arg(&obj)
+            .status()
+            .unwrap()
+            .success(),
+        "archive ext.o"
+    );
+
+    let program = frontend(
+        &dir,
+        &[(
+            "main.kora",
+            r#"
+                extern cint kora_ext_answer();
+                int main() {
+                    if (kora_ext_answer() == 42) { return 42; }
+                    return 1;
+                }
+            "#,
+        )],
+    );
+    let binary = dir.join("main");
+    let link_args = vec![format!("-L{}", dir.display()), "-lkoratest".to_string()];
+    kora::backend::native(&program, &binary, "2", &link_args).expect("build with passthrough");
+    let (_, stderr, code) = exec(&mut Command::new(&binary), b"");
+    std::fs::remove_dir_all(&dir).ok();
+    assert_eq!(code, 42, "{stderr}");
 }
 
 #[test]

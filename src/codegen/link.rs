@@ -9,7 +9,7 @@ use super::optimize::{optimize, target_machine};
 
 const RUNTIME_LIB: &[u8] = include_bytes!(env!("KORA_RUNTIME"));
 
-pub fn link(llvm: &Module, output: &Path, opt: &str) -> Result<(), LinkErr> {
+pub fn link(llvm: &Module, output: &Path, opt: &str, link_args: &[String]) -> Result<(), LinkErr> {
     llvm.verify()
         .unwrap_or_else(|e| panic!("invalid IR generated:\n{e}"));
 
@@ -28,6 +28,7 @@ pub fn link(llvm: &Module, output: &Path, opt: &str) -> Result<(), LinkErr> {
                 .arg(&object_path)
                 .arg(&runtime_path)
                 .arg("-lm")
+                .args(link_args)
                 .arg(dead_strip)
                 .arg("-o")
                 .arg(output)
