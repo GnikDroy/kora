@@ -6,7 +6,12 @@
 Kora is a small, statically typed, programming language with a garbage collector. It compiles to native executables and JavaScript. Your programs run right
 in the browser with nothing to install.
 
-**[Try Kora in the online playground](https://gnikdroy.github.io/kora/)**
+**[Read the docs](https://gnikdroy.github.io/kora/)** &middot; **[Try the online playground](https://gnikdroy.github.io/kora/play/)**
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/src/assets/playground_dark.png" />
+  <img alt="The Kora playground" src="docs/src/assets/playground_light.png" />
+</picture>
 
 ## Features
 
@@ -153,8 +158,8 @@ Building the compiler requires lib LLVM 22 and a C compiler for the platform lin
 
 ```bash
 cargo build --release # build the compiler
-./target/release/kora program.kora -o program # native standalone binary
-./target/release/kora program.kora --emit-js  # or print the JavaScript
+kora program.kora -o program # native standalone binary
+kora program.kora --emit-js  # or print the JavaScript
 ```
 
 Running the test suite is `cargo test` (also requires LLVM 22).
