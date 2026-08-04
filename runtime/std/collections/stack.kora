@@ -1,0 +1,29 @@
+struct stack<T> {
+    items: [T],
+}
+
+stack<T> make<T>() {
+    return new stack<T>{ items: [] };
+}
+
+impl stack<T> {
+    void push(self, x: T) {
+        self.items.push(x);
+    }
+
+    T pop(self) {
+        return self.items.pop();
+    }
+
+    T peek(self) {
+        return self.items[self.items.len() - 1];
+    }
+
+    int count(self) {
+        return self.items.len();
+    }
+
+    bool empty(self) {
+        return self.items.len() == 0;
+    }
+}

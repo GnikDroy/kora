@@ -1,0 +1,72 @@
+struct list_node<T> {
+    value: T,
+    next: list_node<T>?,
+}
+
+struct list<T> {
+    head: list_node<T>?,
+    tail: list_node<T>?,
+    size: int,
+}
+
+list<T> make<T>() {
+    return new list<T>{ head: none, tail: none, size: 0 };
+}
+
+impl list<T> {
+    int count(self) {
+        return self.size;
+    }
+
+    bool empty(self) {
+        return self.size == 0;
+    }
+
+    void push_front(self, x: T) {
+        let cell = new list_node<T>{ value: x, next: self.head };
+        self.head = cell;
+        if (self.tail == none) {
+            self.tail = cell;
+        }
+        self.size = self.size + 1;
+    }
+
+    void push_back(self, x: T) {
+        let cell = new list_node<T>{ value: x, next: none };
+        if (self.tail == none) {
+            self.head = cell;
+        } else {
+            let last = self.tail!;
+            last.next = cell;
+        }
+        self.tail = cell;
+        self.size = self.size + 1;
+    }
+
+    T pop_front(self) {
+        let cell = self.head!;
+        self.head = cell.next;
+        if (self.head == none) {
+            self.tail = none;
+        }
+        self.size = self.size - 1;
+        return cell.value;
+    }
+
+    T? front(self) {
+        if (self.head == none) {
+            return none;
+        }
+        return self.head!.value;
+    }
+
+    T get(self, index: int) {
+        let cur = self.head;
+        let i = 0;
+        while (i < index) {
+            cur = cur!.next;
+            i = i + 1;
+        }
+        return cur!.value;
+    }
+}

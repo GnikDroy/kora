@@ -2245,3 +2245,185 @@ fn test_generic_triple_nested_return() {
     "#);
     assert_eq!(code, 42);
 }
+
+#[test]
+fn test_std_collections_stack() {
+    let (_, _, code) = run(r#"
+        import "std/collections/stack";
+        int main() {
+            let s = stack.make::<int>();
+            s.push(1); s.push(2); s.push(3);
+            if (s.count() != 3) { return 1; }
+            if (s.pop() != 3) { return 2; }
+            if (s.peek() != 2) { return 3; }
+            if (s.empty()) { return 4; }
+            s.pop(); s.pop();
+            if (!s.empty()) { return 5; }
+            return 42;
+        }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_std_collections_queue() {
+    let (_, _, code) = run(r#"
+        import "std/collections/queue";
+        int main() {
+            let q = queue.make::<int>();
+            let i = 0;
+            while (i < 50) { q.enqueue(i); i = i + 1; }
+            if (q.count() != 50) { return 1; }
+            let sum = 0;
+            while (!q.empty()) { sum = sum + q.dequeue(); }
+            if (sum != 1225) { return 2; }
+            if (q.count() != 0) { return 3; }
+            return 42;
+        }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_std_collections_list() {
+    let (_, _, code) = run(r#"
+        import "std/collections/list";
+        int main() {
+            let l = list.make::<int>();
+            l.push_back(2); l.push_back(3); l.push_front(1);
+            if (l.count() != 3) { return 1; }
+            if (l.get(0) != 1) { return 2; }
+            if (l.get(1) != 2) { return 3; }
+            if (l.get(2) != 3) { return 4; }
+            let f = l.front();
+            if (f == none) { return 5; }
+            if (f! != 1) { return 6; }
+            if (l.pop_front() != 1) { return 7; }
+            if (l.pop_front() != 2) { return 8; }
+            if (l.count() != 1) { return 9; }
+            l.push_back(9);
+            if (l.get(1) != 9) { return 10; }
+            return 42;
+        }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_std_collections_map() {
+    let (_, _, code) = run(r#"
+        import "std/collections/map";
+        import "std/collections/hasher";
+        string key(i: int) { return ['k', i as char]; }
+        int main() {
+            let m = map.make::<string, int, string_hasher>();
+            let i = 0;
+            while (i < 60) { m.set(key(i), i * 2); i = i + 1; }
+            m.set(key(7), 700);
+            if (m.count() != 60) { return 1; }
+            if (m.remove(key(3)) == false) { return 2; }
+            if (m.has(key(3))) { return 3; }
+            if (m.count() != 59) { return 4; }
+            let g = m.get(key(7));
+            if (g == none) { return 5; }
+            if (g! != 700) { return 6; }
+            if (m.get(key(999)) != none) { return 7; }
+            i = 0;
+            let sum = 0;
+            while (i < 60) {
+                let v = m.get(key(i));
+                if (v != none) { sum = sum + v!; }
+                i = i + 1;
+            }
+            if (sum != 4220) { return 8; }
+            return 42;
+        }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_std_collections_set() {
+    let (_, _, code) = run(r#"
+        import "std/collections/set";
+        import "std/collections/hasher";
+        int main() {
+            let s = set.make::<int, int_hasher>();
+            let i = 0;
+            while (i < 50) { s.add(i * 2); i = i + 1; }
+            if (s.count() != 50) { return 1; }
+            if (s.add(4)) { return 2; }
+            if (!s.has(98)) { return 3; }
+            if (s.has(99)) { return 4; }
+            if (!s.remove(50)) { return 5; }
+            if (s.has(50)) { return 6; }
+            if (s.count() != 49) { return 7; }
+            i = 0;
+            let c = 0;
+            while (i < 100) { if (s.has(i)) { c = c + 1; } i = i + 1; }
+            if (c != 49) { return 8; }
+            return 42;
+        }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_std_algorithm_sort_and_binary_search() {
+    let (_, _, code) = run(r#"
+        import "std/algorithm";
+        struct asc {}
+        impl asc { bool less(self, a: int, b: int) { return a < b; } }
+        struct desc {}
+        impl desc { bool less(self, a: int, b: int) { return a > b; } }
+        int main() {
+            let xs = [9, 3, 7, 1, 8, 2, 6, 0, 5, 4];
+            algorithm.sort::<int, asc>(xs, new asc);
+            let i = 1;
+            while (i < xs.len()) { if (xs[i-1] > xs[i]) { return 1; } i = i + 1; }
+            if (xs[0] != 0 || xs[9] != 9) { return 2; }
+            let f = algorithm.binary_search::<int, asc>(xs, 6, new asc);
+            if (f == none) { return 3; }
+            if (xs[f!] != 6) { return 4; }
+            if (algorithm.binary_search::<int, asc>(xs, 100, new asc) != none) { return 5; }
+            algorithm.sort::<int, desc>(xs, new desc);
+            if (xs[0] != 9 || xs[9] != 0) { return 6; }
+            return 42;
+        }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_std_algorithm_sorts_strings_via_comparator() {
+    let (_, _, code) = run(r#"
+        import "std/algorithm";
+        struct str_less {}
+        impl str_less {
+            bool less(self, a: string, b: string) {
+                let n = a.len();
+                let m = b.len();
+                let i = 0;
+                while (i < n && i < m) {
+                    if (a[i] < b[i]) { return true; }
+                    if (a[i] > b[i]) { return false; }
+                    i = i + 1;
+                }
+                return n < m;
+            }
+        }
+        int main() {
+            let xs = ["pear", "apple", "fig", "cherry", "banana"];
+            algorithm.sort::<string, str_less>(xs, new str_less);
+            if (xs[0] != "apple") { return 1; }
+            if (xs[1] != "banana") { return 2; }
+            if (xs[4] != "pear") { return 3; }
+            let f = algorithm.binary_search::<string, str_less>(xs, "fig", new str_less);
+            if (f == none) { return 4; }
+            if (xs[f!] != "fig") { return 5; }
+            if (algorithm.binary_search::<string, str_less>(xs, "kiwi", new str_less) != none) { return 6; }
+            return 42;
+        }
+    "#);
+    assert_eq!(code, 42);
+}

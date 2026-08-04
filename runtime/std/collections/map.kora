@@ -1,0 +1,132 @@
+struct map<K, V, H> {
+    hasher: H,
+    keys: [K],
+    values: [V],
+    slots: [int],
+    size: int,
+    used: int,
+}
+
+map<K, V, H> make<K, V, H>() {
+    return new map<K, V, H>{
+        hasher: new H,
+        keys: [],
+        values: [],
+        slots: new int[8],
+        size: 0,
+        used: 0,
+    };
+}
+
+impl map<K, V, H> {
+    int count(self) {
+        return self.size;
+    }
+
+    int slot(self, key: K) {
+        let cap = self.slots.len();
+        let s = self.hasher.hash(key) % cap;
+        if (s < 0) {
+            s = s + cap;
+        }
+        return s;
+    }
+
+    void insert(self, key: K, value: V) {
+        let cap = self.slots.len();
+        let i = self.slot(key);
+        let tomb = -1;
+        while (self.slots[i] != 0) {
+            if (self.slots[i] > 0 && self.keys[self.slots[i] - 1] == key) {
+                self.values[self.slots[i] - 1] = value;
+                return;
+            }
+            if (self.slots[i] == -1 && tomb < 0) {
+                tomb = i;
+            }
+            i = i + 1;
+            if (i >= cap) {
+                i = 0;
+            }
+        }
+        let id = self.keys.len();
+        self.keys.push(key);
+        self.values.push(value);
+        if (tomb >= 0) {
+            i = tomb;
+        } else {
+            self.used = self.used + 1;
+        }
+        self.slots[i] = id + 1;
+        self.size = self.size + 1;
+    }
+
+    void grow(self) {
+        let old_keys = self.keys;
+        let old_values = self.values;
+        let old_slots = self.slots;
+        self.keys = [];
+        self.values = [];
+        self.slots = new int[old_slots.len() * 2];
+        self.size = 0;
+        self.used = 0;
+        let i = 0;
+        while (i < old_slots.len()) {
+            if (old_slots[i] > 0) {
+                self.insert(old_keys[old_slots[i] - 1], old_values[old_slots[i] - 1]);
+            }
+            i = i + 1;
+        }
+    }
+
+    void set(self, key: K, value: V) {
+        if ((self.used + 1) * 4 > self.slots.len() * 3) {
+            self.grow();
+        }
+        self.insert(key, value);
+    }
+
+    int? find(self, key: K) {
+        let cap = self.slots.len();
+        let i = self.slot(key);
+        while (self.slots[i] != 0) {
+            if (self.slots[i] > 0 && self.keys[self.slots[i] - 1] == key) {
+                return self.slots[i] - 1;
+            }
+            i = i + 1;
+            if (i >= cap) {
+                i = 0;
+            }
+        }
+        return none;
+    }
+
+    bool has(self, key: K) {
+        return self.find(key) != none;
+    }
+
+    V? get(self, key: K) {
+        let id = self.find(key);
+        if (id == none) {
+            return none;
+        }
+        return self.values[id!];
+    }
+
+    bool remove(self, key: K) {
+        let cap = self.slots.len();
+        let i = self.slot(key);
+        while (self.slots[i] != 0) {
+            if (self.slots[i] > 0 && self.keys[self.slots[i] - 1] == key) {
+                self.slots[i] = -1;
+                self.size = self.size - 1;
+                return true;
+            }
+            i = i + 1;
+            if (i >= cap) {
+                i = 0;
+            }
+        }
+        return false;
+    }
+}

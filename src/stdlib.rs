@@ -13,6 +13,31 @@ const MODULES: &[(&str, &str)] = &[
     ("std/math", include_str!("../runtime/std/math.kora")),
     ("std/str", include_str!("../runtime/std/str.kora")),
     ("std/time", include_str!("../runtime/std/time.kora")),
+    ("std/algorithm", include_str!("../runtime/std/algorithm.kora")),
+    (
+        "std/collections/hasher",
+        include_str!("../runtime/std/collections/hasher.kora"),
+    ),
+    (
+        "std/collections/map",
+        include_str!("../runtime/std/collections/map.kora"),
+    ),
+    (
+        "std/collections/set",
+        include_str!("../runtime/std/collections/set.kora"),
+    ),
+    (
+        "std/collections/stack",
+        include_str!("../runtime/std/collections/stack.kora"),
+    ),
+    (
+        "std/collections/queue",
+        include_str!("../runtime/std/collections/queue.kora"),
+    ),
+    (
+        "std/collections/list",
+        include_str!("../runtime/std/collections/list.kora"),
+    ),
 ];
 
 pub fn is_std_path(path: &Path) -> bool {

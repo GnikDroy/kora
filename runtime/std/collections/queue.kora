@@ -1,0 +1,36 @@
+struct queue<T> {
+    items: [T],
+    head: int,
+}
+
+queue<T> make<T>() {
+    return new queue<T>{ items: [], head: 0 };
+}
+
+impl queue<T> {
+    void enqueue(self, x: T) {
+        self.items.push(x);
+    }
+
+    T dequeue(self) {
+        let x = self.items[self.head];
+        self.head = self.head + 1;
+        if (self.head >= 32 && self.head * 2 >= self.items.len()) {
+            self.items = self.items.slice(self.head, self.items.len());
+            self.head = 0;
+        }
+        return x;
+    }
+
+    T peek(self) {
+        return self.items[self.head];
+    }
+
+    int count(self) {
+        return self.items.len() - self.head;
+    }
+
+    bool empty(self) {
+        return self.head >= self.items.len();
+    }
+}
