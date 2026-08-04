@@ -2427,3 +2427,28 @@ fn test_std_algorithm_sorts_strings_via_comparator() {
     "#);
     assert_eq!(code, 42);
 }
+
+#[test]
+fn test_non_ascii_strings_are_byte_oriented() {
+    let (_, _, code) = run(r#"
+        int main() {
+            let s = "café";
+            if (s.len() != 5) { return 1; }
+            if ((s[3] as int) != 195) { return 2; }
+            if ((s[4] as int) != 169) { return 3; }
+            let snowman = "☃";
+            if (snowman.len() != 3) { return 4; }
+            return 42;
+        }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_non_ascii_output_is_identical() {
+    let (stdout, _, _) = run(r#"
+        import "std/io";
+        int main() { io.print("héllo wörld ☃"); return 0; }
+    "#);
+    assert_eq!(stdout, "héllo wörld ☃\n");
+}

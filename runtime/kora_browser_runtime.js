@@ -13,19 +13,19 @@ let stdoutBuffer = [];
 function flushStdout() {
   if (stdoutBuffer.length === 0) return;
   useStdout();
-  postMessage({ type: "write", text: stdoutBuffer.join("") });
+  postMessage({ type: "write", text: new TextDecoder().decode(new Uint8Array(stdoutBuffer)) });
   stdoutBuffer = [];
 }
 
 function __kora_write(buf, n) {
   flushStdout();
   useStdout();
-  const text = Array.isArray(buf) ? buf.slice(0, Number(n)).join("") : String(buf);
-  postMessage({ type: "write", text });
+  const bytes = Array.isArray(buf) ? buf.slice(0, Number(n)) : [];
+  postMessage({ type: "write", text: new TextDecoder().decode(new Uint8Array(bytes)) });
 }
 
 function putchar(c) {
-  stdoutBuffer.push(String.fromCharCode(Number(c) & 0xff));
+  stdoutBuffer.push(Number(c) & 0xff);
   if (stdoutBuffer.length >= 4096) flushStdout();
   return c;
 }
@@ -43,10 +43,11 @@ async function getchar() {
       pendingInput = resolve;
       postMessage({ type: "input" });
     });
-    inputBuffer = line;
-    inputBuffer.push("\n");
+    const text = typeof line === "string" ? line : line.join("");
+    inputBuffer = Array.from(new TextEncoder().encode(text));
+    inputBuffer.push(10);
   }
-  return inputBuffer.shift().charCodeAt(0);
+  return inputBuffer.shift();
 }
 
 function rand() {

@@ -71,15 +71,22 @@ function __kora_runtime_check_len(n) {
 }
 ";
 
-pub(crate) fn emit(program: &Program, async_fns: HashSet<String>) -> String {
+/// JavaScript Number holds every number upto 2^-53
+const MAX_SAFE_INT: u64 = (1 << 53) - 1;
+
+pub(crate) fn emit(program: &Program, async_fns: HashSet<String>) -> Result<String, String> {
     let mut emitter = Emitter {
         program,
         async_fns,
         func: None,
         out: String::new(),
+        error: None,
     };
     emitter.program();
-    emitter.out
+    match emitter.error {
+        Some(error) => Err(error),
+        None => Ok(emitter.out),
+    }
 }
 
 struct Emitter<'a> {
@@ -87,6 +94,7 @@ struct Emitter<'a> {
     async_fns: HashSet<String>,
     func: Option<&'a FunctionDef>,
     out: String,
+    error: Option<String>,
 }
 
 impl<'a> Emitter<'a> {
@@ -239,7 +247,15 @@ impl<'a> Emitter<'a> {
 
     fn expr(&mut self, expr: &Expression) {
         match &expr.kind {
-            ExpressionKind::Int(v) => self.out.push_str(&v.to_string()),
+            ExpressionKind::Int(v) => {
+                if v.unsigned_abs() > MAX_SAFE_INT && self.error.is_none() {
+                    self.error = Some(format!(
+                        "integer literal {v} exceeds the 53-bit range of int on the JavaScript backend ({}:{})",
+                        expr.span.start.row, expr.span.start.col
+                    ));
+                }
+                self.out.push_str(&v.to_string());
+            }
             ExpressionKind::Real(v) => self.out.push_str(&v.to_string()),
             ExpressionKind::Bool(b) => self.out.push_str(if *b { "true" } else { "false" }),
             ExpressionKind::Char(c) => self.char_literal(*c),
@@ -478,10 +494,9 @@ impl<'a> Emitter<'a> {
     fn cast(&mut self, kind: CastKind, operand: &Expression) {
         let (before, after) = match kind {
             CastKind::RealToInt => ("Math.trunc(", ")"),
-            CastKind::CharToInt | CastKind::CharToReal => ("(", ").charCodeAt(0)"),
-            CastKind::IntToReal => ("(", ")"),
-            CastKind::IntToChar => ("String.fromCharCode(", ")"),
-            CastKind::RealToChar => ("String.fromCharCode(Math.trunc(", "))"),
+            CastKind::CharToInt | CastKind::CharToReal | CastKind::IntToReal => ("(", ")"),
+            CastKind::IntToChar => ("((", ") & 255)"),
+            CastKind::RealToChar => ("(Math.trunc(", ") & 255)"),
         };
         self.out.push_str(before);
         self.expr(operand);
@@ -581,7 +596,7 @@ impl<'a> Emitter<'a> {
             Type::Optional(_) | Type::Opaque => self.out.push_str("null"),
             Type::Real => self.out.push_str("0.0"),
             Type::Bool => self.out.push_str("false"),
-            Type::Char => self.out.push_str("\"\\0\""),
+            Type::Char => self.out.push('0'),
             Type::Int | Type::Void => self.out.push('0'),
         }
     }
@@ -614,38 +629,18 @@ impl<'a> Emitter<'a> {
     }
 
     fn char_literal(&mut self, c: u8) {
-        let c = c as char;
-        self.out.push('\'');
-        match c {
-            '\\' => self.out.push_str("\\\\"),
-            '\'' => self.out.push_str("\\'"),
-            '\n' => self.out.push_str("\\n"),
-            '\r' => self.out.push_str("\\r"),
-            '\t' => self.out.push_str("\\t"),
-            '\0' => self.out.push_str("\\0"),
-            _ => self.out.push(c),
-        }
-        self.out.push('\'');
+        self.out.push_str(&c.to_string());
     }
 
     fn string_literal(&mut self, s: &str) {
-        // Kora's [char] is a mutable char array
-        // a bare JS string would silently ignore s[i] = 'x'.
-        self.out.push_str("Array.from(");
-        self.out.push('"');
-        for c in s.chars() {
-            match c {
-                '\\' => self.out.push_str("\\\\"),
-                '"' => self.out.push_str("\\\""),
-                '\n' => self.out.push_str("\\n"),
-                '\r' => self.out.push_str("\\r"),
-                '\t' => self.out.push_str("\\t"),
-                '\0' => self.out.push_str("\\0"),
-                _ => self.out.push(c),
+        self.out.push('[');
+        for (i, b) in s.as_bytes().iter().enumerate() {
+            if i > 0 {
+                self.out.push(',');
             }
+            self.out.push_str(&b.to_string());
         }
-        self.out.push('"');
-        self.out.push(')');
+        self.out.push(']');
     }
 }
 

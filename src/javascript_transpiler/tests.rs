@@ -10,6 +10,21 @@ fn transpile_with_async(source: &str, async_externs: HashSet<String>) -> String 
 }
 
 #[test]
+fn test_rejects_int_literal_beyond_53_bits() {
+    let map: HashMap<String, String> = [(
+        "main.kora".to_string(),
+        "int main() { let x = 9007199254740993; return 0; }".to_string(),
+    )]
+    .into();
+    let compiled = crate::compile("main.kora", |p: &Path| {
+        p.to_str().and_then(|s| map.get(s)).cloned()
+    })
+    .expect("compile");
+    let err = super::transpile(compiled, HashSet::new()).unwrap_err();
+    assert!(err.contains("53-bit"), "{err}");
+}
+
+#[test]
 fn test_methods_emit_mangled_global_functions() {
     let js = transpile(
         r#"
@@ -119,7 +134,7 @@ fn test_array_equality_emits_structural_compare() {
     );
     assert!(js.contains("__kora_runtime_equality_intrinsic("), "{js}");
     assert!(js.contains("!__kora_runtime_equality_intrinsic("), "{js}");
-    assert!(js.contains("__kora_runtime_index(s,0)==='a'"), "{js}");
+    assert!(js.contains("__kora_runtime_index(s,0)===97"), "{js}");
     assert!(
         !js.contains("__kora_runtime_equality_intrinsic(__kora_runtime_index(s,0)"),
         "{js}"
@@ -218,10 +233,10 @@ fn test_cast_semantics_match_native_codegen() {
             }
         "#,
     );
-    assert!(js.contains("Math.trunc(2.9)"), "{js}");
-    assert!(js.contains(".charCodeAt(0)"), "{js}");
-    assert!(js.contains("String.fromCharCode(65)"), "{js}");
-    assert!(js.contains("String.fromCharCode(Math.trunc(2.9))"), "{js}");
+    assert!(js.contains("Math.trunc(2.9)"), "{js}"); // 2.9 as int
+    assert!(js.contains("(97)"), "{js}"); // 'a' as int
+    assert!(js.contains("((65) & 255)"), "{js}"); // 65 as char
+    assert!(js.contains("(Math.trunc(2.9) & 255)"), "{js}"); // 2.9 as char
 }
 
 #[test]
@@ -235,7 +250,7 @@ fn test_string_literals_are_mutable_arrays() {
             }
         "#,
     );
-    assert!(js.contains(r#"Array.from("abc")"#), "{js}");
+    assert!(js.contains("[97,98,99]"), "{js}");
 }
 
 #[test]
@@ -251,10 +266,9 @@ fn test_scalar_arrays_are_zero_filled() {
             }
         "#,
     );
-    assert!(js.contains(".fill(0)"), "{js}");
+    assert!(js.contains(".fill(0)"), "{js}"); // int, and char (a zero byte)
     assert!(js.contains(".fill(0.0)"), "{js}");
     assert!(js.contains(".fill(false)"), "{js}");
-    assert!(js.contains(".fill(\"\\0\")"), "{js}");
 }
 
 #[test]

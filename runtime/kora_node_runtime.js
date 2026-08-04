@@ -8,8 +8,8 @@ function flushStdout() {
 
 function __kora_write(buf, n) {
   flushStdout();
-  const text = Array.isArray(buf) ? buf.slice(0, Number(n)).join("") : String(buf);
-  require("node:fs").writeSync(1, Buffer.from(text, "binary"));
+  const bytes = Array.isArray(buf) ? buf.slice(0, Number(n)) : [];
+  require("node:fs").writeSync(1, Buffer.from(bytes));
 }
 
 function putchar(c) {
@@ -64,11 +64,11 @@ function fmin(x, y) { return Math.min(x, y); }
 function fmax(x, y) { return Math.max(x, y); }
 
 function __kora_cstring_from_array(a) {
-  return Array.isArray(a) ? a.join("") : String(a);
+  return Array.isArray(a) ? Buffer.from(a).toString("utf8") : String(a);
 }
 
 function __kora_array_from_cstring(s) {
-  return Array.from(s);
+  return Array.from(Buffer.from(String(s), "utf8"));
 }
 
 function fopen(path, mode) {
@@ -98,7 +98,7 @@ function fputc(c, f) {
 }
 
 function fputs(s, f) {
-  const b = Buffer.from(__kora_cstring_from_array(s), "binary");
+  const b = Buffer.from(s);
   f.pos += require("node:fs").writeSync(f.fd, b, 0, b.length, f.pos);
   return 0;
 }

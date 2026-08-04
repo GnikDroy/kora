@@ -12,5 +12,5 @@ pub fn transpile(
 ) -> Result<String, String> {
     let program = crate::ir::lower(&compiled);
     let async_fns = coloring::resolve_async_fns(&program, async_externs);
-    Ok(emit::emit(&program, async_fns))
+    emit::emit(&program, async_fns)
 }
