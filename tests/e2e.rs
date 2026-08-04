@@ -1416,7 +1416,7 @@ fn test_generic_stack_over_array() {
 }
 
 #[test]
-fn test_generic_fn_calls_generic_fn() {
+fn test_generic_fn_calls_generic_void() {
     let (_, _, code) = run(r#"
         struct box<T> { v: T }
         T ident<T>(x: T) { return x; }
@@ -2451,4 +2451,152 @@ fn test_non_ascii_output_is_identical() {
         int main() { io.print("héllo wörld ☃"); return 0; }
     "#);
     assert_eq!(stdout, "héllo wörld ☃\n");
+}
+
+#[test]
+fn test_first_class_function_values() {
+    let (_, _, code) = run(r#"
+        int add(a: int, b: int) { return a + b; }
+        int sub(a: int, b: int) { return a - b; }
+        int apply(f: int(int, int), x: int, y: int) { return f(x, y); }
+        int twice(f: int(int), x: int) { return f(f(x)); }
+        int inc(x: int) { return x + 1; }
+        int main() {
+            let f = add;
+            if (f(3, 4) != 7) { return 1; }
+            f = sub;
+            if (f(10, 4) != 6) { return 2; }
+            if (apply(add, 10, 4) != 14) { return 3; }
+            if (twice(inc, 40) != 42) { return 4; }
+            return 42;
+        }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_function_dispatch_table() {
+    let (_, _, code) = run(r#"
+        int add(a: int, b: int) { return a + b; }
+        int sub(a: int, b: int) { return a - b; }
+        int mul(a: int, b: int) { return a * b; }
+        struct handler { op: int(int, int), tag: int }
+        int main() {
+            let ops: [int(int, int)] = [add, sub, mul];
+            if (ops[0](10, 4) != 14) { return 1; }
+            if (ops[2](10, 4) != 40) { return 2; }
+            ops[1] = mul;
+            if (ops[1](10, 4) != 40) { return 3; }
+            ops.push(sub);
+            if (ops[3](10, 4) != 6) { return 4; }
+            let h = new handler{ op: add, tag: 9 };
+            if (h.op(20, 22) != 42) { return 5; }
+            h.op = mul;
+            if (h.op(6, 7) != 42) { return 6; }
+            return 42;
+        }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_function_returning_function() {
+    let (_, _, code) = run(r#"
+        int inc(x: int) { return x + 1; }
+        int dec(x: int) { return x - 1; }
+        int(int) pick(up: bool) {
+            if (up) { return inc; }
+            return dec;
+        }
+        int main() {
+            let f = pick(true);
+            let g = pick(false);
+            if (f(41) != 42) { return 1; }
+            if (g(43) != 42) { return 2; }
+            return 42;
+        }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_generic_higher_order_functions() {
+    let (_, _, code) = run(r#"
+        [U] map<T, U>(xs: [T], f: U(T)) {
+            let out: [U] = [];
+            let i = 0;
+            while (i < xs.len()) { out.push(f(xs[i])); i = i + 1; }
+            return out;
+        }
+        [T] filter<T>(xs: [T], pred: bool(T)) {
+            let out: [T] = [];
+            let i = 0;
+            while (i < xs.len()) { if (pred(xs[i])) { out.push(xs[i]); } i = i + 1; }
+            return out;
+        }
+        A fold<T, A>(xs: [T], init: A, f: A(A, T)) {
+            let acc = init;
+            let i = 0;
+            while (i < xs.len()) { acc = f(acc, xs[i]); i = i + 1; }
+            return acc;
+        }
+        int dbl(x: int) { return x * 2; }
+        bool is_big(x: int) { return x > 3; }
+        int addi(a: int, b: int) { return a + b; }
+        int main() {
+            let xs = [1, 2, 3, 4, 5];
+            let ys = map::<int, int>(xs, dbl);
+            if (ys.len() != 5 || ys[0] != 2 || ys[4] != 10) { return 1; }
+            let big = filter::<int>(xs, is_big);
+            if (big.len() != 2 || big[0] != 4 || big[1] != 5) { return 2; }
+            if (fold::<int, int>(xs, 0, addi) != 15) { return 3; }
+            return 42;
+        }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_function_name_is_not_assignable() {
+    let errors = compile_fails(&[(
+        "main.kora",
+        "int add(a: int, b: int) { return a + b; } int mul(a: int, b: int) { return a * b; } int main() { add = mul; return add(1, 2); }",
+    )]);
+    assert!(errors.contains("not assignable"), "{errors}");
+}
+
+#[test]
+fn test_function_type_returns_optional() {
+    // `int?(int)` binds the `?` to the return type: a function returning int?.
+    let (_, _, code) = run(r#"
+        int? maybe(x: int) { if (x > 0) { return x; } return none; }
+        int use_it(f: int?(int), x: int) {
+            let r = f(x);
+            if (r == none) { return 100; }
+            return r!;
+        }
+        int main() {
+            if (use_it(maybe, 41) != 41) { return 1; }
+            if (use_it(maybe, -5) != 100) { return 2; }
+            return 42;
+        }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_optional_function_value() {
+    // `int(int)?` wraps the whole function type: an optional function.
+    let (_, _, code) = run(r#"
+        int inc(x: int) { return x + 1; }
+        int main() {
+            let f: int(int)? = inc;
+            let g: int(int)? = none;
+            if (f == none) { return 1; }
+            if (g != none) { return 2; }
+            if (f!(41) != 42) { return 3; }
+            return 42;
+        }
+    "#);
+    assert_eq!(code, 42);
 }

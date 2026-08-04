@@ -316,6 +316,11 @@ impl<'a> Emitter<'a> {
                 self.call(&symbol, args);
             }
             ExpressionKind::ArrayOp { op, receiver, args } => self.array_op(*op, receiver, args),
+            ExpressionKind::FnRef(function) => {
+                let symbol = self.program[*function].symbol.clone();
+                self.out.push_str(&symbol);
+            }
+            ExpressionKind::IndirectCall { callee, args } => self.call_value(callee, args),
             ExpressionKind::Copy(inner) => {
                 if matches!(self.program.types[inner.ty], Type::Struct(_)) {
                     self.out.push_str("({...");
@@ -345,6 +350,33 @@ impl<'a> Emitter<'a> {
             self.out.push_str("(await ");
         }
         self.out.push_str(symbol);
+        self.out.push('(');
+        for (i, arg) in args.iter().enumerate() {
+            if i > 0 {
+                self.out.push(',');
+            }
+            self.expr(arg);
+        }
+        self.out.push(')');
+        if is_async {
+            self.out.push(')');
+        }
+    }
+
+    /// We cannot callee is sync, so we await it whenever the surrounding function is async.
+    ///
+    /// NOTE: The surrounding function of an indirect call is guaranteed to be async
+    /// because of the async coloring pass.
+    ///
+    /// We double check here just in case the two drift in the future.
+    fn call_value(&mut self, callee: &Expression, args: &[Expression]) {
+        let is_async = self
+            .func
+            .is_some_and(|f| self.async_fns.contains(&f.symbol));
+        if is_async {
+            self.out.push_str("(await ");
+        }
+        self.operand(callee);
         self.out.push('(');
         for (i, arg) in args.iter().enumerate() {
             if i > 0 {
@@ -593,7 +625,7 @@ impl<'a> Emitter<'a> {
         match self.program.types[ty] {
             Type::Struct(s) => self.struct_zero(s),
             Type::Array(_) => self.out.push_str("[]"),
-            Type::Optional(_) | Type::Opaque => self.out.push_str("null"),
+            Type::Optional(_) | Type::Opaque | Type::Fn => self.out.push_str("null"),
             Type::Real => self.out.push_str("0.0"),
             Type::Bool => self.out.push_str("false"),
             Type::Char => self.out.push('0'),

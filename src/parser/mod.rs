@@ -856,7 +856,12 @@ impl Parser {
     fn parse_return_type(&mut self) -> Result<Option<Type>, ParseErr> {
         if matches!(self.peek()?.token, Token::Keyword(Keyword::Void)) {
             self.pop()?;
-            Ok(None)
+            // NOTE: void(...) is a function type returning void
+            if self.peek_is(Token::Symbol(Symbol::LeftParen)) {
+                Ok(Some(self.parse_function_typename(None)?))
+            } else {
+                Ok(None)
+            }
         } else {
             Ok(Some(self.parse_typename()?))
         }
@@ -967,6 +972,13 @@ impl Parser {
             Token::Keyword(Keyword::Bool) => Ok(Type::Bool),
             Token::Keyword(Keyword::Opaque) => Ok(Type::Opaque),
             Token::Keyword(Keyword::String) => Ok(Type::Array(Box::new(Type::Char))),
+            Token::Keyword(Keyword::Void) if self.peek_is(Token::Symbol(Symbol::LeftParen)) => {
+                return self.parse_function_typename(None);
+            }
+            Token::Keyword(Keyword::Void) => Err(ParseErr {
+                msg: "void is only valid as a function's return type",
+                token: Some(token.clone()),
+            }),
             Token::Identifier(name) => {
                 let name = Spanned::new(name, span);
                 if self.peek_is(Token::Symbol(Symbol::Less)) {
@@ -988,6 +1000,29 @@ impl Parser {
             }),
         }?;
 
+        let core = self.possibly_optional(base)?;
+
+        if self.peek_is(Token::Symbol(Symbol::LeftParen)) {
+            self.parse_function_typename(Some(Box::new(core)))
+        } else {
+            Ok(core)
+        }
+    }
+
+    fn parse_function_typename(
+        &mut self,
+        return_type: Option<Box<Type>>,
+    ) -> Result<Type, ParseErr> {
+        let params = self.parse_generic_delimited(
+            Token::Symbol(Symbol::LeftParen),
+            Token::Symbol(Symbol::RightParen),
+            Token::Symbol(Symbol::Comma),
+            Parser::parse_typename,
+        )?;
+        self.possibly_optional(Type::Function(return_type, params))
+    }
+
+    fn possibly_optional(&mut self, ty: Type) -> Result<Type, ParseErr> {
         if self.peek_is(Token::Symbol(Symbol::Question)) {
             self.pop()?;
             if self.peek_is(Token::Symbol(Symbol::Question)) {
@@ -996,9 +1031,9 @@ impl Parser {
                     token: Some(self.peek()?.clone()),
                 });
             }
-            Ok(Type::Optional(Box::new(base)))
+            Ok(Type::Optional(Box::new(ty)))
         } else {
-            Ok(base)
+            Ok(ty)
         }
     }
 

@@ -67,7 +67,9 @@ impl TypeChecker<'_> {
         // This assign block has to appear before right type is computed.
         if matches!(op, BinaryOp::Assign) {
             let right_type = self.get_expression_type_expecting(right, &left_type)?;
-            if !self.is_assignable(left) || matches!(left_type, Type::Function(_, _)) {
+            // A fn-typed variable, array slot, or field is assignable, but a
+            // bare function name is not a location.
+            if !self.is_assignable(left) || self.is_function_name(left, &left_type) {
                 return Err(TypeErr {
                     msg: "LHS of assign expression is not assignable",
                     span: span.clone(),
@@ -396,6 +398,25 @@ impl TypeChecker<'_> {
     fn is_assignable(&self, expr: &Spanned<Expression>) -> bool {
         use Expression::*;
         matches!(expr.node, Identifier(_) | ArrayIndex(_, _) | Access(_, _))
+    }
+
+    fn is_function_name(&self, left: &Spanned<Expression>, left_type: &Type) -> bool {
+        matches!(left_type, Type::Function(_, _))
+            && matches!(&left.node, Expression::Identifier(_))
+            && self
+                .symbols
+                .symbol_id_of_use(left.id)
+                .is_some_and(|id| self.is_function_symbol(id))
+    }
+
+    fn is_function_symbol(&self, id: SymbolId) -> bool {
+        self.modules.iter().any(|m| {
+            m.functions
+                .iter()
+                .map(|f| f.id)
+                .chain(m.extern_functions.iter().map(|f| f.id))
+                .any(|decl| self.symbols.symbol_id_of_declaration(decl) == Some(id))
+        })
     }
 
     fn get_struct_literal_type(

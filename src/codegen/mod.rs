@@ -161,7 +161,7 @@ impl<'ctx, 'a> CodeGen<'ctx, 'a> {
             Type::Real => self.context.f64_type().into(),
             Type::Bool => self.context.bool_type().into(),
             Type::Char => self.context.i8_type().into(),
-            Type::Opaque | Type::Array(_) | Type::Struct(_) => {
+            Type::Opaque | Type::Array(_) | Type::Struct(_) | Type::Fn => {
                 self.context.ptr_type(AddressSpace::default()).into()
             }
             Type::Optional(inner) => {

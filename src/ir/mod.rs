@@ -39,6 +39,8 @@ pub enum Type {
     Array(TypeId),
     Optional(TypeId),
     Struct(StructId),
+    /// No signature for function because type checker ensures correctness.
+    Fn,
 }
 
 #[derive(Debug, Default)]
@@ -255,6 +257,11 @@ pub enum ExpressionKind {
     },
     CallExtern {
         function: ExternId,
+        args: Vec<Expression>,
+    },
+    FnRef(FunctionId),
+    IndirectCall {
+        callee: Box<Expression>,
         args: Vec<Expression>,
     },
     ArrayOp {

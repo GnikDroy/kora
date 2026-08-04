@@ -18,6 +18,10 @@ in the browser with nothing to install.
   `remove`, `slice`, `extend`, `len`). A `string` is just an array of `char`.
 - Structs and methods: POD types `struct`, attach behavior with
   `impl`.
+- Generics over type parameters for `struct`, `impl`, and functions
+  (`struct box<T>`, `T id<T>(x: T)`), instantiated with turbofish
+  (`id::<int>(5)`, `new box<int>{ v: 1 }`). Instances are monomorphized, so
+  generics cost nothing at runtime.
 - Optionals (`T?`) instead of null. [The billion-dollar mistake](https://computerhistory.org/blog/in-memoriam-sir-antony-hoare-1934-2026/)
 - Runtime safety is a design choice: array indexing is
   bounds-checked, integer division by zero, `pop()` on an empty array, and
@@ -160,11 +164,13 @@ module      = { import | struct | impl | extern | function } ;
 
 import      = "import" STRING [ ident ] ";" ;
 
-struct      = "struct" ident "{" [ member { "," member } [ "," ] ] "}" ;
+struct      = "struct" ident [ typeparams ] "{" [ member { "," member } [ "," ] ] "}" ;
 member      = ident ":" type ;
 
-impl        = "impl" ident "{" { method } "}" ;
+impl        = "impl" ident [ typeparams ] "{" { method } "}" ;
 method      = rettype ident "(" "self" [ "," [ param { "," param } [ "," ] ] ] ")" block ;
+
+typeparams  = "<" ident { "," ident } [ "," ] ">" ;   (* generic parameters, e.g. <T> or <K, V> *)
 
 extern      = "extern" ( "void" | externtype ) ident "(" externparams ")" ";" ;
 externparams= [ externparam { "," externparam } [ "," ] ] ;
@@ -175,15 +181,16 @@ externtype  = "int8" | "int16" | "int32" | "int64"       (* C types only *)
             | "cint" | "cuint" | "clong" | "culong" | "csize"
             | ( "cstring" | "opaque" ) [ "?" ] ;
 
-function    = rettype ident "(" params ")" block ;
+function    = rettype ident [ typeparams ] "(" params ")" block ;
 rettype     = "void" | type ;
 params      = [ param { "," param } [ "," ] ] ;
 param       = ident ":" type ;
 
 type        = basetype [ "?" ] ;                (* "?" makes it optional *)
 basetype    = "int" | "real" | "char" | "bool" | "string" | "opaque"
-            | ident                      (* struct name *)
+            | ident [ typeargs ]         (* struct name, or generic instance *)
             | "[" type "]" ;
+typeargs    = "<" type { "," type } [ "," ] ">" ;   (* generic arguments, e.g. <int> or <int, string> *)
 
 statement   = ";"
             | expr ";"
@@ -209,7 +216,8 @@ add         = mul  { ( "+" | "-" | "|" | "^" ) mul } ;
 mul         = cast { ( "*" | "/" | "%" | "&" | "<<" | ">>" ) cast } ;
 cast        = unary { "as" type } ;
 unary       = ( "!" | "-" ) unary | postfix ;
-postfix     = primary { "(" args ")" | "[" expr "]" | "." ident | "!" } ;
+postfix     = primary { "(" args ")" | "[" expr "]" | "." ident | "!" | "::" typeargs } ;
+                                                            (* "::" typeargs is turbofish: id::<int>() *)
 args        = [ expr { "," expr } [ "," ] ] ;
 primary     = INT | REAL | CHAR | STRING | "true" | "false" | "none"
             | ident

@@ -215,8 +215,9 @@ impl<'a> Lowering<'a> {
                 let decl = self.compiled.symbols.struct_decl_of(sr).unwrap();
                 self.types.intern(Type::Struct(self.struct_ids[&decl]))
             }
-            ast::Type::Generic(_, _) | ast::Type::Function(_, _) => {
-                unreachable!("generics are instantiated and functions are not values")
+            ast::Type::Function(_, _) => self.types.intern(Type::Fn),
+            ast::Type::Generic(_, _) => {
+                unreachable!("generics are instantiated before lowering")
             }
         }
     }
@@ -331,12 +332,13 @@ impl<'a> Lowering<'a> {
             }
             ast::Expression::Identifier(_) => {
                 let symbol = self.compiled.symbols.symbol_id_of_use(expr.id).unwrap();
-                let local = *self
-                    .local_ids
-                    .get(&symbol)
-                    .expect("functions are not first-class values yet");
                 let ty = self.ty_of(expr);
-                Expression::new(ty, span, ExpressionKind::Local(local))
+                if let Some(&function) = self.function_ids.get(&symbol) {
+                    Expression::new(ty, span, ExpressionKind::FnRef(function))
+                } else {
+                    let local = self.local_ids[&symbol];
+                    Expression::new(ty, span, ExpressionKind::Local(local))
+                }
             }
             ast::Expression::Unwrap(operand) => {
                 let operand = self.lower_expr(operand);
@@ -612,8 +614,10 @@ impl<'a> Lowering<'a> {
             );
         }
 
-        let symbol = self.compiled.symbols.symbol_id_of_use(callee.id).unwrap();
-        if let Some(&function) = self.function_ids.get(&symbol) {
+        let symbol = self.compiled.symbols.symbol_id_of_use(callee.id);
+        let function_id = symbol.and_then(|s| self.function_ids.get(&s).copied());
+        let extern_id = symbol.and_then(|s| self.extern_ids.get(&s).copied());
+        if let Some(function) = function_id {
             let params = self.fn_params[function.0 as usize].clone();
             let args = args
                 .iter()
@@ -625,8 +629,7 @@ impl<'a> Lowering<'a> {
                 span,
                 ExpressionKind::Call { function, args },
             )
-        } else {
-            let function = self.extern_ids[&symbol];
+        } else if let Some(function) = extern_id {
             let params = self.extern_params[function.0 as usize].clone();
             let ret = self.externs[function.0 as usize]
                 .ret
@@ -642,6 +645,26 @@ impl<'a> Lowering<'a> {
                 .map(|(arg, &expected)| self.lower_expecting(arg, expected))
                 .collect();
             Expression::new(ret, span, ExpressionKind::CallExtern { function, args })
+        } else {
+            let callee_expr = self.lower_expr(callee);
+            let ast::Type::Function(ret_ast, params) = self.compiled.types[&callee.id].clone()
+            else {
+                unreachable!("an indirect callee has a function type");
+            };
+            let args = args
+                .iter()
+                .zip(&params)
+                .map(|(arg, param)| {
+                    let expected = self.lower_type(param);
+                    self.lower_expecting(arg, expected)
+                })
+                .collect();
+            let ret = ret_ast.map(|r| self.lower_type(&r)).unwrap_or(Types::VOID);
+            Expression::new(
+                ret,
+                span,
+                ExpressionKind::IndirectCall { callee: Box::new(callee_expr), args },
+            )
         }
     }
 

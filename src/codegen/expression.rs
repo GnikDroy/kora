@@ -1,3 +1,4 @@
+use inkwell::types::BasicType;
 use inkwell::values::{BasicValueEnum, FunctionValue, IntValue, PointerValue, ValueKind};
 use inkwell::{FloatPredicate, IntPredicate};
 
@@ -74,6 +75,14 @@ impl<'ctx, 'a> CodeGen<'ctx, 'a> {
             ExpressionKind::ArrayOp { op, receiver, args } => self
                 .lower_array_op(*op, receiver, args)
                 .expect("type checker rejects void array ops in value position"),
+            ExpressionKind::FnRef(function) => self
+                .function_value(*function)
+                .as_global_value()
+                .as_pointer_value()
+                .into(),
+            ExpressionKind::IndirectCall { callee, args } => self
+                .indirect_call(callee, expr.ty, args)
+                .expect("type checker rejects void calls in value position"),
             ExpressionKind::Copy(inner) => self.lower_copy(inner),
             ExpressionKind::StructLit { struct_, fields } => {
                 self.lower_struct_literal(*struct_, fields)
@@ -106,9 +115,41 @@ impl<'ctx, 'a> CodeGen<'ctx, 'a> {
             ExpressionKind::ArrayOp { op, receiver, args } => {
                 self.lower_array_op(*op, receiver, args);
             }
+            ExpressionKind::IndirectCall { callee, args } => {
+                self.indirect_call(callee, expr.ty, args);
+            }
             _ => {
                 self.lower_expression(expr);
             }
+        }
+    }
+
+    fn indirect_call(
+        &mut self,
+        callee: &Expression,
+        ret: crate::ir::TypeId,
+        args: &[Expression],
+    ) -> Option<BasicValueEnum<'ctx>> {
+        let callee_ptr = self.lower_expression(callee).into_pointer_value();
+        let param_types = args
+            .iter()
+            .map(|a| self.basic_type(a.ty).into())
+            .collect::<Vec<_>>();
+        let fn_type = match self.program.types[ret] {
+            Type::Void => self.context.void_type().fn_type(&param_types, false),
+            _ => self.basic_type(ret).fn_type(&param_types, false),
+        };
+        let mut arg_values = Vec::with_capacity(args.len());
+        for arg in args {
+            arg_values.push(self.lower_expression(arg).into());
+        }
+        let call = self
+            .builder
+            .build_indirect_call(fn_type, callee_ptr, &arg_values, "")
+            .unwrap();
+        match call.try_as_basic_value() {
+            ValueKind::Basic(value) => Some(value),
+            ValueKind::Instruction(_) => None,
         }
     }
 
