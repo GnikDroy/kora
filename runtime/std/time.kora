@@ -1,6 +1,7 @@
 import "std/libc";
 
 extern void __kora_sleep_ms(ms: clong);
+extern clong __kora_time_ns();
 
 void sleep(ms: int) {
     __kora_sleep_ms(ms);
@@ -8,4 +9,8 @@ void sleep(ms: int) {
 
 int now() {
     return libc.time(none);
+}
+
+int mono_ns() {
+    return __kora_time_ns();
 }

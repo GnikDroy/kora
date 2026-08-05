@@ -1,5 +1,9 @@
 import "std/libc";
 
+extern cint __kora_pid();
+extern opaque? __kora_popen(cmd: cstring, mode: cstring);
+extern cint __kora_pclose(f: opaque);
+
 int run(cmd: string) {
     let status = libc.system(cmd);
     if (status < 0) {
@@ -10,4 +14,28 @@ int run(cmd: string) {
 
 void exit(code: int) {
     libc.exit(code);
+}
+
+int pid() {
+    return __kora_pid();
+}
+
+void abort() {
+    libc.abort();
+}
+
+string capture(cmd: string) {
+    let out = "";
+    let pipe = __kora_popen(cmd, "r");
+    if (pipe == none) {
+        return out;
+    }
+    let handle = pipe!;
+    let c = libc.fgetc(handle);
+    while (c != -1) {
+        out.push(c as char);
+        c = libc.fgetc(handle);
+    }
+    __kora_pclose(handle);
+    return out;
 }

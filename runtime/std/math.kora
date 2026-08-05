@@ -1,5 +1,9 @@
 import "std/libc";
 
+void seed(s: int) {
+    libc.srand(s);
+}
+
 real random() {
     let hi = libc.rand() % 32768;
     let mid = libc.rand() % 32768;

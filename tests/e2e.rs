@@ -86,6 +86,18 @@ fn run_native_only(source: &str) -> (String, String, i32) {
     out
 }
 
+fn run_native_only_args(source: &str, args: &[&str]) -> (String, String, i32) {
+    let dir = temp_dir();
+    let program = frontend(&dir, &[("main.kora", source)]);
+    let binary = dir.join("main");
+    kora::backend::native(&program, &binary, "2", &[]).expect("build");
+    let mut cmd = Command::new(&binary);
+    cmd.args(args).current_dir(&dir);
+    let out = exec(&mut cmd, b"");
+    std::fs::remove_dir_all(&dir).ok();
+    out
+}
+
 #[test]
 fn test_native_libc_bindings() {
     let (_, stderr, code) = run_native_only(
@@ -158,6 +170,146 @@ fn test_native_link_passthrough() {
     let (_, stderr, code) = exec(&mut Command::new(&binary), b"");
     std::fs::remove_dir_all(&dir).ok();
     assert_eq!(code, 42, "{stderr}");
+}
+
+#[test]
+fn test_native_env_args() {
+    let (stdout, stderr, code) = run_native_only_args(
+        r#"
+            import "std/env";
+            import "std/io";
+            import "std/conv";
+            int main() {
+                let a = env.args();
+                io.print(conv.int_to_string(a.len()));
+                if (a.len() > 1) { io.print(a[1]); }
+                return 0;
+            }
+        "#,
+        &["alpha", "beta"],
+    );
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(stdout, "3\nalpha\n", "{stderr}");
+}
+
+#[test]
+fn test_native_env_set_get() {
+    let (stdout, stderr, code) = run_native_only(
+        r#"
+            import "std/env";
+            import "std/io";
+            int main() {
+                env.set("KORA_E2E_SET", "hello");
+                let v = env.get("KORA_E2E_SET");
+                if (v == none) { return 1; }
+                io.print(v!);
+                env.unset("KORA_E2E_SET");
+                if (env.get("KORA_E2E_SET") != none) { return 2; }
+                return 0;
+            }
+        "#,
+    );
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(stdout, "hello\n", "{stderr}");
+}
+
+#[test]
+fn test_native_fs_dir_ops() {
+    let (_, stderr, code) = run_native_only_args(
+        r#"
+            import "std/fs";
+            int main() {
+                if (!fs.mkdir("sub")) { return 1; }
+                if (!fs.is_dir("sub")) { return 2; }
+                let f = fs.open("sub/a.txt", "w");
+                if (f == none) { return 3; }
+                let file = f!;
+                file.write("hi");
+                file.close();
+                let sz = fs.size("sub/a.txt");
+                if (sz == none) { return 4; }
+                if (sz! != 2) { return 5; }
+                let names = fs.read_dir("sub");
+                let found = false;
+                let i = 0;
+                while (i < names.len()) {
+                    if (names[i] == "a.txt") { found = true; }
+                    i = i + 1;
+                }
+                if (!found) { return 6; }
+                fs.remove("sub/a.txt");
+                if (!fs.rmdir("sub")) { return 7; }
+                return 42;
+            }
+        "#,
+        &[],
+    );
+    assert_eq!(code, 42, "{stderr}");
+}
+
+#[test]
+fn test_native_proc_capture() {
+    let (stdout, stderr, code) = run_native_only(
+        r#"
+            import "std/proc";
+            import "std/io";
+            int main() {
+                if (proc.pid() <= 0) { return 1; }
+                io.write(proc.capture("echo hi"));
+                return 0;
+            }
+        "#,
+    );
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(stdout, "hi\n", "{stderr}");
+}
+
+#[test]
+fn test_native_time_mono_ns() {
+    let (_, stderr, code) = run_native_only(
+        r#"
+            import "std/time";
+            int main() {
+                let a = time.mono_ns();
+                let b = time.mono_ns();
+                if (b < a) { return 1; }
+                return 0;
+            }
+        "#,
+    );
+    assert_eq!(code, 0, "{stderr}");
+}
+
+#[test]
+fn test_native_io_is_tty() {
+    let (stdout, stderr, code) = run_native_only(
+        r#"
+            import "std/io";
+            import "std/conv";
+            int main() {
+                io.print(conv.bool_to_string(io.is_tty()));
+                return 0;
+            }
+        "#,
+    );
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(stdout, "false\n", "{stderr}");
+}
+
+#[test]
+fn test_native_strerror() {
+    let (stdout, stderr, code) = run_native_only(
+        r#"
+            import "std/libc";
+            import "std/io";
+            int main() {
+                io.print(libc.strerror(2));
+                return 0;
+            }
+        "#,
+    );
+    assert_eq!(code, 0, "{stderr}");
+    assert!(!stdout.trim().is_empty(), "{stderr}");
 }
 
 #[test]

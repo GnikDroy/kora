@@ -1,5 +1,18 @@
 import "std/libc";
 
+extern cstring? __kora_getcwd();
+extern cint __kora_mkdir(path: cstring);
+extern cint __kora_rmdir(path: cstring);
+extern cint __kora_chdir(path: cstring);
+extern cint __kora_exists(path: cstring);
+extern cint __kora_chmod(path: cstring, mode: cuint);
+extern opaque? __kora_dir_open(path: cstring);
+extern cstring? __kora_dir_next(d: opaque);
+extern void __kora_dir_close(d: opaque);
+extern clong __kora_file_size(path: cstring);
+extern cint __kora_is_dir(path: cstring);
+extern clong __kora_file_mtime(path: cstring);
+
 struct File {
     handle: opaque,
 }
@@ -71,4 +84,77 @@ bool remove(path: string) {
 
 bool rename(from: string, to: string) {
     return libc.rename(from, to) == 0;
+}
+
+bool mkdir(path: string) {
+    return __kora_mkdir(path) == 0;
+}
+
+bool rmdir(path: string) {
+    return __kora_rmdir(path) == 0;
+}
+
+bool chdir(path: string) {
+    return __kora_chdir(path) == 0;
+}
+
+bool exists(path: string) {
+    return __kora_exists(path) == 0;
+}
+
+bool chmod(path: string, mode: int) {
+    return __kora_chmod(path, mode) == 0;
+}
+
+string? cwd() {
+    return __kora_getcwd();
+}
+
+bool is_dir(path: string) {
+    return __kora_is_dir(path) == 1;
+}
+
+int? size(path: string) {
+    let n = __kora_file_size(path);
+    if (n < 0) {
+        return none;
+    }
+    return n;
+}
+
+int? mtime(path: string) {
+    let t = __kora_file_mtime(path);
+    if (t < 0) {
+        return none;
+    }
+    return t;
+}
+
+bool is_dot_entry(name: string) {
+    if (name.len() == 1 && name[0] == '.') {
+        return true;
+    }
+    if (name.len() == 2 && name[0] == '.' && name[1] == '.') {
+        return true;
+    }
+    return false;
+}
+
+[string] read_dir(path: string) {
+    let out: [string] = [];
+    let dir = __kora_dir_open(path);
+    if (dir == none) {
+        return out;
+    }
+    let handle = dir!;
+    let name = __kora_dir_next(handle);
+    while (name != none) {
+        let entry = name!;
+        if (!is_dot_entry(entry)) {
+            out.push(entry);
+        }
+        name = __kora_dir_next(handle);
+    }
+    __kora_dir_close(handle);
+    return out;
 }

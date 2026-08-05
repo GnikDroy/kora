@@ -9,8 +9,22 @@ extern long __kora_main(void);
 
 extern void GC_init(void);
 
-int main(void) {
+static int kora_argc;
+static char **kora_argv;
+
+int __kora_argc(void) { return kora_argc; }
+
+const char *__kora_argv(int i) {
+  if (i < 0 || i >= kora_argc) {
+    return NULL;
+  }
+  return kora_argv[i];
+}
+
+int main(int argc, char **argv) {
   GC_init();
+  kora_argc = argc;
+  kora_argv = argv;
   srand((unsigned)time(NULL));
   return (int)__kora_main();
 }

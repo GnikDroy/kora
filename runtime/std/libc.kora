@@ -1,6 +1,9 @@
 extern cint putchar(c: cint);
 extern cint getchar();
 extern cint rand();
+extern void srand(seed: cuint);
+extern void abort();
+extern cstring strerror(errnum: cint);
 
 extern opaque? fopen(path: cstring, mode: cstring);
 extern cint fclose(f: opaque);

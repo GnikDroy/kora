@@ -17,6 +17,7 @@ Standard input and output.
 void   write(s: string)   # write a string to stdout, no trailing newline
 void   print(s: string)   # write a string followed by a newline
 string? input()           # read one line from stdin; none at end of input
+bool   is_tty()           # true if stdout is a terminal
 ```
 
 ## std/conv
@@ -58,6 +59,7 @@ functions are backed by the platform math library.
 
 ```ruby
 real random()                          # in [0, 1)
+void seed(s: int)                      # seed the random number generator
 
 # integer
 int  abs(n: int)
@@ -103,9 +105,19 @@ File I/O. `open` returns an optional; check it before use, and `close` when done
 Available on the native backend.
 
 ```ruby
-File? open(path: string, mode: string)   # mode is a C fopen mode, e.g. "r", "w"
-bool  remove(path: string)
-bool  rename(from: string, to: string)
+File?    open(path: string, mode: string)   # mode is a C fopen mode, e.g. "r", "w"
+bool     remove(path: string)
+bool     rename(from: string, to: string)
+bool     mkdir(path: string)
+bool     rmdir(path: string)
+bool     chdir(path: string)                # change the working directory
+bool     exists(path: string)
+bool     chmod(path: string, mode: int)     # mode is a Unix permission bitmask
+bool     is_dir(path: string)
+string?  cwd()                              # current working directory; none on error
+int?     size(path: string)                 # file size in bytes; none if missing
+int?     mtime(path: string)                # modified time, Unix seconds; none if missing
+[string] read_dir(path: string)             # entry names, excluding "." and ".."
 ```
 
 Methods on `File`:
@@ -123,10 +135,14 @@ void    seek(self, offset: int)
 
 ## std/env
 
-Read environment variables.
+Environment variables and command-line arguments. `args`, `set`, and `unset` are
+native only.
 
 ```ruby
-string? get(name: string)   # none if the variable is not set
+string?  get(name: string)              # none if the variable is not set
+bool     set(name: string, v: string)   # define or overwrite; true on success
+bool     unset(name: string)            # remove; true on success
+[string] args()                         # command-line args; args()[0] is the program
 ```
 
 ## std/proc
@@ -134,8 +150,11 @@ string? get(name: string)   # none if the variable is not set
 Run commands and exit the process.
 
 ```ruby
-int  run(cmd: string)   # run a shell command, returns its exit status
-void exit(code: int)
+int    run(cmd: string)       # run a shell command, returns its exit status
+string capture(cmd: string)   # run a shell command, return its captured stdout
+int    pid()                  # this process's id
+void   exit(code: int)
+void   abort()                # terminate abnormally (SIGABRT)
 ```
 
 ## std/time
@@ -143,6 +162,7 @@ void exit(code: int)
 ```ruby
 void sleep(ms: int)   # sleep for the given milliseconds
 int  now()            # seconds since the Unix epoch
+int  mono_ns()        # monotonic clock in nanoseconds, for timing (native only)
 ```
 
 ## std/iter
