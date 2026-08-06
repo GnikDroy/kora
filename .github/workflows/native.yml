@@ -67,15 +67,23 @@ jobs:
           $env:PATH = ($env:PATH -split ';' | Where-Object { $_ -notlike '*Git\usr\bin*' }) -join ';'
           $env:LLVM_SYS_211_PREFIX = "$env:MAMBA_ROOT_PREFIX\envs\llvm\Library"
           $lib = "$env:LLVM_SYS_211_PREFIX\lib"
-          Write-Host "== .lib files in $lib =="
-          Get-ChildItem "$lib\*.lib" | ForEach-Object { Write-Host $_.Name }
-          function Ensure-Lib($target, $pattern) {
-            if (-not (Test-Path "$lib\$target")) {
-              $src = Get-ChildItem "$lib\$pattern" -ErrorAction SilentlyContinue | Select-Object -First 1
-              if ($src) { Copy-Item $src.FullName "$lib\$target" }
-            }
+          $bin = "$env:LLVM_SYS_211_PREFIX\bin"
+          function Ensure-Lib($target, $libGlob, $dllGlob) {
+            if (Test-Path "$lib\$target") { return }
+            $src = Get-ChildItem "$lib\$libGlob" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($src) { Copy-Item $src.FullName "$lib\$target"; return }
+            $dll = Get-ChildItem "$bin\$dllGlob" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if (-not $dll) { Write-Host "WARN: no lib or dll for $target"; return }
+            $def = Join-Path $lib (($target -replace '\.lib$','') + '.def')
+            "LIBRARY $($dll.Name)`nEXPORTS" | Set-Content -Encoding ascii $def
+            (& dumpbin /nologo /exports $dll.FullName) |
+              Select-String '^\s+\d+\s+[0-9A-Fa-f]+\s+[0-9A-Fa-f]+\s+(\S+)' |
+              ForEach-Object { $_.Matches[0].Groups[1].Value } |
+              Add-Content -Encoding ascii $def
+            & lib /nologo "/def:$def" "/out:$lib\$target" /machine:x64 | Out-Null
+            Write-Host "synthesized $target from $($dll.Name)"
           }
-          Ensure-Lib 'z.lib' '*zlib*.lib'
-          Ensure-Lib 'xml2.lib' '*xml2*.lib'
-          Ensure-Lib 'zstd.dll.lib' '*zstd*.lib'
+          Ensure-Lib 'z.lib' '*zlib*.lib' '*zlib*.dll'
+          Ensure-Lib 'xml2.lib' '*xml2*.lib' '*xml2*.dll'
+          Ensure-Lib 'zstd.dll.lib' '*zstd*.lib' '*zstd*.dll'
           micromamba run -n llvm cargo test --features codegen

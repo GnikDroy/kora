@@ -166,7 +166,8 @@ fn test_native_link_passthrough() {
     );
     let binary = dir.join("main");
     let link_args = vec![format!("-L{}", dir.display()), "-lkoratest".to_string()];
-    kora_compiler::backend::native(&program, &binary, "2", &link_args).expect("build with passthrough");
+    kora_compiler::backend::native(&program, &binary, "2", &link_args)
+        .expect("build with passthrough");
     let (_, stderr, code) = exec(&mut Command::new(&binary), b"");
     std::fs::remove_dir_all(&dir).ok();
     assert_eq!(code, 42, "{stderr}");
@@ -232,7 +233,8 @@ fn test_native_fn_pointer_callback() {
     );
     let binary = dir.join("main");
     let link_args = vec![format!("-L{}", dir.display()), "-lkoracb".to_string()];
-    kora_compiler::backend::native(&program, &binary, "2", &link_args).expect("build with callback");
+    kora_compiler::backend::native(&program, &binary, "2", &link_args)
+        .expect("build with callback");
     let (_, stderr, code) = exec(&mut Command::new(&binary), b"");
     std::fs::remove_dir_all(&dir).ok();
     assert_eq!(code, 42, "{stderr}");

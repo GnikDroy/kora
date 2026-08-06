@@ -37,15 +37,14 @@ pub fn run(args: &Args) -> Result<(), String> {
         .input
         .to_str()
         .ok_or_else(|| format!("input path is not valid UTF-8: {}", args.input.display()))?;
-    let program = kora_compiler::compile(entry, |path: &Path| std::fs::read_to_string(path).ok()).map_err(
-        |errors| {
-            errors
-                .iter()
-                .map(|e| e.to_string())
-                .collect::<Vec<_>>()
-                .join("\n")
-        },
-    )?;
+    let program = kora_compiler::compile(entry, |path: &Path| std::fs::read_to_string(path).ok())
+        .map_err(|errors| {
+        errors
+            .iter()
+            .map(|e| e.to_string())
+            .collect::<Vec<_>>()
+            .join("\n")
+    })?;
 
     if args.emit_js || args.emit_llvm() {
         if !args.link_args.is_empty() {
@@ -64,7 +63,8 @@ pub fn run(args: &Args) -> Result<(), String> {
         }
         #[cfg(feature = "codegen")]
         if args.emit_llvm {
-            let ir = kora_compiler::backend::llvm_ir(&program, &args.opt).map_err(|e| e.to_string())?;
+            let ir =
+                kora_compiler::backend::llvm_ir(&program, &args.opt).map_err(|e| e.to_string())?;
             write_artifact(args, "ll", &ir)?;
         }
         if args.emit_js {
@@ -96,7 +96,8 @@ fn build(args: &Args, program: kora_compiler::CompiledProgram) -> Result<(), Str
         .output
         .clone()
         .unwrap_or_else(|| args.input.with_extension(""));
-    kora_compiler::backend::native(&program, &output, &args.opt, &args.link_args).map_err(|e| e.to_string())
+    kora_compiler::backend::native(&program, &output, &args.opt, &args.link_args)
+        .map_err(|e| e.to_string())
 }
 
 #[cfg(not(feature = "codegen"))]
