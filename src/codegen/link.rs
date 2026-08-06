@@ -1,5 +1,5 @@
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, ExitStatus};
 
 use inkwell::module::Module;
 use inkwell::targets::FileType;
@@ -13,27 +13,20 @@ pub fn link(llvm: &Module, output: &Path, opt: &str, link_args: &[String]) -> Re
     llvm.verify()
         .unwrap_or_else(|e| panic!("invalid IR generated:\n{e}"));
 
-    let object_path = output.with_extension("o");
+    let msvc = cfg!(target_env = "msvc");
+
+    let object_path = output.with_extension(if msvc { "obj" } else { "o" });
     emit_object_file(llvm, &object_path, opt)?;
-    let runtime_path = output.with_extension("a");
+    let runtime_path = output.with_extension(if msvc { "lib" } else { "a" });
+
     let status = std::fs::write(&runtime_path, RUNTIME_LIB)
         .map_err(LinkErr::Io)
         .and_then(|_| {
-            let dead_strip = if cfg!(target_os = "macos") {
-                "-Wl,-dead_strip"
+            if msvc {
+                link_msvc(&object_path, &runtime_path, output, link_args)
             } else {
-                "-Wl,--gc-sections"
-            };
-            Command::new("cc")
-                .arg(&object_path)
-                .arg(&runtime_path)
-                .arg("-lm")
-                .args(link_args)
-                .arg(dead_strip)
-                .arg("-o")
-                .arg(output)
-                .status()
-                .map_err(LinkErr::Io)
+                link_gnu(&object_path, &runtime_path, output, link_args)
+            }
         });
     std::fs::remove_file(&object_path).ok();
     std::fs::remove_file(&runtime_path).ok();
@@ -41,6 +34,48 @@ pub fn link(llvm: &Module, output: &Path, opt: &str, link_args: &[String]) -> Re
         return Err(LinkErr::LinkFailed);
     }
     Ok(())
+}
+
+fn link_gnu(
+    object: &Path,
+    runtime: &Path,
+    output: &Path,
+    link_args: &[String],
+) -> Result<ExitStatus, LinkErr> {
+    let dead_strip = if cfg!(target_os = "macos") {
+        "-Wl,-dead_strip"
+    } else {
+        "-Wl,--gc-sections"
+    };
+    let mut cmd = Command::new("cc");
+    cmd.arg(object)
+        .arg(runtime)
+        .arg("-lm")
+        .arg("-pthread")
+        .args(link_args);
+    if cfg!(target_os = "windows") {
+        cmd.arg("-lws2_32");
+    }
+    cmd.arg(dead_strip).arg("-o").arg(output);
+    cmd.status().map_err(LinkErr::Io)
+}
+
+fn link_msvc(
+    object: &Path,
+    runtime: &Path,
+    output: &Path,
+    link_args: &[String],
+) -> Result<ExitStatus, LinkErr> {
+    let mut cmd = Command::new("clang-cl");
+    cmd.arg("/nologo")
+        .arg(object)
+        .arg(runtime)
+        .arg("ws2_32.lib")
+        .args(link_args)
+        .arg(format!("/Fe:{}", output.display()))
+        .arg("/link")
+        .arg("/OPT:REF");
+    cmd.status().map_err(LinkErr::Io)
 }
 
 fn emit_object_file(llvm: &Module, object: &Path, opt: &str) -> Result<(), LinkErr> {
