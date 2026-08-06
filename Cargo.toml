@@ -11,7 +11,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 wasm-bindgen = "0.2.84"
 console_error_panic_hook = "0.1"
-inkwell = { version = "0.9.0", features = ["llvm22-1"], optional = true }
+inkwell = { version = "0.9.0", features = ["llvm21-1"], optional = true }
 clap = { version = "4", features = ["derive"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]

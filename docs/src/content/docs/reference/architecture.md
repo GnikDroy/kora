@@ -106,7 +106,7 @@ byte-identical results.
 ║         ▼                   ▼                     ▼                    ║
 ║  ┌─────────────┐ ┌────────────────────┐ ┌────────────────────┐         ║
 ║  │ Node.js     │ │ Playground         │ │ native executable  │         ║
-║  │ (.js output)│ │ wasm compiler +    │ │ (LLVM 22 + linker) │         ║
+║  │ (.js output)│ │ wasm compiler +    │ │ (LLVM 21 + linker) │         ║
 ║  └─────────────┘ │ browser runtime +  │ └────────────────────┘         ║
 ║                  │ canvas host worker │                                ║
 ║                  └────────────────────┘                                ║

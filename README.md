@@ -39,7 +39,7 @@ in the browser with nothing to install.
   Kora.
 - The native runtime written in C, the lingua-franca of programming languages.
 - Runs in the browser through a WebAssembly-powered playground, and compiles
-  to native binaries through an LLVM backend (LLVM 22 is required).
+  to native binaries through an LLVM backend (LLVM 21 is required).
 
 ## A taste of Kora
 
@@ -187,7 +187,7 @@ so the native binary and the JavaScript output stay byte-identical.
 ║         ▼                   ▼                     ▼                    ║
 ║  ┌─────────────┐ ┌────────────────────┐ ┌────────────────────┐         ║
 ║  │ Node.js     │ │ Playground         │ │ native executable  │         ║
-║  │ (.js output)│ │ wasm compiler +    │ │ (LLVM 22 + linker) │         ║
+║  │ (.js output)│ │ wasm compiler +    │ │ (LLVM 21 + linker) │         ║
 ║  └─────────────┘ │ browser runtime +  │ └────────────────────┘         ║
 ║                  │ canvas host worker │                                ║
 ║                  └────────────────────┘                                ║
@@ -204,7 +204,7 @@ python -m http.server # serve at localhost
 Then open the printed URL and start typing.
 
 To compile programs to native executables instead, build the compiler.
-Building the compiler requires lib LLVM 22 and a C compiler for the platform linker.
+Building the compiler requires lib LLVM 21 and a C compiler for the platform linker.
 
 ```bash
 cargo build --release # build the compiler
@@ -212,7 +212,7 @@ kora program.kora -o program # native standalone binary
 kora program.kora --emit-js  # or print the JavaScript
 ```
 
-Running the test suite is `cargo test` (also requires LLVM 22).
+Running the test suite is `cargo test` (also requires LLVM 21).
 
 ## Grammar
 

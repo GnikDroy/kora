@@ -13,7 +13,7 @@ native binaries, read on.
 
 ## Build the compiler
 
-You need **Rust** (stable), **LLVM 22**, and a **C compiler** for the linker.
+You need **Rust** (stable), **LLVM 21**, and a **C compiler** for the linker.
 
 ```sh
 git clone https://github.com/gnikdroy/kora.git
@@ -22,7 +22,7 @@ cargo build --release
 ```
 
 This produces the `kora` compiler at `target/release/kora`. If the build cannot
-find LLVM, point `LLVM_SYS_221_PREFIX` at your LLVM 22 install.
+find LLVM, point `LLVM_SYS_211_PREFIX` at your LLVM 21 install.
 
 ## Compile a program
 
