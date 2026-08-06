@@ -58,8 +58,8 @@ jobs:
             llvmdev=22
             clang=22
       - name: Test
-        shell: powershell
+        shell: pwsh
         run: |
-          micromamba activate llvm
-          $env:LLVM_SYS_221_PREFIX = "$env:CONDA_PREFIX\Library"
-          cargo test --features codegen
+          $env:PATH = ($env:PATH -split ';' | Where-Object { $_ -notlike '*Git\usr\bin*' }) -join ';'
+          $env:LLVM_SYS_221_PREFIX = "$env:MAMBA_ROOT_PREFIX\envs\llvm\Library"
+          micromamba run -n llvm cargo test --features codegen
