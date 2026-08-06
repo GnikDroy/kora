@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use crate::CompileErr;
 use crate::lexer::Lexer;
 use crate::parser::{Module, Parser, SourceId, Span};
-use paths::{invalid_component, module_prefix, resolve_path};
+use paths::{invalid_component, module_prefix, resolve_path, to_logical};
 
 #[derive(Debug)]
 pub struct SourceEntry {
@@ -85,7 +85,7 @@ impl<P: Fn(&Path) -> Option<String>> Loader<P> {
         let request = if Self::is_std(&path) {
             path.clone()
         } else {
-            self.base.join(&path)
+            to_logical(&self.base.join(&path))
         };
         let Some(text) = (self.provider)(&request) else {
             self.errors.push(CompileErr::Load(LoadErr {

@@ -20,10 +20,23 @@ fn sanitize_symbol(s: &str) -> String {
     s.chars().map(sanitizer).collect()
 }
 
-pub(super) fn module_prefix(path: &Path, root: &Path) -> String {
-    let path = make_relative(path, root);
+pub(super) fn to_logical(path: &Path) -> PathBuf {
+    match path.to_str() {
+        Some(s) => PathBuf::from(s.replace('\\', "/")),
+        None => path.to_path_buf(),
+    }
+}
 
-    let joined = path
+pub(super) fn module_prefix(path: &Path, root: &Path) -> String {
+    // std/* is a fixed namespace, never relative to the entry directory.
+    let relative = make_relative(path, root);
+    let target = if path.starts_with("std") {
+        path
+    } else {
+        relative.as_path()
+    };
+
+    let joined = target
         .components()
         .filter_map(component_name)
         .collect::<Vec<_>>()
@@ -66,20 +79,20 @@ pub(super) fn resolve_path(importer: &Path, rel: &str) -> Option<PathBuf> {
         .to_path_buf();
     joined.push(rel);
 
-    let mut out = PathBuf::new();
+    let mut out: Vec<String> = Vec::new();
     for component in joined.components() {
         match component {
             Component::CurDir => {}
             Component::ParentDir => {
-                if !out.pop() {
+                if out.pop().is_none() {
                     // None when we try to escape root.
                     return None;
                 }
             }
-            other => out.push(other.as_os_str()),
+            other => out.push(other.as_os_str().to_string_lossy().into_owned()),
         }
     }
-    Some(out)
+    Some(PathBuf::from(out.join("/")))
 }
 
 pub(super) fn invalid_component(rel: &str) -> Option<String> {
