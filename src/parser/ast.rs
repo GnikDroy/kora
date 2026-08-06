@@ -204,6 +204,10 @@ pub enum ExternType {
     CULong,
     CSize,
     Optional(Box<ExternType>),
+    Function {
+        params: Vec<ExternType>,
+        ret: Option<Box<ExternType>>,
+    },
 }
 
 impl ExternType {
@@ -218,6 +222,20 @@ impl ExternType {
             CString => Type::Array(Box::new(Type::Char)),
             ExternType::Opaque => Type::Opaque,
             Optional(inner) => Type::Optional(Box::new(inner.projection())),
+            Function { params, ret } => Type::Function(
+                ret.as_ref().map(|r| Box::new(r.projection())),
+                params.iter().map(|p| p.projection()).collect(),
+            ),
+        }
+    }
+
+    pub fn has_identical_crepr(&self) -> bool {
+        use ExternType::*;
+        match self {
+            Int64 | UInt64 | CLong | CULong | CSize | Float64 | Char | Opaque => true,
+            Optional(inner) => matches!(**inner, Opaque),
+            Function { .. } => true,
+            _ => false,
         }
     }
 }

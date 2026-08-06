@@ -173,6 +173,89 @@ fn test_native_link_passthrough() {
 }
 
 #[test]
+fn test_native_fn_pointer_callback() {
+    let dir = temp_dir();
+
+    let csrc = dir.join("cb.c");
+    std::fs::write(
+        &csrc,
+        "int kora_apply_i(int (*f)(int), int x) { return f(x); }\n\
+         long kora_apply_l(long (*f)(long), long x) { return f(x); }\n",
+    )
+    .unwrap();
+    let obj = dir.join("cb.o");
+    assert!(
+        Command::new("cc")
+            .arg("-c")
+            .arg(&csrc)
+            .arg("-o")
+            .arg(&obj)
+            .status()
+            .unwrap()
+            .success(),
+        "compile cb.c"
+    );
+    let archive = dir.join("libkoracb.a");
+    assert!(
+        Command::new("ar")
+            .arg("rcs")
+            .arg(&archive)
+            .arg(&obj)
+            .status()
+            .unwrap()
+            .success(),
+        "archive cb.o"
+    );
+
+    let program = frontend(
+        &dir,
+        &[(
+            "main.kora",
+            r#"
+                extern cint kora_apply_i(f: cint(cint), x: cint);
+                extern clong kora_apply_l(f: clong(clong), x: clong);
+
+                int inc(x: int) { return x + 1; }
+
+                int main() {
+                    let a = kora_apply_i(inc, 41);
+                    let b = kora_apply_l(inc, 41);
+                    if (a == 42) {
+                        if (b == 42) {
+                            return 42;
+                        }
+                    }
+                    return 1;
+                }
+            "#,
+        )],
+    );
+    let binary = dir.join("main");
+    let link_args = vec![format!("-L{}", dir.display()), "-lkoracb".to_string()];
+    kora::backend::native(&program, &binary, "2", &link_args).expect("build with callback");
+    let (_, stderr, code) = exec(&mut Command::new(&binary), b"");
+    std::fs::remove_dir_all(&dir).ok();
+    assert_eq!(code, 42, "{stderr}");
+}
+
+#[test]
+fn test_native_computed_callback_is_rejected() {
+    let errors = compile_fails(&[(
+        "main.kora",
+        r#"
+            extern void needs_cb(f: cint(cint));
+            int inc(x: int) { return x + 1; }
+            int main() {
+                let g = inc;
+                needs_cb(g);
+                return 0;
+            }
+        "#,
+    )]);
+    assert!(errors.contains("must be a named function"), "{errors}");
+}
+
+#[test]
 fn test_native_env_args() {
     let (stdout, stderr, code) = run_native_only_args(
         r#"

@@ -246,6 +246,7 @@ impl TypeChecker<'_> {
                         });
                     }
                 }
+                self.check_extern_callbacks(f, args)?;
                 Ok(ret_type.map(|return_type| *return_type))
             }
             _ => Err(TypeErr {
@@ -407,6 +408,43 @@ impl TypeChecker<'_> {
                 .symbols
                 .symbol_id_of_use(left.id)
                 .is_some_and(|id| self.is_function_symbol(id))
+    }
+
+    fn check_extern_callbacks(
+        &self,
+        f: &Spanned<Expression>,
+        args: &[Spanned<Expression>],
+    ) -> Result<(), TypeErr> {
+        let Some(callee) = self.symbols.symbol_id_of_use(f.id) else {
+            return Ok(());
+        };
+        let Some(params) = self.modules.iter().find_map(|m| {
+            m.extern_functions
+                .iter()
+                .find(|decl| self.symbols.symbol_id_of_declaration(decl.id) == Some(callee))
+                .map(|decl| &decl.node.arguments)
+        }) else {
+            return Ok(());
+        };
+        for (arg, param) in args.iter().zip(params) {
+            let ExternType::Function { params: sig, ret } = &param.node.typename else {
+                continue;
+            };
+            let identical = sig.iter().all(ExternType::has_identical_crepr)
+                && ret.as_ref().is_none_or(|t| t.has_identical_crepr());
+            let named = self
+                .symbols
+                .symbol_id_of_use(arg.id)
+                .is_some_and(|id| self.is_function_symbol(id));
+            if !identical && !named {
+                return Err(TypeErr {
+                    msg: "a C callback whose signature needs marshalling must be a named \
+                          function, not a computed function value",
+                    span: arg.span.clone(),
+                });
+            }
+        }
+        Ok(())
     }
 
     fn is_function_symbol(&self, id: SymbolId) -> bool {

@@ -1113,6 +1113,15 @@ impl Parser {
             Token::Keyword(Keyword::Bool) => Ok(ExternType::Bool),
             Token::Keyword(Keyword::Char) => Ok(ExternType::Char),
             Token::Keyword(Keyword::Opaque) => Ok(ExternType::Opaque),
+            Token::Keyword(Keyword::Void) if self.peek_is(Token::Symbol(Symbol::LeftParen)) => {
+                return self.parse_extern_fn_type(None);
+            }
+            Token::Keyword(Keyword::Void) => {
+                return Err(ParseErr {
+                    msg: "void is only valid as a function-pointer return type",
+                    token: Some(token.clone()),
+                });
+            }
             _ => Err(()),
         }
         .map_err(|_| ParseErr {
@@ -1121,7 +1130,7 @@ impl Parser {
             token: Some(token.clone()),
         })?;
 
-        if self.peek_is(Token::Symbol(Symbol::Question)) {
+        let core = if self.peek_is(Token::Symbol(Symbol::Question)) {
             let question = self.pop()?;
             if !matches!(base, ExternType::CString | ExternType::Opaque) {
                 return Err(ParseErr {
@@ -1129,9 +1138,29 @@ impl Parser {
                     token: Some(question),
                 });
             }
-            return Ok(ExternType::Optional(Box::new(base)));
+            ExternType::Optional(Box::new(base))
+        } else {
+            base
+        };
+
+        if self.peek_is(Token::Symbol(Symbol::LeftParen)) {
+            self.parse_extern_fn_type(Some(core))
+        } else {
+            Ok(core)
         }
-        Ok(base)
+    }
+
+    fn parse_extern_fn_type(&mut self, ret: Option<ExternType>) -> Result<ExternType, ParseErr> {
+        let params = self.parse_generic_delimited(
+            Token::Symbol(Symbol::LeftParen),
+            Token::Symbol(Symbol::RightParen),
+            Token::Symbol(Symbol::Comma),
+            Parser::parse_extern_typename,
+        )?;
+        Ok(ExternType::Function {
+            params,
+            ret: ret.map(Box::new),
+        })
     }
 
     fn parse_extern_return_type(&mut self) -> Result<Option<ExternType>, ParseErr> {

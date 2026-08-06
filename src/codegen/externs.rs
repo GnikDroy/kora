@@ -6,12 +6,34 @@ use super::CodeGen;
 use crate::ir::ExternDef;
 use crate::parser::ExternType;
 
-fn is_identity(ty: &ExternType) -> bool {
+fn extern_abi_tag(ty: &ExternType) -> String {
     use ExternType::*;
     match ty {
-        Int64 | UInt64 | CLong | CULong | CSize | Float64 | Char | Opaque => true,
-        Optional(inner) => matches!(**inner, Opaque),
-        _ => false,
+        Int8 => "i8".into(),
+        Int16 => "i16".into(),
+        Int32 => "i32".into(),
+        Int64 => "i64".into(),
+        UInt8 => "u8".into(),
+        UInt16 => "u16".into(),
+        UInt32 => "u32".into(),
+        UInt64 => "u64".into(),
+        Float32 => "f32".into(),
+        Float64 => "f64".into(),
+        Bool => "b".into(),
+        Char => "c".into(),
+        CString => "s".into(),
+        Opaque => "p".into(),
+        CInt => "ci".into(),
+        CUInt => "cu".into(),
+        CLong => "cl".into(),
+        CULong => "clu".into(),
+        CSize => "cz".into(),
+        Optional(inner) => format!("o{}", extern_abi_tag(inner)),
+        Function { params, ret } => {
+            let r = ret.as_ref().map(|t| extern_abi_tag(t)).unwrap_or_else(|| "v".into());
+            let ps: Vec<_> = params.iter().map(extern_abi_tag).collect();
+            format!("F{}_{}", r, ps.join("."))
+        }
     }
 }
 
@@ -36,8 +58,8 @@ impl<'ctx, 'a> CodeGen<'ctx, 'a> {
             .get_function(name)
             .unwrap_or_else(|| self.module.add_function(name, c_type, None));
 
-        let identity =
-            ext.params.iter().all(is_identity) && ext.ret.as_ref().is_none_or(is_identity);
+        let identity = ext.params.iter().all(ExternType::has_identical_crepr)
+            && ext.ret.as_ref().is_none_or(|t| t.has_identical_crepr());
         if identity {
             c_fn
         } else {
@@ -54,7 +76,7 @@ impl<'ctx, 'a> CodeGen<'ctx, 'a> {
             Int64 | UInt64 | CLong | CULong | CSize => self.context.i64_type().into(),
             Float32 => self.context.f32_type().into(),
             Float64 => self.context.f64_type().into(),
-            CString | Opaque | Optional(_) => self
+            CString | Opaque | Optional(_) | Function { .. } => self
                 .context
                 .ptr_type(inkwell::AddressSpace::default())
                 .into(),
@@ -69,7 +91,7 @@ impl<'ctx, 'a> CodeGen<'ctx, 'a> {
             Float32 | Float64 => self.context.f64_type().into(),
             Bool => self.context.bool_type().into(),
             Char => self.context.i8_type().into(),
-            CString | Opaque => self
+            CString | Opaque | Function { .. } => self
                 .context
                 .ptr_type(inkwell::AddressSpace::default())
                 .into(),
@@ -134,6 +156,65 @@ impl<'ctx, 'a> CodeGen<'ctx, 'a> {
             self.builder.position_at_end(block);
         }
         thunk
+    }
+
+    pub(super) fn c_callback_thunk(
+        &mut self,
+        target: crate::ir::FunctionId,
+        params: &[ExternType],
+        ret: &Option<Box<ExternType>>,
+    ) -> PointerValue<'ctx> {
+        let callee = self.function_value(target);
+        let ret_tag = ret.as_ref().map(|t| extern_abi_tag(t)).unwrap_or_else(|| "v".into());
+        let sig_tag: Vec<_> = params.iter().map(extern_abi_tag).collect();
+        let thunk_name = format!(
+            "{}.cthunk.{}_{}",
+            callee.get_name().to_str().unwrap(),
+            ret_tag,
+            sig_tag.join(".")
+        );
+        if let Some(existing) = self.module.get_function(&thunk_name) {
+            return existing.as_global_value().as_pointer_value();
+        }
+
+        let c_params: Vec<_> = params.iter().map(|t| self.extern_llvm_type(t).into()).collect();
+        let c_type = match ret {
+            Some(t) => self.extern_llvm_type(t).fn_type(&c_params, false),
+            None => self.context.void_type().fn_type(&c_params, false),
+        };
+        let thunk = self
+            .module
+            .add_function(&thunk_name, c_type, Some(Linkage::Internal));
+
+        let saved = self.builder.get_insert_block();
+        let entry = self.context.append_basic_block(thunk, "entry");
+        self.builder.position_at_end(entry);
+
+        let args: Vec<BasicMetadataValueEnum> = params
+            .iter()
+            .enumerate()
+            .map(|(i, ty)| {
+                let raw = thunk.get_nth_param(i as u32).unwrap();
+                self.marshal_return(ty, raw).into()
+            })
+            .collect();
+        let call = self.builder.build_call(callee, &args, "kora").unwrap();
+
+        match ret {
+            None => {
+                self.builder.build_return(None).unwrap();
+            }
+            Some(ty) => {
+                let raw = self.call_value(call);
+                let value = self.marshal_argument(ty, raw);
+                self.builder.build_return(Some(&value)).unwrap();
+            }
+        }
+
+        if let Some(block) = saved {
+            self.builder.position_at_end(block);
+        }
+        thunk.as_global_value().as_pointer_value()
     }
 
     fn marshal_argument(

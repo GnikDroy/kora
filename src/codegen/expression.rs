@@ -3,7 +3,8 @@ use inkwell::values::{BasicValueEnum, FunctionValue, IntValue, PointerValue, Val
 use inkwell::{FloatPredicate, IntPredicate};
 
 use super::CodeGen;
-use crate::ir::{BinOp, CastKind, Expression, ExpressionKind, Place, PlaceKind, Type, UnOp};
+use crate::ir::{BinOp, CastKind, Expression, ExpressionKind, ExternId, Place, PlaceKind, Type, UnOp};
+use crate::parser::ExternType;
 
 impl<'ctx, 'a> CodeGen<'ctx, 'a> {
     pub(super) fn lower_expression(&mut self, expr: &Expression) -> BasicValueEnum<'ctx> {
@@ -67,11 +68,9 @@ impl<'ctx, 'a> CodeGen<'ctx, 'a> {
                 self.call_function(function, args)
                     .expect("type checker rejects void calls in value position")
             }
-            ExpressionKind::CallExtern { function, args } => {
-                let function = self.extern_value(*function);
-                self.call_function(function, args)
-                    .expect("type checker rejects void calls in value position")
-            }
+            ExpressionKind::CallExtern { function, args } => self
+                .call_extern(*function, args)
+                .expect("type checker rejects void calls in value position"),
             ExpressionKind::ArrayOp { op, receiver, args } => self
                 .lower_array_op(*op, receiver, args)
                 .expect("type checker rejects void array ops in value position"),
@@ -109,8 +108,7 @@ impl<'ctx, 'a> CodeGen<'ctx, 'a> {
                 self.call_function(function, args);
             }
             ExpressionKind::CallExtern { function, args } => {
-                let function = self.extern_value(*function);
-                self.call_function(function, args);
+                self.call_extern(*function, args);
             }
             ExpressionKind::ArrayOp { op, receiver, args } => {
                 self.lower_array_op(*op, receiver, args);
@@ -167,6 +165,43 @@ impl<'ctx, 'a> CodeGen<'ctx, 'a> {
             ValueKind::Basic(value) => Some(value),
             ValueKind::Instruction(_) => None,
         }
+    }
+
+    fn call_extern(&mut self, id: ExternId, args: &[Expression]) -> Option<BasicValueEnum<'ctx>> {
+        let function = self.extern_value(id);
+        let params = self.program[id].params.clone();
+        let mut arg_values = Vec::with_capacity(args.len());
+        for (i, arg) in args.iter().enumerate() {
+            let value = match params.get(i) {
+                Some(ExternType::Function { params: sig, ret }) => {
+                    self.lower_callback_argument(arg, sig, ret)
+                }
+                _ => self.lower_expression(arg),
+            };
+            arg_values.push(value.into());
+        }
+        let call = self.builder.build_call(function, &arg_values, "").unwrap();
+        match call.try_as_basic_value() {
+            ValueKind::Basic(value) => Some(value),
+            ValueKind::Instruction(_) => None,
+        }
+    }
+
+    fn lower_callback_argument(
+        &mut self,
+        arg: &Expression,
+        sig: &[ExternType],
+        ret: &Option<Box<ExternType>>,
+    ) -> BasicValueEnum<'ctx> {
+        let identical = sig.iter().all(ExternType::has_identical_crepr)
+            && ret.as_ref().is_none_or(|t| t.has_identical_crepr());
+        if identical {
+            return self.lower_expression(arg);
+        }
+        let ExpressionKind::FnRef(target) = arg.kind else {
+            unreachable!("type checker guarantees a marshalled C callback is a named function");
+        };
+        self.c_callback_thunk(target, sig, ret).into()
     }
 
     pub(super) fn lower_lvalue(&mut self, place: &Place) -> PointerValue<'ctx> {
