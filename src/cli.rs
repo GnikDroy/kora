@@ -37,7 +37,7 @@ pub fn run(args: &Args) -> Result<(), String> {
         .input
         .to_str()
         .ok_or_else(|| format!("input path is not valid UTF-8: {}", args.input.display()))?;
-    let program = kora::compile(entry, |path: &Path| std::fs::read_to_string(path).ok()).map_err(
+    let program = kora_compiler::compile(entry, |path: &Path| std::fs::read_to_string(path).ok()).map_err(
         |errors| {
             errors
                 .iter()
@@ -64,12 +64,12 @@ pub fn run(args: &Args) -> Result<(), String> {
         }
         #[cfg(feature = "codegen")]
         if args.emit_llvm {
-            let ir = kora::backend::llvm_ir(&program, &args.opt).map_err(|e| e.to_string())?;
+            let ir = kora_compiler::backend::llvm_ir(&program, &args.opt).map_err(|e| e.to_string())?;
             write_artifact(args, "ll", &ir)?;
         }
         if args.emit_js {
             let externs = args.async_externs.iter().cloned().collect();
-            let js = kora::backend::node_program(program, externs)?;
+            let js = kora_compiler::backend::node_program(program, externs)?;
             return write_artifact(args, "js", &js);
         }
         return Ok(());
@@ -91,16 +91,16 @@ fn write_artifact(args: &Args, extension: &str, content: &str) -> Result<(), Str
 }
 
 #[cfg(feature = "codegen")]
-fn build(args: &Args, program: kora::CompiledProgram) -> Result<(), String> {
+fn build(args: &Args, program: kora_compiler::CompiledProgram) -> Result<(), String> {
     let output = args
         .output
         .clone()
         .unwrap_or_else(|| args.input.with_extension(""));
-    kora::backend::native(&program, &output, &args.opt, &args.link_args).map_err(|e| e.to_string())
+    kora_compiler::backend::native(&program, &output, &args.opt, &args.link_args).map_err(|e| e.to_string())
 }
 
 #[cfg(not(feature = "codegen"))]
-fn build(args: &Args, _program: kora::CompiledProgram) -> Result<(), String> {
+fn build(args: &Args, _program: kora_compiler::CompiledProgram) -> Result<(), String> {
     if args.output.is_some() {
         return Err("-o requires --emit-js in a build without the native backend".to_string());
     }

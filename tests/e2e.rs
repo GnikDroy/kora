@@ -18,12 +18,12 @@ fn temp_dir() -> PathBuf {
     dir
 }
 
-fn frontend(dir: &Path, files: &[(&str, &str)]) -> kora::CompiledProgram {
+fn frontend(dir: &Path, files: &[(&str, &str)]) -> kora_compiler::CompiledProgram {
     for (name, source) in files {
         std::fs::write(dir.join(name), source).unwrap();
     }
     let entry = dir.join(files[0].0);
-    kora::compile(entry.to_str().unwrap(), |path: &Path| {
+    kora_compiler::compile(entry.to_str().unwrap(), |path: &Path| {
         std::fs::read_to_string(path).ok()
     })
     .expect("front-end")
@@ -50,10 +50,10 @@ fn run_program_with_stdin(files: &[(&str, &str)], stdin: &[u8]) -> (String, Stri
     let program = frontend(&dir, files);
 
     let binary = dir.join("main");
-    kora::backend::native(&program, &binary, "2", &[]).expect("build");
+    kora_compiler::backend::native(&program, &binary, "2", &[]).expect("build");
     let native = exec(&mut Command::new(&binary), stdin);
 
-    let js = kora::backend::node_program(program, HashSet::new()).expect("emit js");
+    let js = kora_compiler::backend::node_program(program, HashSet::new()).expect("emit js");
     let script = dir.join("main.js");
     std::fs::write(&script, js).unwrap();
     let node = exec(Command::new("node").arg(&script), stdin);
@@ -80,7 +80,7 @@ fn run_native_only(source: &str) -> (String, String, i32) {
     let dir = temp_dir();
     let program = frontend(&dir, &[("main.kora", source)]);
     let binary = dir.join("main");
-    kora::backend::native(&program, &binary, "2", &[]).expect("build");
+    kora_compiler::backend::native(&program, &binary, "2", &[]).expect("build");
     let out = exec(&mut Command::new(&binary), b"");
     std::fs::remove_dir_all(&dir).ok();
     out
@@ -90,7 +90,7 @@ fn run_native_only_args(source: &str, args: &[&str]) -> (String, String, i32) {
     let dir = temp_dir();
     let program = frontend(&dir, &[("main.kora", source)]);
     let binary = dir.join("main");
-    kora::backend::native(&program, &binary, "2", &[]).expect("build");
+    kora_compiler::backend::native(&program, &binary, "2", &[]).expect("build");
     let mut cmd = Command::new(&binary);
     cmd.args(args).current_dir(&dir);
     let out = exec(&mut cmd, b"");
@@ -166,7 +166,7 @@ fn test_native_link_passthrough() {
     );
     let binary = dir.join("main");
     let link_args = vec![format!("-L{}", dir.display()), "-lkoratest".to_string()];
-    kora::backend::native(&program, &binary, "2", &link_args).expect("build with passthrough");
+    kora_compiler::backend::native(&program, &binary, "2", &link_args).expect("build with passthrough");
     let (_, stderr, code) = exec(&mut Command::new(&binary), b"");
     std::fs::remove_dir_all(&dir).ok();
     assert_eq!(code, 42, "{stderr}");
@@ -232,7 +232,7 @@ fn test_native_fn_pointer_callback() {
     );
     let binary = dir.join("main");
     let link_args = vec![format!("-L{}", dir.display()), "-lkoracb".to_string()];
-    kora::backend::native(&program, &binary, "2", &link_args).expect("build with callback");
+    kora_compiler::backend::native(&program, &binary, "2", &link_args).expect("build with callback");
     let (_, stderr, code) = exec(&mut Command::new(&binary), b"");
     std::fs::remove_dir_all(&dir).ok();
     assert_eq!(code, 42, "{stderr}");
@@ -1653,7 +1653,7 @@ fn compile_fails(files: &[(&str, &str)]) -> String {
         std::fs::write(dir.join(name), source).unwrap();
     }
     let entry = dir.join(files[0].0);
-    let result = kora::compile(entry.to_str().unwrap(), |path: &Path| {
+    let result = kora_compiler::compile(entry.to_str().unwrap(), |path: &Path| {
         std::fs::read_to_string(path).ok()
     });
     std::fs::remove_dir_all(&dir).ok();

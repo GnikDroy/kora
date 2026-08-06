@@ -51,26 +51,31 @@ jobs:
         with:
           node-version: 20
       - uses: ilammy/msvc-dev-cmd@v1
-      - name: Fetch prebuilt LLVM 21 (vovkos)
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          $rel = Invoke-RestMethod "https://api.github.com/repos/vovkos/llvm-package-windows/releases/tags/llvm-21.1.1" -Headers @{ Authorization = "Bearer $env:GH_TOKEN" }
-          $asset = $rel.assets | Where-Object { $_.name -match 'windows-amd64' -and $_.name -match 'msvcrt' } | Select-Object -First 1
-          if (-not $asset) { Write-Host "no matching asset; available:"; $rel.assets.name; exit 1 }
-          Write-Host "Downloading $($asset.name)"
-          curl.exe -L -o llvm.7z $asset.browser_download_url
-          7z x llvm.7z -oC:\llvm | Out-Null
-          $cfg = Get-ChildItem C:\llvm -Recurse -Filter llvm-config.exe | Select-Object -First 1
-          if (-not $cfg) { Write-Host "llvm-config.exe not found under C:\llvm"; exit 1 }
-          $prefix = Split-Path (Split-Path $cfg.FullName)
-          Write-Host "LLVM prefix: $prefix"
-          echo "LLVM_SYS_211_PREFIX=$prefix" >> $env:GITHUB_ENV
-          echo "$prefix\bin" >> $env:GITHUB_PATH
+      - uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-name: llvm
+          create-args: >-
+            llvmdev=21
+            clang=21
+            zlib
+            libxml2
+            zstd
       - name: Test
         shell: pwsh
         run: |
           # Git's coreutils link.exe shadows the MSVC linker; drop it from PATH.
           $env:PATH = ($env:PATH -split ';' | Where-Object { $_ -notlike '*Git\usr\bin*' }) -join ';'
-          cargo test --features codegen
+          $env:LLVM_SYS_211_PREFIX = "$env:MAMBA_ROOT_PREFIX\envs\llvm\Library"
+          $lib = "$env:LLVM_SYS_211_PREFIX\lib"
+          Write-Host "== .lib files in $lib =="
+          Get-ChildItem "$lib\*.lib" | ForEach-Object { Write-Host $_.Name }
+          function Ensure-Lib($target, $pattern) {
+            if (-not (Test-Path "$lib\$target")) {
+              $src = Get-ChildItem "$lib\$pattern" -ErrorAction SilentlyContinue | Select-Object -First 1
+              if ($src) { Copy-Item $src.FullName "$lib\$target" }
+            }
+          }
+          Ensure-Lib 'z.lib' '*zlib*.lib'
+          Ensure-Lib 'xml2.lib' '*xml2*.lib'
+          Ensure-Lib 'zstd.dll.lib' '*zstd*.lib'
+          micromamba run -n llvm cargo test --features codegen
