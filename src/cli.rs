@@ -105,7 +105,10 @@ fn build(args: &Args, _program: kora::CompiledProgram) -> Result<(), String> {
         return Err("-o requires --emit-js in a build without the native backend".to_string());
     }
     if !args.link_args.is_empty() {
-        return Err("linker arguments require the native backend (build with --features codegen)".to_string());
+        return Err(
+            "linker arguments require the native backend (build with --features codegen)"
+                .to_string(),
+        );
     }
     Ok(())
 }

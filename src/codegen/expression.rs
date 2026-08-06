@@ -3,7 +3,9 @@ use inkwell::values::{BasicValueEnum, FunctionValue, IntValue, PointerValue, Val
 use inkwell::{FloatPredicate, IntPredicate};
 
 use super::CodeGen;
-use crate::ir::{BinOp, CastKind, Expression, ExpressionKind, ExternId, Place, PlaceKind, Type, UnOp};
+use crate::ir::{
+    BinOp, CastKind, Expression, ExpressionKind, ExternId, Place, PlaceKind, Type, UnOp,
+};
 use crate::parser::ExternType;
 
 impl<'ctx, 'a> CodeGen<'ctx, 'a> {

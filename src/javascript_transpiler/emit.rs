@@ -530,7 +530,9 @@ impl<'a> Emitter<'a> {
     fn cast(&mut self, kind: CastKind, operand: &Expression) {
         let (before, after) = match kind {
             CastKind::RealToInt => ("Math.trunc(", ")"),
-            CastKind::CharToInt | CastKind::CharToReal | CastKind::IntToReal
+            CastKind::CharToInt
+            | CastKind::CharToReal
+            | CastKind::IntToReal
             | CastKind::Reinterpret => ("(", ")"),
             CastKind::IntToChar => ("((", ") & 255)"),
             CastKind::RealToChar => ("(Math.trunc(", ") & 255)"),

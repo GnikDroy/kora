@@ -30,7 +30,10 @@ fn extern_abi_tag(ty: &ExternType) -> String {
         CSize => "cz".into(),
         Optional(inner) => format!("o{}", extern_abi_tag(inner)),
         Function { params, ret } => {
-            let r = ret.as_ref().map(|t| extern_abi_tag(t)).unwrap_or_else(|| "v".into());
+            let r = ret
+                .as_ref()
+                .map(|t| extern_abi_tag(t))
+                .unwrap_or_else(|| "v".into());
             let ps: Vec<_> = params.iter().map(extern_abi_tag).collect();
             format!("F{}_{}", r, ps.join("."))
         }
@@ -165,7 +168,10 @@ impl<'ctx, 'a> CodeGen<'ctx, 'a> {
         ret: &Option<Box<ExternType>>,
     ) -> PointerValue<'ctx> {
         let callee = self.function_value(target);
-        let ret_tag = ret.as_ref().map(|t| extern_abi_tag(t)).unwrap_or_else(|| "v".into());
+        let ret_tag = ret
+            .as_ref()
+            .map(|t| extern_abi_tag(t))
+            .unwrap_or_else(|| "v".into());
         let sig_tag: Vec<_> = params.iter().map(extern_abi_tag).collect();
         let thunk_name = format!(
             "{}.cthunk.{}_{}",
@@ -177,7 +183,10 @@ impl<'ctx, 'a> CodeGen<'ctx, 'a> {
             return existing.as_global_value().as_pointer_value();
         }
 
-        let c_params: Vec<_> = params.iter().map(|t| self.extern_llvm_type(t).into()).collect();
+        let c_params: Vec<_> = params
+            .iter()
+            .map(|t| self.extern_llvm_type(t).into())
+            .collect();
         let c_type = match ret {
             Some(t) => self.extern_llvm_type(t).fn_type(&c_params, false),
             None => self.context.void_type().fn_type(&c_params, false),
