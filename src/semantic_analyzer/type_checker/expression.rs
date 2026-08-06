@@ -1682,7 +1682,7 @@ mod tests {
                 r#"int main() { let x: int = true as int; return x; }"#,
                 false,
             ),
-            (r#"int main() { let x: int = 5 as int; return x; }"#, false),
+            (r#"int main() { let x: int = 5 as int; return x; }"#, true),
         ]);
     }
 }

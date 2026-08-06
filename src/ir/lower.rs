@@ -398,6 +398,9 @@ impl<'a> Lowering<'a> {
                     (T::Real, T::Char) => CastKind::RealToChar,
                     (T::Char, T::Int) => CastKind::CharToInt,
                     (T::Char, T::Real) => CastKind::CharToReal,
+                    // no-op
+                    (from, to) if from == to => CastKind::Reinterpret,
+                    // A reference type and opaque share a pointer representation.
                     (T::Opaque, T::Struct(_) | T::Array(_) | T::Function(_, _))
                     | (T::Struct(_) | T::Array(_) | T::Function(_, _), T::Opaque) => {
                         CastKind::Reinterpret

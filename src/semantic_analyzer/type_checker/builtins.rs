@@ -109,6 +109,9 @@ pub fn copy_result(arg: &Type) -> Option<Type> {
 #[rustfmt::skip]
 pub fn is_cast_possible(from: &Type, to: &Type) -> bool {
     use Type::*;
+    if from == to {
+        return true;
+    }
     matches!((from, to),
         (Int, Real)
         | (Int, Char)
