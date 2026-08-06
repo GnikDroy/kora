@@ -5,6 +5,7 @@
 #include "array.h"
 #include "net.h"
 #include "platform.h"
+#include "threads.h"
 
 extern long __kora_main(void);
 

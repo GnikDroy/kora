@@ -239,6 +239,57 @@ fn test_native_fn_pointer_callback() {
 }
 
 #[test]
+fn test_native_threads() {
+    let (_, stderr, code) = run_native_only(
+        r#"
+            import "std/thread";
+
+            struct Shared {
+                count: int,
+                mutex: Mutex,
+            }
+
+            void worker(s: Shared) {
+                let i = 0;
+                while (i < 1000) {
+                    let junk = new char[8];
+                    junk[0] = 'x';
+                    s.mutex.lock();
+                    s.count = s.count + 1;
+                    s.mutex.unlock();
+                    i = i + 1;
+                }
+            }
+
+            int main() {
+                let m = thread.mutex();
+                if (m == none) { return 2; }
+                let s = new Shared { count: 0, mutex: m! };
+                let threads: [Thread] = [];
+                let n = 0;
+                while (n < 4) {
+                    let t = thread.spawn::<Shared>(worker, s);
+                    if (t != none) {
+                        threads.push(t!);
+                    }
+                    n = n + 1;
+                }
+                let j = 0;
+                while (j < threads.len()) {
+                    threads[j].join();
+                    j = j + 1;
+                }
+                if (s.count == 4000) {
+                    return 42;
+                }
+                return 1;
+            }
+        "#,
+    );
+    assert_eq!(code, 42, "{stderr}");
+}
+
+#[test]
 fn test_native_udp_loopback() {
     let (_, stderr, code) = run_native_only(
         r#"

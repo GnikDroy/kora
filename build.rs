@@ -9,6 +9,8 @@ fn main() {
         .include("runtime/libkora/bdwgc/include")
         .define("NO_EXECUTE_PERMISSION", None)
         .define("GC_DISABLE_INCREMENTAL", None)
+        .define("GC_THREADS", None)
+        .define("GC_BUILTIN_ATOMIC", None)
         .flag("-ffunction-sections")
         .flag("-fdata-sections")
         .opt_level(2)

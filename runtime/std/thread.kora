@@ -1,0 +1,90 @@
+extern opaque? __kora_thread_spawn(entry: opaque, arg: opaque);
+extern void __kora_thread_join(t: opaque);
+extern void __kora_thread_detach(t: opaque);
+extern void __kora_thread_yield();
+extern opaque? __kora_mutex_new();
+extern void __kora_mutex_lock(m: opaque);
+extern void __kora_mutex_unlock(m: opaque);
+extern opaque? __kora_cond_new();
+extern void __kora_cond_wait(c: opaque, m: opaque);
+extern cint __kora_cond_wait_timeout(c: opaque, m: opaque, ms: cint);
+extern void __kora_cond_signal(c: opaque);
+extern void __kora_cond_broadcast(c: opaque);
+
+struct Thread {
+    handle: opaque,
+}
+
+struct Mutex {
+    handle: opaque,
+}
+
+struct Cond {
+    handle: opaque,
+}
+
+impl Thread {
+    void join(self) {
+        __kora_thread_join(self.handle);
+    }
+
+    void detach(self) {
+        __kora_thread_detach(self.handle);
+    }
+}
+
+impl Mutex {
+    void lock(self) {
+        __kora_mutex_lock(self.handle);
+    }
+
+    void unlock(self) {
+        __kora_mutex_unlock(self.handle);
+    }
+}
+
+impl Cond {
+    void wait(self, m: Mutex) {
+        __kora_cond_wait(self.handle, m.handle);
+    }
+
+    bool wait_timeout(self, m: Mutex, ms: int) {
+        return __kora_cond_wait_timeout(self.handle, m.handle, ms) == 0;
+    }
+
+    void signal(self) {
+        __kora_cond_signal(self.handle);
+    }
+
+    void broadcast(self) {
+        __kora_cond_broadcast(self.handle);
+    }
+}
+
+Thread? spawn<T>(entry: void(T), arg: T) {
+    let handle = __kora_thread_spawn(entry as opaque, arg as opaque);
+    if (handle == none) {
+        return none;
+    }
+    return new Thread { handle: handle! };
+}
+
+Mutex? mutex() {
+    let handle = __kora_mutex_new();
+    if (handle == none) {
+        return none;
+    }
+    return new Mutex { handle: handle! };
+}
+
+Cond? cond() {
+    let handle = __kora_cond_new();
+    if (handle == none) {
+        return none;
+    }
+    return new Cond { handle: handle! };
+}
+
+void yield() {
+    __kora_thread_yield();
+}
