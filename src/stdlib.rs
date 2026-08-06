@@ -14,6 +14,7 @@ const MODULES: &[(&str, &str)] = &[
     ("std/str", include_str!("../runtime/std/str.kora")),
     ("std/iter", include_str!("../runtime/std/iter.kora")),
     ("std/time", include_str!("../runtime/std/time.kora")),
+    ("std/net", include_str!("../runtime/std/net.kora")),
     (
         "std/algorithm",
         include_str!("../runtime/std/algorithm.kora"),

@@ -3,6 +3,7 @@
 #include <time.h>
 
 #include "array.h"
+#include "net.h"
 #include "platform.h"
 
 extern long __kora_main(void);
@@ -23,6 +24,8 @@ const char *__kora_argv(int i) {
 
 int main(int argc, char **argv) {
   GC_init();
+  __kora_net_init();
+  atexit(__kora_net_cleanup);
   kora_argc = argc;
   kora_argv = argv;
   srand((unsigned)time(NULL));

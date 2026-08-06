@@ -1,0 +1,261 @@
+extern opaque __kora_net_addr_new();
+extern opaque? __kora_net_resolve(host: cstring, port: cint, socktype: cint, passive: cint);
+extern cint __kora_net_addr_host(addr: opaque, out: cstring, cap: cint);
+extern cint __kora_net_addr_port(addr: opaque);
+extern cint __kora_net_addr_family(addr: opaque);
+
+extern int64 __kora_net_socket(domain: cint, type: cint);
+extern cint __kora_net_connect(sock: int64, addr: opaque);
+extern cint __kora_net_bind(sock: int64, addr: opaque);
+extern cint __kora_net_listen(sock: int64, backlog: cint);
+extern int64 __kora_net_accept(sock: int64);
+
+extern int64 __kora_net_send(sock: int64, buf: cstring, len: int64);
+extern int64 __kora_net_recv(sock: int64, buf: cstring, len: int64);
+extern int64 __kora_net_sendto(sock: int64, buf: cstring, len: int64, addr: opaque);
+extern int64 __kora_net_recvfrom(sock: int64, buf: cstring, len: int64, addr: opaque);
+
+extern cint __kora_net_local(sock: int64, addr: opaque);
+extern cint __kora_net_peer(sock: int64, addr: opaque);
+extern cint __kora_net_set_blocking(sock: int64, blocking: cint);
+extern cint __kora_net_set_option(sock: int64, option: cint, value: cint);
+extern cint __kora_net_set_timeout(sock: int64, ms: cint);
+extern cint __kora_net_shutdown(sock: int64, how: cint);
+extern cint __kora_net_close(sock: int64);
+
+struct Addr {
+    handle: opaque,
+}
+
+struct Socket {
+    fd: int,
+}
+
+struct Datagram {
+    data: string,
+    from: Addr,
+}
+
+int flag(b: bool) {
+    if (b) {
+        return 1;
+    }
+    return 0;
+}
+
+string cstr_trim(buf: [char]) {
+    let i = 0;
+    while (i < buf.len() && buf[i] != (0 as char)) {
+        i = i + 1;
+    }
+    return buf.slice(0, i);
+}
+
+impl Addr {
+    string host(self) {
+        let buf = new char[64];
+        __kora_net_addr_host(self.handle, buf, 64);
+        return cstr_trim(buf);
+    }
+
+    int port(self) {
+        return __kora_net_addr_port(self.handle);
+    }
+
+    int family(self) {
+        return __kora_net_addr_family(self.handle);
+    }
+}
+
+impl Socket {
+    Socket? accept(self) {
+        let fd = __kora_net_accept(self.fd);
+        if (fd < 0) {
+            return none;
+        }
+        return new Socket { fd: fd };
+    }
+
+    int send(self, data: string) {
+        return __kora_net_send(self.fd, data, data.len());
+    }
+
+    bool send_all(self, data: string) {
+        let sent = 0;
+        while (sent < data.len()) {
+            let chunk = data.slice(sent, data.len());
+            let n = __kora_net_send(self.fd, chunk, chunk.len());
+            if (n < 0) {
+                return false;
+            }
+            sent = sent + n;
+        }
+        return true;
+    }
+
+    string? recv(self, max: int) {
+        let buf = new char[max];
+        let n = __kora_net_recv(self.fd, buf, max);
+        if (n < 0) {
+            return none;
+        }
+        return buf.slice(0, n);
+    }
+
+    int send_to(self, data: string, addr: Addr) {
+        return __kora_net_sendto(self.fd, data, data.len(), addr.handle);
+    }
+
+    Datagram? recv_from(self, max: int) {
+        let buf = new char[max];
+        let from = new Addr { handle: __kora_net_addr_new() };
+        let n = __kora_net_recvfrom(self.fd, buf, max, from.handle);
+        if (n < 0) {
+            return none;
+        }
+        return new Datagram { data: buf.slice(0, n), from: from };
+    }
+
+    Addr? local(self) {
+        let addr = new Addr { handle: __kora_net_addr_new() };
+        if (__kora_net_local(self.fd, addr.handle) != 0) {
+            return none;
+        }
+        return addr;
+    }
+
+    Addr? peer(self) {
+        let addr = new Addr { handle: __kora_net_addr_new() };
+        if (__kora_net_peer(self.fd, addr.handle) != 0) {
+            return none;
+        }
+        return addr;
+    }
+
+    bool set_blocking(self, blocking: bool) {
+        return __kora_net_set_blocking(self.fd, flag(blocking)) == 0;
+    }
+
+    bool set_option(self, option: int, value: int) {
+        return __kora_net_set_option(self.fd, option, value) == 0;
+    }
+
+    bool set_reuse(self, on: bool) {
+        return __kora_net_set_option(self.fd, 0, flag(on)) == 0;
+    }
+
+    bool set_keepalive(self, on: bool) {
+        return __kora_net_set_option(self.fd, 1, flag(on)) == 0;
+    }
+
+    bool set_broadcast(self, on: bool) {
+        return __kora_net_set_option(self.fd, 2, flag(on)) == 0;
+    }
+
+    bool set_nodelay(self, on: bool) {
+        return __kora_net_set_option(self.fd, 3, flag(on)) == 0;
+    }
+
+    bool set_timeout(self, ms: int) {
+        return __kora_net_set_timeout(self.fd, ms) == 0;
+    }
+
+    bool shutdown(self, how: int) {
+        return __kora_net_shutdown(self.fd, how) == 0;
+    }
+
+    void close(self) {
+        __kora_net_close(self.fd);
+    }
+}
+
+Addr? resolve(host: string, port: int) {
+    let handle = __kora_net_resolve(host, port, 1, 0);
+    if (handle == none) {
+        return none;
+    }
+    return new Addr { handle: handle! };
+}
+
+Addr? resolve_bind(host: string, port: int) {
+    let handle = __kora_net_resolve(host, port, 1, 1);
+    if (handle == none) {
+        return none;
+    }
+    return new Addr { handle: handle! };
+}
+
+Socket? tcp_socket(family: int) {
+    let fd = __kora_net_socket(family, 1);
+    if (fd < 0) {
+        return none;
+    }
+    return new Socket { fd: fd };
+}
+
+Socket? udp_socket(family: int) {
+    let fd = __kora_net_socket(family, 2);
+    if (fd < 0) {
+        return none;
+    }
+    return new Socket { fd: fd };
+}
+
+Socket? connect(host: string, port: int) {
+    let found = resolve(host, port);
+    if (found == none) {
+        return none;
+    }
+    let addr = found!;
+    let made = tcp_socket(addr.family());
+    if (made == none) {
+        return none;
+    }
+    let sock = made!;
+    if (__kora_net_connect(sock.fd, addr.handle) != 0) {
+        sock.close();
+        return none;
+    }
+    return sock;
+}
+
+Socket? listen(host: string, port: int, backlog: int) {
+    let found = resolve_bind(host, port);
+    if (found == none) {
+        return none;
+    }
+    let addr = found!;
+    let made = tcp_socket(addr.family());
+    if (made == none) {
+        return none;
+    }
+    let sock = made!;
+    sock.set_reuse(true);
+    if (__kora_net_bind(sock.fd, addr.handle) != 0) {
+        sock.close();
+        return none;
+    }
+    if (__kora_net_listen(sock.fd, backlog) != 0) {
+        sock.close();
+        return none;
+    }
+    return sock;
+}
+
+Socket? bind_udp(host: string, port: int) {
+    let found = resolve_bind(host, port);
+    if (found == none) {
+        return none;
+    }
+    let addr = found!;
+    let made = udp_socket(addr.family());
+    if (made == none) {
+        return none;
+    }
+    let sock = made!;
+    if (__kora_net_bind(sock.fd, addr.handle) != 0) {
+        sock.close();
+        return none;
+    }
+    return sock;
+}

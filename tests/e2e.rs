@@ -239,6 +239,37 @@ fn test_native_fn_pointer_callback() {
 }
 
 #[test]
+fn test_native_udp_loopback() {
+    let (_, stderr, code) = run_native_only(
+        r#"
+            import "std/net";
+
+            int main() {
+                let opened = net.bind_udp("127.0.0.1", 0);
+                if (opened == none) { return 1; }
+                let sock = opened!;
+
+                let bound = sock.local();
+                if (bound == none) { return 2; }
+                let target = bound!;
+
+                if (sock.send_to("hello", target) < 0) { return 3; }
+
+                sock.set_timeout(1000);
+                let received = sock.recv_from(64);
+                if (received == none) { return 4; }
+                let datagram = received!;
+                sock.close();
+
+                if (datagram.data == "hello") { return 42; }
+                return 5;
+            }
+        "#,
+    );
+    assert_eq!(code, 42, "{stderr}");
+}
+
+#[test]
 fn test_native_computed_callback_is_rejected() {
     let errors = compile_fails(&[(
         "main.kora",

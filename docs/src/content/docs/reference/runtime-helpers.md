@@ -157,6 +157,59 @@ void   exit(code: int)
 void   abort()                # terminate abnormally (SIGABRT)
 ```
 
+## std/net
+
+TCP and UDP sockets, for networking. Available on the native backend. Calls are blocking by
+default. Sockets and addresses come back as optionals, and error is reported as `none`,
+`false`, or a negative byte count. Sockets are plain OS handles, so calling `close` when done
+is required.
+
+Setting up connections and resolving names:
+
+```ruby
+Addr?   resolve(host: string, port: int)        # a connect or send target; none on failure
+Addr?   resolve_bind(host: string, port: int)   # a wildcard-capable address to bind
+Socket? tcp_socket(family: int)                 # unbound TCP socket; family 4 = IPv4, 6 = IPv6
+Socket? udp_socket(family: int)                 # unbound UDP socket
+Socket? connect(host: string, port: int)        # resolve, make a TCP socket, and connect
+Socket? listen(host: string, port: int, backlog: int)   # bind and listen a TCP server
+Socket? bind_udp(host: string, port: int)       # a UDP socket bound to host:port
+```
+
+Methods on `Socket`:
+
+```ruby
+Socket?   accept(self)                     # next incoming connection; none on error
+int       send(self, data: string)         # bytes sent, or -1
+bool      send_all(self, data: string)     # send every byte; false on error
+string?   recv(self, max: int)             # up to max bytes; "" at peer close, none on error
+int       send_to(self, data: string, addr: Addr)    # UDP send; bytes sent, or -1
+Datagram? recv_from(self, max: int)        # UDP receive; the bytes and their sender
+Addr?     local(self)                      # this socket's own address
+Addr?     peer(self)                       # the connected peer's address
+bool      set_blocking(self, blocking: bool)
+bool      set_timeout(self, ms: int)       # send and receive timeout; 0 disables
+bool      set_option(self, option: int, value: int)   # generic option, see codes below
+bool      set_reuse(self, on: bool)        # option 0, SO_REUSEADDR
+bool      set_keepalive(self, on: bool)    # option 1, SO_KEEPALIVE
+bool      set_broadcast(self, on: bool)    # option 2, SO_BROADCAST
+bool      set_nodelay(self, on: bool)      # option 3, TCP_NODELAY
+bool      shutdown(self, how: int)         # 0 = read, 1 = write, 2 = both
+void      close(self)
+```
+
+Methods on `Addr`:
+
+```ruby
+string host(self)     # numeric IP, e.g. "93.184.216.34"
+int    port(self)
+int    family(self)   # 4 for IPv4, 6 for IPv6
+```
+
+A `Datagram` is a struct `{ data: string, from: Addr }`, with the bytes
+received with the address they came from. The `option` argument to `set_option`
+is (`0` reuse-address, `1` keep-alive, `2` broadcast, `3` TCP no-delay).
+
 ## std/time
 
 ```ruby
