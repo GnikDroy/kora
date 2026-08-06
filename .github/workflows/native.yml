@@ -57,9 +57,18 @@ jobs:
           create-args: >-
             llvmdev=22
             clang=22
+            zlib
+            zstd
+            libxml2
       - name: Test
         shell: pwsh
         run: |
           $env:PATH = ($env:PATH -split ';' | Where-Object { $_ -notlike '*Git\usr\bin*' }) -join ';'
           $env:LLVM_SYS_221_PREFIX = "$env:MAMBA_ROOT_PREFIX\envs\llvm\Library"
+          $lib = "$env:LLVM_SYS_221_PREFIX\lib"
+          foreach ($m in @(@('zlib.lib','z.lib'), @('libxml2.lib','xml2.lib'))) {
+            if ((Test-Path "$lib\$($m[0])") -and -not (Test-Path "$lib\$($m[1])")) {
+              Copy-Item "$lib\$($m[0])" "$lib\$($m[1])"
+            }
+          }
           micromamba run -n llvm cargo test --features codegen
