@@ -210,6 +210,61 @@ A `Datagram` is a struct `{ data: string, from: Addr }`, with the bytes
 received with the address they came from. The `option` argument to `set_option`
 is (`0` reuse-address, `1` keep-alive, `2` broadcast, `3` TCP no-delay).
 
+## std/thread
+
+Threads, mutexes, and condition variables, available on the native backend.
+`spawn` runs a function on a new OS thread and gives back a handle. The mutex and
+condition constructors return optionals since creation can fail. Shared state is
+passed as the thread's argument. Make sure to guard mutable access with a `Mutex`.
+
+```ruby
+Thread? spawn<T>(entry: void(T), arg: T)   # run entry(arg) on a new thread; none on failure
+Mutex?  mutex()                            # a new unlocked mutex; none on failure
+Cond?   cond()                             # a new condition variable; none on failure
+void    yield()                            # hint the scheduler to run another thread
+```
+
+Methods on `Thread`:
+
+```ruby
+void join(self)     # block until the thread finishes
+void detach(self)   # release the thread to run unjoined
+```
+
+Methods on `Mutex`:
+
+```ruby
+void lock(self)     # block until the lock is held
+void unlock(self)
+```
+
+Methods on `Cond`:
+
+```ruby
+void wait(self, m: Mutex)                    # atomically unlock m and wait, re-locking on wake
+bool wait_timeout(self, m: Mutex, ms: int)   # like wait. false if ms elapsed before a wake
+void signal(self)                            # wake one waiter
+void broadcast(self)                         # wake all waiters
+```
+
+The argument to `spawn` is the shared value handed to the thread, and it
+MUST be a reference type (a struct or an array), since it crosses to the thread
+by reference. 
+
+```ruby
+struct Counter { n: int, lock: Mutex }
+
+void work(c: Counter) {
+    c.lock.lock();
+    c.n = c.n + 1;
+    c.lock.unlock();
+}
+
+let c = new Counter { n: 0, lock: thread.mutex()! };
+let t = thread.spawn::<Counter>(work, c)!;
+t.join();
+```
+
 ## std/time
 
 ```ruby

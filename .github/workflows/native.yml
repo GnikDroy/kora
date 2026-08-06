@@ -50,9 +50,16 @@ jobs:
         with:
           node-version: 20
       - uses: ilammy/msvc-dev-cmd@v1
-      - name: Install LLVM 22
-        run: choco install llvm --yes
-      - name: Set LLVM prefix
-        run: echo "LLVM_SYS_221_PREFIX=C:\Program Files\LLVM" >> $env:GITHUB_ENV
+      - uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-name: llvm
+          init-shell: powershell
+          create-args: >-
+            llvmdev=22
+            clang=22
       - name: Test
-        run: cargo test --features codegen
+        shell: powershell
+        run: |
+          micromamba activate llvm
+          $env:LLVM_SYS_221_PREFIX = "$env:CONDA_PREFIX\Library"
+          cargo test --features codegen
