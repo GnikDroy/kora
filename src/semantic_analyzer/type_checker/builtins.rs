@@ -115,7 +115,15 @@ pub fn is_cast_possible(from: &Type, to: &Type) -> bool {
         | (Real, Int)
         | (Real, Char)
         | (Char, Int)
-        | (Char, Real))
+        | (Char, Real)
+        // The following types have same repr (as a pointer)
+        // So opaque (an FFI escape hatch) can freely convert to/from these.
+        | (Opaque, Struct(_))
+        | (Struct(_), Opaque)
+        | (Opaque, Array(_))
+        | (Array(_), Opaque)
+        | (Opaque, Function(_, _))
+        | (Function(_, _), Opaque))
 }
 
 pub fn is_comparable(ty: &Type) -> bool {

@@ -371,6 +371,7 @@ pub enum CastKind {
     RealToChar,
     CharToInt,
     CharToReal,
+    Reinterpret,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -398,6 +398,10 @@ impl<'a> Lowering<'a> {
                     (T::Real, T::Char) => CastKind::RealToChar,
                     (T::Char, T::Int) => CastKind::CharToInt,
                     (T::Char, T::Real) => CastKind::CharToReal,
+                    (T::Opaque, T::Struct(_) | T::Array(_) | T::Function(_, _))
+                    | (T::Struct(_) | T::Array(_) | T::Function(_, _), T::Opaque) => {
+                        CastKind::Reinterpret
+                    }
                     _ => unreachable!("type checker rejects other casts"),
                 };
                 let ty = self.lower_type(target);

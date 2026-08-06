@@ -405,6 +405,7 @@ impl<'ctx, 'a> CodeGen<'ctx, 'a> {
                 )
                 .unwrap()
                 .into(),
+            CastKind::Reinterpret => value,
         }
     }
 
