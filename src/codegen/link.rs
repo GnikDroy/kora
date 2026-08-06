@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
 
 use inkwell::module::Module;
@@ -17,7 +17,7 @@ pub fn link(llvm: &Module, output: &Path, opt: &str, link_args: &[String]) -> Re
 
     let object_path = output.with_extension(if msvc { "obj" } else { "o" });
     emit_object_file(llvm, &object_path, opt)?;
-    let runtime_path = output.with_extension(if msvc { "lib" } else { "a" });
+    let runtime_path = runtime_sibling(output, if msvc { "lib" } else { "a" });
 
     let status = std::fs::write(&runtime_path, RUNTIME_LIB)
         .map_err(LinkErr::Io)
@@ -34,6 +34,14 @@ pub fn link(llvm: &Module, output: &Path, opt: &str, link_args: &[String]) -> Re
         return Err(LinkErr::LinkFailed);
     }
     Ok(())
+}
+
+fn runtime_sibling(output: &Path, ext: &str) -> PathBuf {
+    let stem = output
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("kora");
+    output.with_file_name(format!("{stem}_runtime.{ext}"))
 }
 
 fn link_gnu(
