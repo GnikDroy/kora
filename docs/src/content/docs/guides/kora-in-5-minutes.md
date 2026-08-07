@@ -21,7 +21,7 @@ int main() {
 
 ## Variables and types
 
-`let` declares a variable; the type is inferred or written after a colon.
+`let` declares a variable. The type is inferred or written after a colon.
 
 ```ruby
 let x = 42;          # int
@@ -31,11 +31,11 @@ let name = "Kora";   # string
 
 The primitives:
 
-- **`int`** integers. 64-bit natively; safe to 2^53 - 1 on the JavaScript backend.
-- **`real`** floating point.
-- **`char`** a single byte.
-- **`bool`** `true` or `false`.
-- **`string`** text, exactly an array of `char`.
+- `int`: integers. 64-bit natively, safe to 2^53 - 1 on the JavaScript backend.
+- `real`: floating point.
+- `char`: a single byte.
+- `bool`: `true` or `false`.
+- `string`: text, exactly an array of `char`.
 
 Convert with `as`:
 
@@ -46,8 +46,8 @@ let f = 65 as real;   # 65.0
 
 ## Arrays
 
-`[...]` is a literal; `new T[n]` makes `n` default-valued elements. Arrays are
-bounds-checked and carry built-in methods.
+`[...]` is a literal, and `new T[n]` makes `n` default-valued elements. Arrays
+are bounds-checked and carry built-in methods.
 
 ```ruby
 let xs = [1, 2, 3];
@@ -89,8 +89,8 @@ void greet(name: string) { io.write(name); }
 
 ## Structs and methods
 
-`struct` groups data; `impl` attaches methods whose first parameter is `self`.
-Construct with `new`.
+`struct` groups data, and `impl` attaches methods whose first parameter is
+`self`. Construct with `new`.
 
 ```ruby
 struct Point { x: int, y: int }
@@ -168,12 +168,13 @@ int main() {
 
 ## Safety
 
-Kora fails loudly, not silently. Out-of-bounds indexing, division by zero,
+Kora fails loudly. Out-of-bounds indexing, division by zero,
 `pop()` on an empty array, and force-unwrapping `none` all panic with a clear
-message. Garbage collection means you never free memory by hand.
+message. Garbage collection you never worry about freeing memory by hand.
 
 ## Next
 
-- [Runtime Helpers](../../reference/runtime-helpers/): the full standard library.
+- [Standard Library](../../reference/standard-library/): the full standard
+  library, module by module.
 - [Playground Functions](../../reference/playground-functions/): graphics and
   input for the browser.

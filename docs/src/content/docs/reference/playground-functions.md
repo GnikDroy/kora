@@ -9,13 +9,14 @@ Canvas tab to see the result.
 
 They exist only in the playground, which injects their declarations
 automatically, so you call them directly with no `import` or `extern` needed.
-The canvas is 640 by 480; the origin is top-left, with x growing right and y
+The canvas is 640 by 480. The origin is top-left, with x growing right and y
 growing down. Colors are CSS strings like `"#ef4444"` or `"black"`.
 
 ## The render loop
 
 Games pace themselves by drawing a frame, sleeping, and repeating. Use
-`std/time`'s `sleep` for the delay and `is_key_down` to read the keyboard:
+[`std/time`](../std/time/)'s `sleep` for the delay and `is_key_down` to read
+the keyboard:
 
 ```ruby
 import "std/time";
@@ -103,7 +104,7 @@ bool  is_mouse_down()
 
 `time.sleep` and reading input suspend the program while keeping the browser
 responsive, so animation and input work despite JavaScript being single-threaded.
-Write a normal loop; the compiler handles it.
+Write a normal loop. The compiler handles it.
 
 For complete examples, open the file menu in the playground and try Snake,
 Tetris, Pong, Pacman, Doom, or Mandelbrot.
