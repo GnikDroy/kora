@@ -1,15 +1,12 @@
 import "std/libc";
 
 extern cint __kora_pid();
+extern cint __kora_system(cmd: cstring);
 extern opaque? __kora_popen(cmd: cstring, mode: cstring);
 extern cint __kora_pclose(f: opaque);
 
 int run(cmd: string) {
-    let status = libc.system(cmd);
-    if (status < 0) {
-        return -1;
-    }
-    return (status / 256) % 256;
+    return __kora_system(cmd);
 }
 
 void exit(code: int) {

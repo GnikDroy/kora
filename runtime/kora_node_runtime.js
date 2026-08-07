@@ -73,7 +73,9 @@ function __kora_array_from_cstring(s) {
 
 function fopen(path, mode) {
   try {
-    return { fd: require("node:fs").openSync(__kora_cstring_from_array(path), __kora_cstring_from_array(mode)), pos: 0 };
+    // Node fs always reads/writes bytes
+    const flags = __kora_cstring_from_array(mode).replace(/b/g, "");
+    return { fd: require("node:fs").openSync(__kora_cstring_from_array(path), flags), pos: 0 };
   } catch {
     return null;
   }
@@ -146,6 +148,11 @@ function getenv(name) {
 function system(cmd) {
   const r = require("node:child_process").spawnSync(__kora_cstring_from_array(cmd), { shell: true, stdio: "inherit" });
   return r.status === null ? -256 : r.status * 256;
+}
+
+function __kora_system(cmd) {
+  const r = require("node:child_process").spawnSync(__kora_cstring_from_array(cmd), { shell: true, stdio: "inherit" });
+  return r.status === null ? -1 : r.status;
 }
 
 function exit(code) {

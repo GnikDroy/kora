@@ -27,6 +27,11 @@ void __kora_write(const char *buf, int64_t n) {
   _write(1, buf, (unsigned int)n);
 }
 
+int __kora_system(const char *cmd) {
+  int status = system(cmd);
+  return status < 0 ? -1 : status;
+}
+
 int __kora_pid(void) { return (int)GetCurrentProcessId(); }
 int __kora_setenv(const char *n, const char *v) { return _putenv_s(n, v); }
 int __kora_unsetenv(const char *n) { return _putenv_s(n, ""); }
@@ -110,6 +115,7 @@ int64_t __kora_file_mtime(const char *p) {
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -123,6 +129,20 @@ void __kora_sleep_ms(int64_t ms) {
 
 void __kora_write(const char *buf, int64_t n) {
   (void)write(1, buf, (size_t)n);
+}
+
+int __kora_system(const char *cmd) {
+  int status = system(cmd);
+  if (status < 0) {
+    return -1;
+  }
+  if (WIFEXITED(status)) {
+    return WEXITSTATUS(status);
+  }
+  if (WIFSIGNALED(status)) {
+    return 128 + WTERMSIG(status);
+  }
+  return -1;
 }
 
 int __kora_pid(void) { return (int)getpid(); }

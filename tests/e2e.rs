@@ -1049,35 +1049,41 @@ fn test_std_time_now() {
 
 #[test]
 fn test_fs_round_trip() {
-    let (_, stderr, code) = run(r#"
+    let path = std::env::temp_dir()
+        .join(format!("kora_e2e_fs_test_{}.txt", std::process::id()))
+        .to_string_lossy()
+        .replace('\\', "/");
+    let (_, stderr, code) = run(&format!(
+        r#"
             import "std/fs";
-            int main() {
-                let path = "/tmp/kora_e2e_fs_test.txt";
+            int main() {{
+                let path = "{path}";
                 let r = 0;
-                let w = fs.open(path, "w");
-                if (w == none) { return 0; }
+                let w = fs.open(path, "wb");
+                if (w == none) {{ return 0; }}
                 w!.write("alpha
 beta
 ");
                 w!.close();
 
-                let f = fs.open(path, "r");
-                if (f == none) { return 0; }
-                if (f!.read_line() == "alpha") { r = r + 1; }
-                if (f!.tell() == 6) { r = r + 2; }
+                let f = fs.open(path, "rb");
+                if (f == none) {{ return 0; }}
+                if (f!.read_line() == "alpha") {{ r = r + 1; }}
+                if (f!.tell() == 6) {{ r = r + 2; }}
                 f!.seek(0);
                 if (f!.read_all() == "alpha
 beta
-") { r = r + 4; }
-                if (f!.read_char() == none) { r = r + 8; }
+") {{ r = r + 4; }}
+                if (f!.read_char() == none) {{ r = r + 8; }}
                 f!.close();
 
-                if (fs.remove(path)) { r = r + 16; }
-                if (fs.open(path, "r") == none) { r = r + 32; }
-                if (fs.remove(path) == false) { r = r + 64; }
+                if (fs.remove(path)) {{ r = r + 16; }}
+                if (fs.open(path, "rb") == none) {{ r = r + 32; }}
+                if (fs.remove(path) == false) {{ r = r + 64; }}
                 return r;
-            }
-        "#);
+            }}
+        "#
+    ));
     assert_eq!(code, 127, "{stderr}");
 }
 
@@ -1088,7 +1094,7 @@ fn test_proc_run() {
             int main() {
                 let r = 0;
                 if (proc.run("exit 7") == 7) { r = r + 1; }
-                if (proc.run("true") == 0) { r = r + 2; }
+                if (proc.run("exit 0") == 0) { r = r + 2; }
                 return r;
             }
         "#);
@@ -1433,6 +1439,7 @@ fn test_empty_string_and_growth() {
     assert_eq!(code, 7);
 }
 
+#[cfg(unix)]
 #[test]
 fn test_negative_and_large_exit_codes() {
     let (_, _, code) = run("int main() { return -1; }");
