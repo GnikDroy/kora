@@ -122,6 +122,7 @@ fn test_native_libc_bindings() {
 }
 
 #[test]
+#[cfg(not(target_os = "windows"))]
 fn test_native_link_passthrough() {
     let dir = temp_dir();
 
@@ -174,6 +175,7 @@ fn test_native_link_passthrough() {
 }
 
 #[test]
+#[cfg(not(target_os = "windows"))]
 fn test_native_fn_pointer_callback() {
     let dir = temp_dir();
 

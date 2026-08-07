@@ -79,6 +79,7 @@ fn link_msvc(
         .arg(object)
         .arg(runtime)
         .arg("ws2_32.lib")
+        .arg("user32.lib")
         .args(link_args)
         .arg(format!("/Fe:{}", output.display()))
         .arg("/link")
