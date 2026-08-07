@@ -115,4 +115,16 @@ impl set<K, H> {
         }
         return false;
     }
+
+    [K] items(self) {
+        let out: [K] = [];
+        let i = 0;
+        while (i < self.slots.len()) {
+            if (self.slots[i] > 0) {
+                out.push(self.keys[self.slots[i] - 1]);
+            }
+            i = i + 1;
+        }
+        return out;
+    }
 }

@@ -107,6 +107,7 @@ bool add(self, key: K)      # insert; true if the key was newly added
 bool has(self, key: K)      # true if the key is present
 bool remove(self, key: K)   # delete; true if the key was present
 int  count(self)            # number of keys
+[K]  items(self)            # the keys, in no particular order
 ```
 
 ```ruby
@@ -118,6 +119,10 @@ seen.add(3);    # true
 seen.add(3);    # false, already present
 seen.has(3);    # true
 seen.count();   # 1
+
+for x | seen.items() {
+    # visit each element
+}
 ```
 
 ## map
@@ -133,18 +138,31 @@ V?   get(self, key: K)            # the value for key, or none if absent
 bool has(self, key: K)            # true if the key is present
 bool remove(self, key: K)         # delete; true if the key was present
 int  count(self)                  # number of entries
+[K]  keys(self)                   # the keys, in no particular order
+[V]  values(self)                 # the values, in the same order as keys()
 ```
+
+`keys()` and `values()` walk the map the same way, so as long as the map is
+not modified in between, `keys()[i]` maps to `values()[i]`:
 
 ```ruby
 import "std/collections/map";
 import "std/collections/hasher";
+import "std/conv";
+import "std/io";
 
-let counts = map.make::<string, int, string_hasher>();
-counts.set("apples", 3);
-counts.set("apples", 4);      # overwrite
-counts.get("apples");         # 4 (as int?)
-counts.get("pears");          # none
-counts.count();               # 1
+int main() {
+    let counts = map.make::<string, int, string_hasher>();
+    counts.set("apples", 3);
+    counts.set("pears", 5);
+
+    let ks = counts.keys();
+    let vs = counts.values();
+    for (let i = 0; i < ks.len(); i = i + 1) {
+        io.print(ks[i] + ": " + conv.int_to_string(vs[i]));
+    }
+    return 0;
+}
 ```
 
 ## hasher

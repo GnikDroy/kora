@@ -1,4 +1,10 @@
 import "std/io";
+import "std/conv";
+
+extern cint __kora_term_raw(enable: cint);
+extern cint __kora_term_read_key(timeout_ms: int64);
+extern cint __kora_term_cols();
+extern cint __kora_term_rows();
 
 string csi(code: string) {
     let s = "";
@@ -13,4 +19,48 @@ void clear() {
 
 void home() {
     io.write(csi("H"));
+}
+
+void move_to(row: int, col: int) {
+    io.write(csi(conv.int_to_string(row) + ";" + conv.int_to_string(col) + "H"));
+}
+
+void cursor(visible: bool) {
+    if (visible) {
+        io.write(csi("?25h"));
+    } else {
+        io.write(csi("?25l"));
+    }
+}
+
+bool raw(on: bool) {
+    let flag = 0;
+    if (on) {
+        flag = 1;
+    }
+    return __kora_term_raw(flag) == 0;
+}
+
+char? read_key(timeout_ms: int) {
+    let c = __kora_term_read_key(timeout_ms);
+    if (c < 0) {
+        return none;
+    }
+    return c as char;
+}
+
+int? cols() {
+    let c = __kora_term_cols();
+    if (c < 0) {
+        return none;
+    }
+    return c;
+}
+
+int? rows() {
+    let r = __kora_term_rows();
+    if (r < 0) {
+        return none;
+    }
+    return r;
 }

@@ -11,6 +11,7 @@
 #include "array.h"
 #include "net.h"
 #include "platform.h"
+#include "term.h"
 #include "threads.h"
 
 extern int64_t __kora_main(void);

@@ -77,11 +77,15 @@ fn run(source: &str) -> (String, String, i32) {
 }
 
 fn run_native_only(source: &str) -> (String, String, i32) {
+    run_native_only_stdin(source, b"")
+}
+
+fn run_native_only_stdin(source: &str, stdin: &[u8]) -> (String, String, i32) {
     let dir = temp_dir();
     let program = frontend(&dir, &[("main.kora", source)]);
     let binary = dir.join("main");
     kora_compiler::backend::native(&program, &binary, "2", &[]).expect("build");
-    let out = exec(&mut Command::new(&binary), b"");
+    let out = exec(&mut Command::new(&binary), stdin);
     std::fs::remove_dir_all(&dir).ok();
     out
 }
@@ -1170,6 +1174,31 @@ fn test_clear_sleep_random() {
     assert_eq!(stdout, "\x1b[2J\x1b[Hfresh\n");
     assert_eq!(code, 7);
     assert!(start.elapsed() >= std::time::Duration::from_millis(40));
+}
+
+#[test]
+fn test_std_term_raw_mode_and_key_reads() {
+    let (_, stderr, code) = run_native_only_stdin(
+        r#"
+            import "std/term";
+            int main() {
+                if (term.raw(true)) { return 1; }
+                if (!term.raw(false)) { return 2; }
+                let a = term.read_key(5000);
+                if (a == none) { return 3; }
+                if (a! != 'a') { return 4; }
+                let b = term.read_key(5000);
+                if (b == none) { return 5; }
+                if (b! != 'b') { return 6; }
+                if (term.read_key(50) != none) { return 7; }
+                if (term.cols() != none) { return 8; }
+                if (term.rows() != none) { return 9; }
+                return 42;
+            }
+        "#,
+        b"ab",
+    );
+    assert_eq!(code, 42, "{stderr}");
 }
 
 #[test]
@@ -2780,6 +2809,66 @@ fn test_std_collections_set() {
             let c = 0;
             while (i < 100) { if (s.has(i)) { c = c + 1; } i = i + 1; }
             if (c != 49) { return 8; }
+            return 42;
+        }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_std_collections_map_iteration() {
+    let (_, _, code) = run(r#"
+        import "std/collections/map";
+        import "std/collections/hasher";
+        int main() {
+            let m = map.make::<int, int, int_hasher>();
+            let i = 0;
+            while (i < 40) { m.set(i, i * 3); i = i + 1; }
+            m.remove(5);
+            m.remove(20);
+            let ks = m.keys();
+            let vs = m.values();
+            if (ks.len() != m.count()) { return 1; }
+            if (vs.len() != m.count()) { return 2; }
+            # keys() and values() walk in the same order
+            i = 0;
+            while (i < ks.len()) {
+                let got = m.get(ks[i]);
+                if (got == none) { return 3; }
+                if (got! != vs[i]) { return 4; }
+                i = i + 1;
+            }
+            let sum = 0;
+            for k | ks { sum = sum + k; }
+            if (sum != 780 - 5 - 20) { return 5; }
+            sum = 0;
+            for v | vs { sum = sum + v; }
+            if (sum != (780 - 5 - 20) * 3) { return 6; }
+            return 42;
+        }
+    "#);
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn test_std_collections_set_iteration() {
+    let (_, _, code) = run(r#"
+        import "std/collections/set";
+        import "std/collections/hasher";
+        int main() {
+            let s = set.make::<int, int_hasher>();
+            let i = 0;
+            while (i < 30) { s.add(i); i = i + 1; }
+            s.remove(7);
+            s.remove(19);
+            let xs = s.items();
+            if (xs.len() != s.count()) { return 1; }
+            let sum = 0;
+            for x | xs { sum = sum + x; }
+            if (sum != 435 - 7 - 19) { return 2; }
+            for x | xs {
+                if (!s.has(x)) { return 3; }
+            }
             return 42;
         }
     "#);

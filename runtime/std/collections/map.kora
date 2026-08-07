@@ -1,7 +1,7 @@
 struct map<K, V, H> {
     hasher: H,
-    keys: [K],
-    values: [V],
+    stored_keys: [K],
+    stored_values: [V],
     slots: [int],
     size: int,
     used: int,
@@ -10,8 +10,8 @@ struct map<K, V, H> {
 map<K, V, H> make<K, V, H>() {
     return new map<K, V, H>{
         hasher: new H,
-        keys: [],
-        values: [],
+        stored_keys: [],
+        stored_values: [],
         slots: new int[8],
         size: 0,
         used: 0,
@@ -37,8 +37,8 @@ impl map<K, V, H> {
         let i = self.slot(key);
         let tomb = -1;
         while (self.slots[i] != 0) {
-            if (self.slots[i] > 0 && self.keys[self.slots[i] - 1] == key) {
-                self.values[self.slots[i] - 1] = value;
+            if (self.slots[i] > 0 && self.stored_keys[self.slots[i] - 1] == key) {
+                self.stored_values[self.slots[i] - 1] = value;
                 return;
             }
             if (self.slots[i] == -1 && tomb < 0) {
@@ -49,9 +49,9 @@ impl map<K, V, H> {
                 i = 0;
             }
         }
-        let id = self.keys.len();
-        self.keys.push(key);
-        self.values.push(value);
+        let id = self.stored_keys.len();
+        self.stored_keys.push(key);
+        self.stored_values.push(value);
         if (tomb >= 0) {
             i = tomb;
         } else {
@@ -62,11 +62,11 @@ impl map<K, V, H> {
     }
 
     void grow(self) {
-        let old_keys = self.keys;
-        let old_values = self.values;
+        let old_keys = self.stored_keys;
+        let old_values = self.stored_values;
         let old_slots = self.slots;
-        self.keys = [];
-        self.values = [];
+        self.stored_keys = [];
+        self.stored_values = [];
         self.slots = new int[old_slots.len() * 2];
         self.size = 0;
         self.used = 0;
@@ -90,7 +90,7 @@ impl map<K, V, H> {
         let cap = self.slots.len();
         let i = self.slot(key);
         while (self.slots[i] != 0) {
-            if (self.slots[i] > 0 && self.keys[self.slots[i] - 1] == key) {
+            if (self.slots[i] > 0 && self.stored_keys[self.slots[i] - 1] == key) {
                 return self.slots[i] - 1;
             }
             i = i + 1;
@@ -110,14 +110,14 @@ impl map<K, V, H> {
         if (id == none) {
             return none;
         }
-        return self.values[id!];
+        return self.stored_values[id!];
     }
 
     bool remove(self, key: K) {
         let cap = self.slots.len();
         let i = self.slot(key);
         while (self.slots[i] != 0) {
-            if (self.slots[i] > 0 && self.keys[self.slots[i] - 1] == key) {
+            if (self.slots[i] > 0 && self.stored_keys[self.slots[i] - 1] == key) {
                 self.slots[i] = -1;
                 self.size = self.size - 1;
                 return true;
@@ -128,5 +128,29 @@ impl map<K, V, H> {
             }
         }
         return false;
+    }
+
+    [K] keys(self) {
+        let out: [K] = [];
+        let i = 0;
+        while (i < self.slots.len()) {
+            if (self.slots[i] > 0) {
+                out.push(self.stored_keys[self.slots[i] - 1]);
+            }
+            i = i + 1;
+        }
+        return out;
+    }
+
+    [V] values(self) {
+        let out: [V] = [];
+        let i = 0;
+        while (i < self.slots.len()) {
+            if (self.slots[i] > 0) {
+                out.push(self.stored_values[self.slots[i] - 1]);
+            }
+            i = i + 1;
+        }
+        return out;
     }
 }

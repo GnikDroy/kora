@@ -24,7 +24,7 @@ import "std/math" m;    # renamed: m.abs(...)
 | [std/iter](../std/iter/) | map / filter / reduce over arrays | everywhere |
 | [std/algorithm](../std/algorithm/) | Generic sorting and binary search | everywhere |
 | [std/collections](../std/collections/) | Stack, queue, list, set, and map | everywhere |
-| [std/term](../std/term/) | ANSI terminal control | everywhere |
+| [std/term](../std/term/) | Terminal control, raw mode, key input | everywhere (raw input native) |
 | [std/fs](../std/fs/) | Files and directories | native (files also on Node) |
 | [std/env](../std/env/) | Environment variables and command-line args | native (`get` also on Node) |
 | [std/proc](../std/proc/) | Running commands, exiting | native (`run`, `exit` also on Node) |
