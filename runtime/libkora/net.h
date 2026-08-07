@@ -2,6 +2,7 @@
 #define KORA_NET_H
 
 #include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -43,8 +44,8 @@ typedef struct {
   socklen_t len;
 } kora_addr;
 
-static long long kora_net_wrap(kora_sock s) {
-  return s == KORA_BADSOCK ? -1 : (long long)s;
+static int64_t kora_net_wrap(kora_sock s) {
+  return s == KORA_BADSOCK ? -1 : (int64_t)s;
 }
 
 static kora_addr *kora_addr_alloc(void) {
@@ -160,48 +161,48 @@ int __kora_net_addr_family(void *addr) {
   return a->ss.ss_family == AF_INET6 ? 6 : 4;
 }
 
-long long __kora_net_socket(int domain, int type) {
+int64_t __kora_net_socket(int domain, int type) {
   return kora_net_wrap(socket(kora_domain(domain), kora_socktype(type), 0));
 }
 
-int __kora_net_connect(long long sock, void *addr) {
+int __kora_net_connect(int64_t sock, void *addr) {
   kora_addr *a = (kora_addr *)addr;
   return connect((kora_sock)sock, (struct sockaddr *)&a->ss, a->len) == 0 ? 0
                                                                           : -1;
 }
 
-int __kora_net_bind(long long sock, void *addr) {
+int __kora_net_bind(int64_t sock, void *addr) {
   kora_addr *a = (kora_addr *)addr;
   return bind((kora_sock)sock, (struct sockaddr *)&a->ss, a->len) == 0 ? 0 : -1;
 }
 
-int __kora_net_listen(long long sock, int backlog) {
+int __kora_net_listen(int64_t sock, int backlog) {
   return listen((kora_sock)sock, backlog) == 0 ? 0 : -1;
 }
 
-long long __kora_net_accept(long long sock) {
+int64_t __kora_net_accept(int64_t sock) {
   return kora_net_wrap(accept((kora_sock)sock, NULL, NULL));
 }
 
-long long __kora_net_send(long long sock, const char *buf, long long len) {
+int64_t __kora_net_send(int64_t sock, const char *buf, int64_t len) {
 #ifdef _WIN32
   int n = send((kora_sock)sock, buf, (int)len, 0);
 #else
   ssize_t n = send((kora_sock)sock, buf, (size_t)len, 0);
 #endif
-  return n < 0 ? -1 : (long long)n;
+  return n < 0 ? -1 : (int64_t)n;
 }
 
-long long __kora_net_recv(long long sock, char *buf, long long len) {
+int64_t __kora_net_recv(int64_t sock, char *buf, int64_t len) {
 #ifdef _WIN32
   int n = recv((kora_sock)sock, buf, (int)len, 0);
 #else
   ssize_t n = recv((kora_sock)sock, buf, (size_t)len, 0);
 #endif
-  return n < 0 ? -1 : (long long)n;
+  return n < 0 ? -1 : (int64_t)n;
 }
 
-long long __kora_net_sendto(long long sock, const char *buf, long long len,
+int64_t __kora_net_sendto(int64_t sock, const char *buf, int64_t len,
                             void *addr) {
   kora_addr *a = (kora_addr *)addr;
 #ifdef _WIN32
@@ -211,10 +212,10 @@ long long __kora_net_sendto(long long sock, const char *buf, long long len,
   ssize_t n = sendto((kora_sock)sock, buf, (size_t)len, 0,
                      (struct sockaddr *)&a->ss, a->len);
 #endif
-  return n < 0 ? -1 : (long long)n;
+  return n < 0 ? -1 : (int64_t)n;
 }
 
-long long __kora_net_recvfrom(long long sock, char *buf, long long len,
+int64_t __kora_net_recvfrom(int64_t sock, char *buf, int64_t len,
                               void *addr) {
   kora_addr *a = (kora_addr *)addr;
   a->len = sizeof(a->ss);
@@ -225,10 +226,10 @@ long long __kora_net_recvfrom(long long sock, char *buf, long long len,
   ssize_t n = recvfrom((kora_sock)sock, buf, (size_t)len, 0,
                        (struct sockaddr *)&a->ss, &a->len);
 #endif
-  return n < 0 ? -1 : (long long)n;
+  return n < 0 ? -1 : (int64_t)n;
 }
 
-int __kora_net_local(long long sock, void *addr) {
+int __kora_net_local(int64_t sock, void *addr) {
   kora_addr *a = (kora_addr *)addr;
   a->len = sizeof(a->ss);
   return getsockname((kora_sock)sock, (struct sockaddr *)&a->ss, &a->len) == 0
@@ -236,7 +237,7 @@ int __kora_net_local(long long sock, void *addr) {
              : -1;
 }
 
-int __kora_net_peer(long long sock, void *addr) {
+int __kora_net_peer(int64_t sock, void *addr) {
   kora_addr *a = (kora_addr *)addr;
   a->len = sizeof(a->ss);
   return getpeername((kora_sock)sock, (struct sockaddr *)&a->ss, &a->len) == 0
@@ -244,7 +245,7 @@ int __kora_net_peer(long long sock, void *addr) {
              : -1;
 }
 
-int __kora_net_set_blocking(long long sock, int blocking) {
+int __kora_net_set_blocking(int64_t sock, int blocking) {
 #ifdef _WIN32
   u_long mode = blocking ? 0 : 1;
   return ioctlsocket((kora_sock)sock, FIONBIO, &mode) == 0 ? 0 : -1;
@@ -258,11 +259,11 @@ int __kora_net_set_blocking(long long sock, int blocking) {
 #endif
 }
 
-int __kora_net_set_option(long long sock, int option, int value) {
+int __kora_net_set_option(int64_t sock, int option, int value) {
   return kora_setopt((kora_sock)sock, option, value);
 }
 
-int __kora_net_set_timeout(long long sock, int ms) {
+int __kora_net_set_timeout(int64_t sock, int ms) {
 #ifdef _WIN32
   DWORD tv = (DWORD)(ms < 0 ? 0 : ms);
   int ok = setsockopt((kora_sock)sock, SOL_SOCKET, SO_RCVTIMEO,
@@ -281,11 +282,11 @@ int __kora_net_set_timeout(long long sock, int ms) {
   return ok ? 0 : -1;
 }
 
-int __kora_net_shutdown(long long sock, int how) {
+int __kora_net_shutdown(int64_t sock, int how) {
   return shutdown((kora_sock)sock, how);
 }
 
-int __kora_net_close(long long sock) {
+int __kora_net_close(int64_t sock) {
   kora_closesock((kora_sock)sock);
   return 0;
 }

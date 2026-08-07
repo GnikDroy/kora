@@ -1,0 +1,41 @@
+import "std/net";
+import "std/io";
+import "std/env";
+
+# httpsget: fetch https://<domain>/ and print the response to stdout.
+# The server certificate is verified against the system trust store.
+
+int main() {
+    let argv = env.args();
+    if (argv.len() < 2) {
+        io.print("usage: httpsget <domain>");
+        return 1;
+    }
+    let host = argv[1];
+
+    let opened = net.tls_connect(host, 443);
+    if (opened == none) {
+        io.print("could not establish a tls connection to " + host);
+        return 1;
+    }
+    let sock = opened!;
+
+    let request = "GET / HTTP/1.0\r\nHost: " + host + "\r\nConnection: close\r\n\r\n";
+    if (!sock.send_all(request)) {
+        io.print("send failed");
+        sock.close();
+        return 1;
+    }
+
+    let chunk = sock.recv(4096);
+    while (chunk != none) {
+        let data = chunk!;
+        if (data.len() == 0) {
+            break;
+        }
+        io.write(data);
+        chunk = sock.recv(4096);
+    }
+    sock.close();
+    return 0;
+}

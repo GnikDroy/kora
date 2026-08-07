@@ -23,6 +23,22 @@ extern cint __kora_net_set_timeout(sock: int64, ms: cint);
 extern cint __kora_net_shutdown(sock: int64, how: cint);
 extern cint __kora_net_close(sock: int64);
 
+extern opaque? __kora_tls_connect(fd: int64, host: cstring, insecure: cint);
+extern int64 __kora_tls_send(h: opaque, buf: cstring, n: int64);
+extern int64 __kora_tls_recv(h: opaque, buf: cstring, n: int64);
+extern void __kora_tls_close(h: opaque);
+
+extern opaque? __kora_tls_config_new(is_server: cint);
+extern cint __kora_tls_config_own_cert(cfg: opaque, cert_pem: cstring, key_pem: cstring);
+extern cint __kora_tls_config_ca(cfg: opaque, ca_pem: cstring);
+extern cint __kora_tls_config_alpn(cfg: opaque, protos: cstring);
+extern cint __kora_tls_config_verify(cfg: opaque, mode: cint);
+extern opaque? __kora_tls_handshake(cfg: opaque, fd: int64, host: cstring);
+extern int64 __kora_tls_verify_result(h: opaque);
+extern int64 __kora_tls_peer_cert_der(h: opaque, out: cstring, cap: int64);
+extern cstring __kora_tls_version(h: opaque);
+extern cstring? __kora_tls_alpn(h: opaque);
+
 struct Addr {
     handle: opaque,
 }
@@ -258,4 +274,170 @@ Socket? bind_udp(host: string, port: int) {
         return none;
     }
     return sock;
+}
+
+struct TlsSocket {
+    handle: opaque,
+    fd: int,
+}
+
+impl TlsSocket {
+    bool verified(self) {
+        return __kora_tls_verify_result(self.handle) == 0;
+    }
+
+    string version(self) {
+        return __kora_tls_version(self.handle);
+    }
+
+    string? alpn(self) {
+        return __kora_tls_alpn(self.handle);
+    }
+
+    string? peer_cert(self) {
+        let n = __kora_tls_peer_cert_der(self.handle, "", 0);
+        if (n < 0) {
+            return none;
+        }
+        let buf = new char[n];
+        __kora_tls_peer_cert_der(self.handle, buf, n);
+        return buf;
+    }
+
+    int send(self, data: string) {
+        return __kora_tls_send(self.handle, data, data.len());
+    }
+
+    bool send_all(self, data: string) {
+        let sent = 0;
+        while (sent < data.len()) {
+            let chunk = data.slice(sent, data.len());
+            let n = __kora_tls_send(self.handle, chunk, chunk.len());
+            if (n < 0) {
+                return false;
+            }
+            sent = sent + n;
+        }
+        return true;
+    }
+
+    string? recv(self, max: int) {
+        let buf = new char[max];
+        let n = __kora_tls_recv(self.handle, buf, max);
+        if (n < 0) {
+            return none;
+        }
+        return buf.slice(0, n);
+    }
+
+    void close(self) {
+        __kora_tls_close(self.handle);
+        __kora_net_close(self.fd);
+    }
+}
+
+TlsSocket? tls_client(sock: Socket, host: string) {
+    let handle = __kora_tls_connect(sock.fd, host, 0);
+    if (handle == none) {
+        return none;
+    }
+    return new TlsSocket{ handle: handle!, fd: sock.fd };
+}
+
+TlsSocket? tls_client_insecure(sock: Socket, host: string) {
+    let handle = __kora_tls_connect(sock.fd, host, 1);
+    if (handle == none) {
+        return none;
+    }
+    return new TlsSocket{ handle: handle!, fd: sock.fd };
+}
+
+TlsSocket? tls_connect(host: string, port: int) {
+    let opened = connect(host, port);
+    if (opened == none) {
+        return none;
+    }
+    let sock = opened!;
+    let upgraded = tls_client(sock, host);
+    if (upgraded == none) {
+        sock.close();
+        return none;
+    }
+    return upgraded;
+}
+
+struct TlsConfig {
+    handle: opaque,
+}
+
+impl TlsConfig {
+    bool own_cert(self, cert_pem: string, key_pem: string) {
+        return __kora_tls_config_own_cert(self.handle, cert_pem, key_pem) == 0;
+    }
+
+    bool ca(self, ca_pem: string) {
+        return __kora_tls_config_ca(self.handle, ca_pem) == 0;
+    }
+
+    bool alpn(self, protos: [string]) {
+        let joined = "";
+        let i = 0;
+        while (i < protos.len()) {
+            if (i > 0) {
+                joined.push(',');
+            }
+            joined.extend(protos[i]);
+            i = i + 1;
+        }
+        return __kora_tls_config_alpn(self.handle, joined) == 0;
+    }
+
+    bool verify(self, on: bool) {
+        let mode = 0;
+        if (on) {
+            mode = 1;
+        }
+        return __kora_tls_config_verify(self.handle, mode) == 0;
+    }
+
+    TlsSocket? handshake(self, sock: Socket, host: string) {
+        let handle = __kora_tls_handshake(self.handle, sock.fd, host);
+        if (handle == none) {
+            return none;
+        }
+        return new TlsSocket{ handle: handle!, fd: sock.fd };
+    }
+}
+
+TlsConfig? tls_config() {
+    let handle = __kora_tls_config_new(0);
+    if (handle == none) {
+        return none;
+    }
+    return new TlsConfig{ handle: handle! };
+}
+
+TlsConfig? tls_server_config(cert_pem: string, key_pem: string) {
+    let handle = __kora_tls_config_new(1);
+    if (handle == none) {
+        return none;
+    }
+    let config = new TlsConfig{ handle: handle! };
+    if (!config.own_cert(cert_pem, key_pem)) {
+        return none;
+    }
+    return config;
+}
+
+TlsSocket? tls_accept(listener: Socket, config: TlsConfig) {
+    let conn = listener.accept();
+    if (conn == none) {
+        return none;
+    }
+    let upgraded = config.handshake(conn!, "");
+    if (upgraded == none) {
+        conn!.close();
+        return none;
+    }
+    return upgraded;
 }

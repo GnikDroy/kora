@@ -1,17 +1,19 @@
 ---
 title: std/net
-description: TCP and UDP sockets.
+description: TCP and UDP sockets, TLS clients and servers.
 ---
 
-TCP and UDP sockets. Import with `import "std/net";`. Native backend only.
+TCP and UDP sockets, and TLS on both sides of the connection. Import with
+`import "std/net";`. Native backend only.
 
 Calls block by default. Failure is reported as `none`, `false`, or a negative
 byte count, never as an exception. Sockets are plain OS handles: call `close`
 when you are done with one.
 
-The module defines three types: `Socket` (a TCP or UDP socket), `Addr` (a
-resolved network address), and `Datagram` (bytes received over UDP together
-with their sender).
+The module defines five types: `Socket` (a TCP or UDP socket), `TlsSocket` (a
+TLS connection over TCP), `TlsConfig` (a reusable TLS setup: role,
+certificates, ALPN, verification policy), `Addr` (a resolved network address),
+and `Datagram` (bytes received over UDP together with their sender).
 
 ## Connecting and listening
 
@@ -169,6 +171,116 @@ void close(self)                         # release the OS handle
 
 All the setters return `true` on success.
 
+## TLS
+
+The native runtime bundles TLS clients and servers (Mbed TLS 3.6). By default,
+certificates are verified against the system trust store. This includes the Windows
+certificate store, or the standard CA bundle locations on Linux and macOS.
+Point the `KORA_CA_BUNDLE` environment variable at a PEM file to supply your
+own roots. Set `KORA_TLS_DEBUG=1` to print handshake failures to stderr.
+
+For the common client case, use `tls_connect` or `tls_client` below and skip
+the rest. Everything else (servers, mutual TLS, ALPN, custom roots) goes
+through a `TlsConfig`.
+
+### `tls_connect`
+
+```ruby
+TlsSocket? tls_connect(host: string, port: int)
+```
+
+Resolves `host`, connects over TCP, and performs a TLS handshake, verifying
+the server's certificate and hostname. Returns `none` if any step fails,
+including verification.
+
+```ruby
+let sock = net.tls_connect("example.com", 443);
+```
+
+### `tls_client`
+
+```ruby
+TlsSocket? tls_client(sock: Socket, host: string)
+```
+
+Upgrades an already-connected TCP socket to TLS, verifying the certificate
+against `host`. Use this when you need socket options (like timeouts) set
+before the handshake. The returned `TlsSocket` owns the connection. Do not
+read or write `sock` directly afterwards.
+
+### `tls_client_insecure`
+
+```ruby
+TlsSocket? tls_client_insecure(sock: Socket, host: string)
+```
+
+Like `tls_client`, but skips certificate verification. The connection is
+encrypted yet you have no proof of who is on the other end. Only for local
+endpoints and self-signed setups.
+
+### `tls_config`
+
+```ruby
+TlsConfig? tls_config()
+```
+
+A client configuration: verification on, system roots loaded. Adjust it with
+the methods below, then upgrade connected sockets with `handshake`. One config
+serves any number of connections and is safe to share across threads.
+
+### `tls_server_config`
+
+```ruby
+TlsConfig? tls_server_config(cert_pem: string, key_pem: string)
+```
+
+A server configuration presenting the given certificate chain and private key,
+both PEM text. Returns `none` if either fails to parse. By default it does not
+request client certificates. See `verify` for mutual TLS.
+
+### `tls_accept`
+
+```ruby
+TlsSocket? tls_accept(listener: Socket, config: TlsConfig)
+```
+
+Waits for the next TCP connection on a listening socket and performs the
+server side of the handshake. Returns `none` on error, with the raw connection
+closed.
+
+### Methods on `TlsConfig`
+
+```ruby
+bool own_cert(self, cert_pem: string, key_pem: string)  # certificate to present;
+                                                        # on a client config this is mutual TLS
+bool ca(self, ca_pem: string)             # trust these roots instead of the system's
+bool alpn(self, protos: [string])         # offer application protocols, e.g. ["h2", "http/1.1"]
+bool verify(self, on: bool)               # require and check the peer's certificate
+TlsSocket? handshake(self, sock: Socket, host: string)  # upgrade sock; "" as host on servers
+```
+
+Configure first, then hand out sessions: `alpn` can be set once, and a config
+should not be modified while connections made from it are live. On a server
+config, `verify(true)` plus `ca(...)` demands and checks client certificates,
+which is mutual TLS.
+
+### Methods on `TlsSocket`
+
+```ruby
+int     send(self, data: string)       # bytes written, or -1
+bool    send_all(self, data: string)   # write every byte; false on error
+string? recv(self, max: int)           # up to max bytes; "" at clean close, none on error
+void    close(self)                    # send close-notify and close the socket
+
+bool    verified(self)                 # the peer's certificate chain checked out
+string  version(self)                  # negotiated protocol, e.g. "TLSv1.3"
+string? alpn(self)                     # negotiated ALPN protocol, or none
+string? peer_cert(self)                # the peer's certificate as DER bytes, or none
+```
+
+The I/O methods have the same shapes as their `Socket` counterparts, carried
+over TLS.
+
 ## Methods on `Addr`
 
 ```ruby
@@ -177,23 +289,24 @@ int    port(self)
 int    family(self)   # 4 for IPv4, 6 for IPv6
 ```
 
-## Example: TCP client
+## Example: HTTPS client
 
-An HTTP GET, start to finish:
+An HTTPS GET, start to finish. For plain HTTP, swap `net.tls_connect(host, 443)`
+for `net.connect(host, 80)`. Everything else is identical.
 
 ```ruby
 import "std/net";
 import "std/io";
 
 int main() {
-    let opened = net.connect("example.com", 80);
+    let opened = net.tls_connect("example.com", 443);
     if (opened == none) {
         io.print("could not connect");
         return 1;
     }
     let sock = opened!;
 
-    let request = "GET / HTTP/1.0\r\nHost: example.com\r\n\r\n";
+    let request = "GET / HTTP/1.0\r\nHost: example.com\r\nConnection: close\r\n\r\n";
     if (!sock.send_all(request)) {
         sock.close();
         return 1;
@@ -233,6 +346,54 @@ int main() {
     }
     return 0;
 }
+```
+
+## Example: TLS echo server
+
+The same server behind TLS. The certificate and key are PEM files, for local
+testing generated with
+`openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -keyout server.key -out server.crt -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost"`.
+
+```ruby
+import "std/net";
+import "std/io";
+import "std/fs";
+
+int main() {
+    let cert = fs.open("server.crt", "r")!.read_all();
+    let key = fs.open("server.key", "r")!.read_all();
+    let made = net.tls_server_config(cert, key);
+    if (made == none) {
+        io.print("bad certificate or key");
+        return 1;
+    }
+    let config = made!;
+
+    let server = net.listen("0.0.0.0", 8443, 16);
+    if (server == none) {
+        io.print("could not listen on 8443");
+        return 1;
+    }
+    while (true) {
+        let conn = net.tls_accept(server!, config);
+        if (conn == none) { continue; }
+        let c = conn!;
+        let data = c.recv(1024);
+        if (data != none) {
+            c.send_all(data!);
+        }
+        c.close();
+    }
+    return 0;
+}
+```
+
+A client connects with its own roots pointed at the server's certificate:
+
+```ruby
+let config = net.tls_config()!;
+config.ca(cert_pem);                       # trust this server's cert
+let sock = config.handshake(net.connect("127.0.0.1", 8443)!, "localhost");
 ```
 
 ## Example: UDP

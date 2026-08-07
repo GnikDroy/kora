@@ -4,6 +4,7 @@ fn main() {
     }
     println!("cargo:rerun-if-changed=runtime/libkora");
     let msvc = std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc");
+    let windows = std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows");
 
     let mut build = cc::Build::new();
     build
@@ -18,6 +19,26 @@ fn main() {
         .flag_if_supported("-mmacosx-version-min=11.0")
         .warnings(false)
         .cargo_metadata(false);
+
+    // Mbed TLS with threading enabled
+    let mut tls_sources: Vec<_> = std::fs::read_dir("runtime/libkora/mbedtls/library")
+        .expect("vendored mbedtls sources")
+        .filter_map(|e| {
+            let path = e.unwrap().path();
+            (path.extension().and_then(|x| x.to_str()) == Some("c")).then_some(path)
+        })
+        .collect();
+    tls_sources.sort();
+    build
+        .files(tls_sources)
+        .include("runtime/libkora")
+        .include("runtime/libkora/mbedtls/include")
+        .include("runtime/libkora/mbedtls/library")
+        .define("MBEDTLS_THREADING_C", None)
+        .define(
+            if windows { "MBEDTLS_THREADING_ALT" } else { "MBEDTLS_THREADING_PTHREAD" },
+            None,
+        );
 
     if msvc {
         build.compiler("clang-cl").flag_if_supported("/Gy");

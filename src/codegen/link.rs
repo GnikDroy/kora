@@ -62,7 +62,7 @@ fn link_gnu(
         .arg("-pthread")
         .args(link_args);
     if cfg!(target_os = "windows") {
-        cmd.arg("-lws2_32");
+        cmd.arg("-lws2_32").arg("-lbcrypt").arg("-lcrypt32");
     }
     cmd.arg(dead_strip).arg("-o").arg(output);
     cmd.status().map_err(LinkErr::Io)
@@ -80,6 +80,8 @@ fn link_msvc(
         .arg(runtime)
         .arg("ws2_32.lib")
         .arg("user32.lib")
+        .arg("bcrypt.lib")
+        .arg("crypt32.lib")
         .args(link_args)
         .arg(format!("/Fe:{}", output.display()))
         .arg("/link")

@@ -1,1 +1,2 @@
 runtime/libkora/bdwgc/** linguist-vendored
+runtime/libkora/mbedtls/** linguist-vendored

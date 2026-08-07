@@ -329,6 +329,188 @@ fn test_native_udp_loopback() {
 }
 
 #[test]
+fn test_native_tls_mtls_loopback() {
+    let (stdout, stderr, code) = run_native_only(
+        r##"
+            import "std/net";
+            import "std/thread";
+            import "std/time";
+            import "std/io";
+
+            string server_cert() {
+                return ""
+                    + "-----BEGIN CERTIFICATE-----\n"
+                    + "MIIBkzCCATmgAwIBAgIUZTPhT5/3TxOss3JzYnqwyufG+IAwCgYIKoZIzj0EAwIw\n"
+                    + "FDESMBAGA1UEAwwJbG9jYWxob3N0MB4XDTI2MDgwNzEyMzE1MloXDTM2MDgwNDEy\n"
+                    + "MzE1MlowFDESMBAGA1UEAwwJbG9jYWxob3N0MFkwEwYHKoZIzj0CAQYIKoZIzj0D\n"
+                    + "AQcDQgAECOAxleUKNiaz5zwilEgP0DnBtJihFcFDItKx0+ePEpOHFXhVJf+Eg9RB\n"
+                    + "HIuMbvBQ09jj/3nRWRHNI3fHH7T4haNpMGcwHQYDVR0OBBYEFCy3KpfCw7ua1ZBc\n"
+                    + "Vx5MPaMtOvNMMB8GA1UdIwQYMBaAFCy3KpfCw7ua1ZBcVx5MPaMtOvNMMA8GA1Ud\n"
+                    + "EwEB/wQFMAMBAf8wFAYDVR0RBA0wC4IJbG9jYWxob3N0MAoGCCqGSM49BAMCA0gA\n"
+                    + "MEUCIQDCeDjTchn4KMISc7se3hC0YZxTqbjI055lopbQxxbpOAIgdox9Q81L2EkR\n"
+                    + "FC9pwdKoJ0VtC6UEfEdcdsIPPX5WTyk=\n"
+                    + "-----END CERTIFICATE-----\n";
+            }
+
+            string server_key() {
+                return ""
+                    + "-----BEGIN PRIVATE KEY-----\n"
+                    + "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg1bm0j/t+Ka8pc/05\n"
+                    + "vrAYWsQcdV5jb2cC7T9f81mTujGhRANCAAQI4DGV5Qo2JrPnPCKUSA/QOcG0mKEV\n"
+                    + "wUMi0rHT548Sk4cVeFUl/4SD1EEci4xu8FDT2OP/edFZEc0jd8cftPiF\n"
+                    + "-----END PRIVATE KEY-----\n";
+            }
+
+            string client_cert() {
+                return ""
+                    + "-----BEGIN CERTIFICATE-----\n"
+                    + "MIIBizCCATGgAwIBAgIUdJfe1s4SHzLPOO1RDbXkAtU1rwMwCgYIKoZIzj0EAwIw\n"
+                    + "GzEZMBcGA1UEAwwQa29yYS10ZXN0LWNsaWVudDAeFw0yNjA4MDcxMjMxNTJaFw0z\n"
+                    + "NjA4MDQxMjMxNTJaMBsxGTAXBgNVBAMMEGtvcmEtdGVzdC1jbGllbnQwWTATBgcq\n"
+                    + "hkjOPQIBBggqhkjOPQMBBwNCAATe9PkUrRLO7q/ge9mZv23OyxRnruvUh2P1JH7v\n"
+                    + "c2MRTsBezwX9+M6pkUhP1dT5OEEFnhsnLC/qr46xK3/e9fp2o1MwUTAdBgNVHQ4E\n"
+                    + "FgQUK9oAibDubwHA0oMFIzt6EkoU/QQwHwYDVR0jBBgwFoAUK9oAibDubwHA0oMF\n"
+                    + "Izt6EkoU/QQwDwYDVR0TAQH/BAUwAwEB/zAKBggqhkjOPQQDAgNIADBFAiEA30Rr\n"
+                    + "xtLR+F7TaavYy5eFINx7t6ER8PM4ZBbLg/nfD/QCIAnncsck6JUyGTRV5vdB90YC\n"
+                    + "nnI/vwiG47Qq6qQewUou\n"
+                    + "-----END CERTIFICATE-----\n";
+            }
+
+            string client_key() {
+                return ""
+                    + "-----BEGIN PRIVATE KEY-----\n"
+                    + "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgMLhnKIVmv3C1gAky\n"
+                    + "xJNFPU6sD/Abu5Kb4qpxsiCAr7ehRANCAATe9PkUrRLO7q/ge9mZv23OyxRnruvU\n"
+                    + "h2P1JH7vc2MRTsBezwX9+M6pkUhP1dT5OEEFnhsnLC/qr46xK3/e9fp2\n"
+                    + "-----END PRIVATE KEY-----\n";
+            }
+
+
+            struct Shared {
+                lock: Mutex,
+                port: int,
+                served: int,
+                server_alpn: string,
+                server_verified: bool,
+                failed: bool,
+            }
+
+            void serve(s: Shared) {
+                let opened = net.listen("127.0.0.1", 0, 4);
+                if (opened == none) {
+                    s.lock.lock(); s.failed = true; s.lock.unlock();
+                    return;
+                }
+                let listener = opened!;
+
+                let made = net.tls_server_config(server_cert(), server_key());
+                if (made == none) {
+                    s.lock.lock(); s.failed = true; s.lock.unlock();
+                    return;
+                }
+                let config = made!;
+                config.alpn(["echo/1", "h2"]);
+                config.ca(client_cert());   # demand and verify client certificates
+                config.verify(true);
+
+                s.lock.lock();
+                s.port = listener.local()!.port();
+                s.lock.unlock();
+
+                let round = 0;
+                while (round < 2) {
+                    let conn = net.tls_accept(listener, config);
+                    if (conn == none) {
+                        s.lock.lock(); s.failed = true; s.lock.unlock();
+                        return;
+                    }
+                    let sock = conn!;
+                    let data = sock.recv(256);
+                    if (data != none) {
+                        sock.send_all(data!);
+                    }
+                    s.lock.lock();
+                    s.served = s.served + 1;
+                    let negotiated = sock.alpn();
+                    if (negotiated != none) { s.server_alpn = negotiated!; }
+                    s.server_verified = sock.verified();
+                    s.lock.unlock();
+                    sock.close();
+                    round = round + 1;
+                }
+                listener.close();
+            }
+
+            int main() {
+                let s = new Shared{
+                    lock: thread.mutex()!,
+                    port: 0,
+                    served: 0,
+                    server_alpn: "",
+                    server_verified: false,
+                    failed: false,
+                };
+                let t = thread.spawn::<Shared>(serve, s)!;
+
+                let port = 0;
+                while (port == 0) {
+                    s.lock.lock();
+                    port = s.port;
+                    if (s.failed) { return 1; }
+                    s.lock.unlock();
+                    time.sleep(10);
+                }
+
+                # one client config reused for both connections
+                let made = net.tls_config();
+                if (made == none) { return 2; }
+                let config = made!;
+                if (!config.ca(server_cert())) { return 3; }
+                if (!config.own_cert(client_cert(), client_key())) { return 4; }
+                if (!config.alpn(["echo/1"])) { return 5; }
+
+                let round = 0;
+                while (round < 2) {
+                    let raw = net.connect("127.0.0.1", port);
+                    if (raw == none) { return 6; }
+                    let conn = config.handshake(raw!, "localhost");
+                    if (conn == none) { return 7; }
+                    let sock = conn!;
+
+                    if (!sock.send_all("hello over tls")) { return 8; }
+                    let back = sock.recv(256);
+                    if (back == none) { return 9; }
+                    if (back! != "hello over tls") { return 10; }
+
+                    if (!sock.verified()) { return 11; }
+                    let negotiated = sock.alpn();
+                    if (negotiated == none) { return 12; }
+                    if (negotiated! != "echo/1") { return 13; }
+                    let v = sock.version();
+                    if (v.len() < 5 || v.slice(0, 4) != "TLSv") { return 14; }
+                    let peer = sock.peer_cert();
+                    if (peer == none) { return 15; }
+                    if (peer!.len() < 100) { return 16; }
+
+                    sock.close();
+                    round = round + 1;
+                }
+
+                t.join();
+                if (s.failed) { return 17; }
+                if (s.served != 2) { return 18; }
+                if (s.server_alpn != "echo/1") { return 19; }
+                if (!s.server_verified) { return 20; }
+                io.print("mtls loopback ok");
+                return 42;
+            }
+        "##,
+    );
+    assert_eq!(code, 42, "{stderr}");
+    assert_eq!(stdout, "mtls loopback ok\n", "{stderr}");
+}
+
+#[test]
 fn test_native_computed_callback_is_rejected() {
     let errors = compile_fails(&[(
         "main.kora",

@@ -28,7 +28,7 @@ import "std/math" m;    # renamed: m.abs(...)
 | [std/fs](../std/fs/) | Files and directories | native (files also on Node) |
 | [std/env](../std/env/) | Environment variables and command-line args | native (`get` also on Node) |
 | [std/proc](../std/proc/) | Running commands, exiting | native (`run`, `exit` also on Node) |
-| [std/net](../std/net/) | TCP and UDP sockets | native |
+| [std/net](../std/net/) | TCP and UDP sockets, TLS clients and servers | native |
 | [std/thread](../std/thread/) | Threads, mutexes, condition variables | native |
 
 "Everywhere" means the native backend, Node, and the browser playground. The
