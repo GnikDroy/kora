@@ -76,6 +76,7 @@ impl<'ctx, 'a> CodeGen<'ctx, 'a> {
             Int8 | UInt8 | Bool | Char => self.context.i8_type().into(),
             Int16 | UInt16 => self.context.i16_type().into(),
             Int32 | UInt32 | CInt | CUInt => self.context.i32_type().into(),
+            CLong | CULong if cfg!(target_env = "msvc") => self.context.i32_type().into(),
             Int64 | UInt64 | CLong | CULong | CSize => self.context.i64_type().into(),
             Float32 => self.context.f32_type().into(),
             Float64 => self.context.f64_type().into(),
@@ -240,6 +241,13 @@ impl<'ctx, 'a> CodeGen<'ctx, 'a> {
                     .unwrap()
                     .into()
             }
+            CLong | CULong if cfg!(target_env = "msvc") => {
+                let target = self.extern_llvm_type(ty).into_int_type();
+                self.builder
+                    .build_int_truncate(value.into_int_value(), target, "trunc")
+                    .unwrap()
+                    .into()
+            }
             Bool => self
                 .builder
                 .build_int_z_extend(value.into_int_value(), self.context.i8_type(), "b")
@@ -296,7 +304,17 @@ impl<'ctx, 'a> CodeGen<'ctx, 'a> {
                 .build_int_s_extend(raw.into_int_value(), i64_type, "sext")
                 .unwrap()
                 .into(),
+            CLong if cfg!(target_env = "msvc") => self
+                .builder
+                .build_int_s_extend(raw.into_int_value(), i64_type, "sext")
+                .unwrap()
+                .into(),
             UInt8 | UInt16 | UInt32 | CUInt => self
+                .builder
+                .build_int_z_extend(raw.into_int_value(), i64_type, "zext")
+                .unwrap()
+                .into(),
+            CULong if cfg!(target_env = "msvc") => self
                 .builder
                 .build_int_z_extend(raw.into_int_value(), i64_type, "zext")
                 .unwrap()

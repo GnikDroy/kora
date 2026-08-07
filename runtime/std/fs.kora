@@ -9,9 +9,9 @@ extern cint __kora_chmod(path: cstring, mode: cuint);
 extern opaque? __kora_dir_open(path: cstring);
 extern cstring? __kora_dir_next(d: opaque);
 extern void __kora_dir_close(d: opaque);
-extern clong __kora_file_size(path: cstring);
+extern int64 __kora_file_size(path: cstring);
 extern cint __kora_is_dir(path: cstring);
-extern clong __kora_file_mtime(path: cstring);
+extern int64 __kora_file_mtime(path: cstring);
 
 struct File {
     handle: opaque,

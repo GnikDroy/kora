@@ -1,7 +1,10 @@
 #ifndef KORA_PLATFORM_H
 #define KORA_PLATFORM_H
 
-extern void *GC_malloc(long);
+#include <stddef.h>
+#include <stdint.h>
+
+extern void *GC_malloc(size_t);
 
 #ifdef _WIN32
 
@@ -14,13 +17,13 @@ extern void *GC_malloc(long);
 #include <sys/stat.h>
 #include <windows.h>
 
-void __kora_sleep_ms(long ms) {
+void __kora_sleep_ms(int64_t ms) {
   if (ms > 0) {
     Sleep((DWORD)ms);
   }
 }
 
-void __kora_write(const char *buf, long n) {
+void __kora_write(const char *buf, int64_t n) {
   _write(1, buf, (unsigned int)n);
 }
 
@@ -78,16 +81,16 @@ const char *__kora_dir_next(void *dp) {
 
 void __kora_dir_close(void *dp) { FindClose(((KoraDir *)dp)->handle); }
 
-long __kora_time_ns(void) {
+int64_t __kora_time_ns(void) {
   LARGE_INTEGER freq, count;
   QueryPerformanceFrequency(&freq);
   QueryPerformanceCounter(&count);
-  return (long)((count.QuadPart * 1000000000LL) / freq.QuadPart);
+  return (int64_t)((count.QuadPart * 1000000000LL) / freq.QuadPart);
 }
 
-long __kora_file_size(const char *p) {
+int64_t __kora_file_size(const char *p) {
   struct _stat64 st;
-  return _stat64(p, &st) == 0 ? (long)st.st_size : -1;
+  return _stat64(p, &st) == 0 ? (int64_t)st.st_size : -1;
 }
 
 int __kora_is_dir(const char *p) {
@@ -95,9 +98,9 @@ int __kora_is_dir(const char *p) {
   return (_stat64(p, &st) == 0 && (st.st_mode & _S_IFDIR)) ? 1 : 0;
 }
 
-long __kora_file_mtime(const char *p) {
+int64_t __kora_file_mtime(const char *p) {
   struct _stat64 st;
-  return _stat64(p, &st) == 0 ? (long)st.st_mtime : -1;
+  return _stat64(p, &st) == 0 ? (int64_t)st.st_mtime : -1;
 }
 
 #else
@@ -110,15 +113,15 @@ long __kora_file_mtime(const char *p) {
 #include <time.h>
 #include <unistd.h>
 
-void __kora_sleep_ms(long ms) {
+void __kora_sleep_ms(int64_t ms) {
   if (ms <= 0) {
     return;
   }
-  struct timespec duration = {ms / 1000, (ms % 1000) * 1000000L};
+  struct timespec duration = {(time_t)(ms / 1000), (long)((ms % 1000) * 1000000L)};
   nanosleep(&duration, NULL);
 }
 
-void __kora_write(const char *buf, long n) {
+void __kora_write(const char *buf, int64_t n) {
   (void)write(1, buf, (size_t)n);
 }
 
@@ -151,15 +154,15 @@ const char *__kora_dir_next(void *d) {
 
 void __kora_dir_close(void *d) { closedir((DIR *)d); }
 
-long __kora_time_ns(void) {
+int64_t __kora_time_ns(void) {
   struct timespec ts;
   clock_gettime(CLOCK_MONOTONIC, &ts);
-  return (long)ts.tv_sec * 1000000000L + (long)ts.tv_nsec;
+  return (int64_t)ts.tv_sec * 1000000000LL + (int64_t)ts.tv_nsec;
 }
 
-long __kora_file_size(const char *p) {
+int64_t __kora_file_size(const char *p) {
   struct stat st;
-  return stat(p, &st) == 0 ? (long)st.st_size : -1;
+  return stat(p, &st) == 0 ? (int64_t)st.st_size : -1;
 }
 
 int __kora_is_dir(const char *p) {
@@ -167,9 +170,9 @@ int __kora_is_dir(const char *p) {
   return (stat(p, &st) == 0 && S_ISDIR(st.st_mode)) ? 1 : 0;
 }
 
-long __kora_file_mtime(const char *p) {
+int64_t __kora_file_mtime(const char *p) {
   struct stat st;
-  return stat(p, &st) == 0 ? (long)st.st_mtime : -1;
+  return stat(p, &st) == 0 ? (int64_t)st.st_mtime : -1;
 }
 
 #endif

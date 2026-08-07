@@ -83,7 +83,11 @@ fn link_msvc(
         .args(link_args)
         .arg(format!("/Fe:{}", output.display()))
         .arg("/link")
-        .arg("/OPT:REF");
+        .arg("/OPT:REF")
+        .arg("/SUBSYSTEM:CONSOLE")
+        .arg("/DEFAULTLIB:msvcrt.lib")
+        .arg("/DEFAULTLIB:ucrt.lib")
+        .arg("/DEFAULTLIB:vcruntime.lib");
     cmd.status().map_err(LinkErr::Io)
 }
 

@@ -1,7 +1,7 @@
 import "std/libc";
 
-extern void __kora_sleep_ms(ms: clong);
-extern clong __kora_time_ns();
+extern void __kora_sleep_ms(ms: int64);
+extern int64 __kora_time_ns();
 
 void sleep(ms: int) {
     __kora_sleep_ms(ms);

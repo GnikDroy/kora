@@ -232,6 +232,7 @@ impl ExternType {
     pub fn has_identical_crepr(&self) -> bool {
         use ExternType::*;
         match self {
+            CLong | CULong if cfg!(target_env = "msvc") => false,
             Int64 | UInt64 | CLong | CULong | CSize | Float64 | Char | Opaque => true,
             Optional(inner) => matches!(**inner, Opaque),
             Function { .. } => true,

@@ -1,7 +1,9 @@
 #ifndef KORA_THREADS_H
 #define KORA_THREADS_H
 
-extern void *GC_malloc(long);
+#include <stddef.h>
+
+extern void *GC_malloc(size_t);
 
 #ifdef _WIN32
 

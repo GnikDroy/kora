@@ -1,13 +1,19 @@
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+
+#ifdef _WIN32
+#include <fcntl.h>
+#include <io.h>
+#endif
 
 #include "array.h"
 #include "net.h"
 #include "platform.h"
 #include "threads.h"
 
-extern long __kora_main(void);
+extern int64_t __kora_main(void);
 
 extern void GC_init(void);
 
@@ -24,6 +30,11 @@ const char *__kora_argv(int i) {
 }
 
 int main(int argc, char **argv) {
+#ifdef _WIN32
+  _setmode(_fileno(stdout), _O_BINARY);
+  _setmode(_fileno(stderr), _O_BINARY);
+  _setmode(_fileno(stdin), _O_BINARY);
+#endif
   GC_init();
   __kora_net_init();
   atexit(__kora_net_cleanup);

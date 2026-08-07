@@ -1,10 +1,11 @@
 #ifndef KORA_NET_H
 #define KORA_NET_H
 
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 
-extern void *GC_malloc(long);
+extern void *GC_malloc(size_t);
 
 #ifdef _WIN32
 
@@ -47,7 +48,7 @@ static long long kora_net_wrap(kora_sock s) {
 }
 
 static kora_addr *kora_addr_alloc(void) {
-  kora_addr *a = (kora_addr *)GC_malloc((long)sizeof(kora_addr));
+  kora_addr *a = (kora_addr *)GC_malloc(sizeof(kora_addr));
   if (a != NULL) {
     memset(a, 0, sizeof(*a));
     a->len = sizeof(a->ss);
