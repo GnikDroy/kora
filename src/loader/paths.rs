@@ -84,10 +84,7 @@ pub(super) fn resolve_path(importer: &Path, rel: &str) -> Option<PathBuf> {
         match component {
             Component::CurDir => {}
             Component::ParentDir => {
-                if out.pop().is_none() {
-                    // None when we try to escape root.
-                    return None;
-                }
+                out.pop()?;
             }
             other => out.push(other.as_os_str().to_string_lossy().into_owned()),
         }
