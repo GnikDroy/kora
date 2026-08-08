@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use super::*;
 use crate::frontend::CompiledProgram;
 use crate::parser as ast;
-use crate::semantic_analyzer::{ArrayMethod, SymbolId};
+use crate::semantic_analyzer::{ArrayMethod, ConstValue, SymbolId};
 
 pub(crate) fn lower(compiled: &CompiledProgram) -> Program {
     let lowering = Lowering {
@@ -348,6 +348,8 @@ impl<'a> Lowering<'a> {
                 let ty = self.ty_of(expr);
                 if let Some(&function) = self.function_ids.get(&symbol) {
                     Expression::new(ty, span, ExpressionKind::FnRef(function))
+                } else if let Some(value) = self.compiled.consts.get(&symbol).cloned() {
+                    self.lower_const(value, span)
                 } else {
                     let local = self.local_ids[&symbol];
                     Expression::new(ty, span, ExpressionKind::Local(local))
@@ -435,6 +437,11 @@ impl<'a> Lowering<'a> {
                 )
             }
             ast::Expression::Access(object, member) => {
+                if let Some(symbol) = self.compiled.symbols.symbol_id_of_use(expr.id)
+                    && let Some(value) = self.compiled.consts.get(&symbol).cloned()
+                {
+                    return self.lower_const(value, span);
+                }
                 let object = self.lower_expr(object);
                 let Type::Struct(struct_) = self.types[object.ty] else {
                     unreachable!("type checker rejects member access on non-structs");
@@ -589,6 +596,19 @@ impl<'a> Lowering<'a> {
                         right: Box::new(r),
                     },
                 )
+            }
+        }
+    }
+
+    fn lower_const(&mut self, value: ConstValue, span: ast::Span) -> Expression {
+        match value {
+            ConstValue::Int(v) => Expression::new(Types::INT, span, ExpressionKind::Int(v)),
+            ConstValue::Real(v) => Expression::new(Types::REAL, span, ExpressionKind::Real(v)),
+            ConstValue::Bool(v) => Expression::new(Types::BOOL, span, ExpressionKind::Bool(v)),
+            ConstValue::Char(v) => Expression::new(Types::CHAR, span, ExpressionKind::Char(v)),
+            ConstValue::Str(v) => {
+                let ty = self.types.intern(Type::Array(Types::CHAR));
+                Expression::new(ty, span, ExpressionKind::Str(v))
             }
         }
     }

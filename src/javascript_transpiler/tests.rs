@@ -29,6 +29,21 @@ fn test_rejects_int_literal_beyond_53_bits() {
 }
 
 #[test]
+fn test_rejects_folded_constant_beyond_53_bits() {
+    let map: HashMap<String, String> = [(
+        "main.kora".to_string(),
+        "let BIG = 3037000499 * 3037000499; int main() { return BIG % 2; }".to_string(),
+    )]
+    .into();
+    let compiled = crate::compile("main.kora", |p: &Path| {
+        p.to_str().and_then(|s| map.get(s)).cloned()
+    })
+    .expect("compile");
+    let err = super::transpile(compiled, HashSet::new()).unwrap_err();
+    assert!(err.contains("53-bit"), "{err}");
+}
+
+#[test]
 fn test_methods_emit_mangled_global_functions() {
     let js = transpile(
         r#"

@@ -50,6 +50,13 @@ byte-identical results.
 ║                                  │                                     ║
 ║                                  ▼                                     ║
 ║           ┌──────────────────────────────────────────────┐             ║
+║           │ Constant Evaluation                          │             ║
+║           │ src/semantic_analyzer/const_eval             │             ║
+║           │ fold module-level lets, declaration order    │             ║
+║           └──────────────────────────────────────────────┘             ║
+║                                  │                                     ║
+║                                  ▼                                     ║
+║           ┌──────────────────────────────────────────────┐             ║
 ║           │ Type Checker                                 │             ║
 ║           │ src/semantic_analyzer/type_checker           │             ║
 ║           │ infer & check types; resolve methods         │             ║
@@ -100,7 +107,7 @@ byte-identical results.
 ║  │ + runtime inclusion:       │    │ Linking                    │      ║
 ║  │ kora_node_runtime.js /     │    │ src/codegen::link          │      ║
 ║  │ kora_browser_runtime.js    │    │ + libkora.c runtime        │      ║
-║  └────────────────────────────┘    │ + Boehm GC  (bdwgc)        │      ║
+║  └────────────────────────────┘    │ + Boehm GC + mbedTLS       │      ║
 ║                 │                  └────────────────────────────┘      ║
 ║         ┌───────┴───────────┐                     │                    ║
 ║         ▼                   ▼                     ▼                    ║

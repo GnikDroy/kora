@@ -94,6 +94,14 @@ pub struct Module {
     pub generic_structs: Vec<Spanned<GenericStruct>>,
     pub generic_functions: Vec<Spanned<GenericFunction>>,
     pub generic_impls: Vec<Spanned<GenericImpl>>,
+    pub globals: Vec<Spanned<Global>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Global {
+    pub name: Spanned<String>,
+    pub typename: Option<Type>,
+    pub value: Spanned<Expression>,
 }
 
 #[derive(Debug, Clone)]

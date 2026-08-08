@@ -329,6 +329,200 @@ fn test_native_udp_loopback() {
 }
 
 #[test]
+fn test_module_level_constants() {
+    let (stdout, stderr, code) = run(r#"
+        import "std/io";
+
+        let GREETING = "hello";
+        let LIMIT = -5;
+        let RATE: real = 2.5;
+        let DEBUG = false;
+        let SEP = ':';
+
+        string label() {
+            let s = GREETING;
+            s.push(SEP);
+            return s;
+        }
+
+        int main() {
+            if (LIMIT != -5) { return 1; }
+            if (RATE * 2.0 != 5.0) { return 2; }
+            if (DEBUG) { return 3; }
+            if (GREETING.len() != 5) { return 4; }
+            if (label() != "hello:") { return 5; }
+            let LIMIT = 10;                    # locals shadow constants
+            if (LIMIT != 10) { return 6; }
+            io.print(GREETING);
+            return 42;
+        }
+    "#);
+    assert_eq!(code, 42, "{stderr}");
+    assert_eq!(stdout, "hello\n");
+}
+
+#[test]
+fn test_module_level_constant_references() {
+    let (stdout, stderr, code) = run(r#"
+        import "std/io";
+
+        let WIDTH = 640;
+        let COLUMNS = WIDTH;
+        let LIMIT: int = COLUMNS;
+        let TITLE = "kora";
+        let HEADER = TITLE;
+        let RATE = -2.5;
+        let FALLBACK = RATE;
+
+        int main() {
+            if (COLUMNS != 640) { return 1; }
+            if (LIMIT != 640) { return 2; }
+            if (HEADER != "kora") { return 3; }
+            if (FALLBACK != -2.5) { return 4; }
+            io.print(HEADER);
+            return 42;
+        }
+    "#);
+    assert_eq!(code, 42, "{stderr}");
+    assert_eq!(stdout, "kora\n");
+}
+
+#[test]
+fn test_module_level_constant_folding() {
+    let (stdout, stderr, code) = run(r#"
+        import "std/io";
+
+        let WIDTH = 640;
+        let HEIGHT = 480;
+        let AREA = WIDTH * HEIGHT;
+        let CENTER_X = WIDTH / 2 - 1;
+        let MASK = (1 << 10) - 1;
+        let MIXED = (255 & 240) | (3 ^ 1);
+        let HALF: real = WIDTH as real / 2.0;
+        let LETTER = 65 as char;
+        let IS_UPPER = LETTER >= 'A' && LETTER <= 'Z';
+        let NAME = "ko" + "ra";
+        let TAGGED = NAME + " v" + "1";
+        let BIG = WIDTH > HEIGHT;
+        let SIGNED = -WIDTH + 40;
+
+        int main() {
+            if (AREA != 307200) { return 1; }
+            if (CENTER_X != 319) { return 2; }
+            if (MASK != 1023) { return 3; }
+            if (MIXED != 242) { return 4; }
+            if (HALF != 320.0) { return 5; }
+            if (LETTER != 'A') { return 6; }
+            if (!IS_UPPER) { return 7; }
+            if (TAGGED != "kora v1") { return 8; }
+            if (!BIG) { return 9; }
+            if (SIGNED != -600) { return 10; }
+            io.print(TAGGED);
+            return 42;
+        }
+    "#);
+    assert_eq!(code, 42, "{stderr}");
+    assert_eq!(stdout, "kora v1\n");
+}
+
+#[test]
+fn test_module_level_constants_cross_module() {
+    let (_, stderr, code) = run_program(&[
+        (
+            "main.kora",
+            r#"
+            import "config.kora";
+            int main() {
+                if (config.WIDTH != 640) { return 1; }
+                if (config.TITLE != "kora") { return 2; }
+                if (config.area() != 640 * 480) { return 3; }
+                let sizes = [config.WIDTH, config.HEIGHT];
+                if (sizes[0] + sizes[1] != 1120) { return 4; }
+                return 42;
+            }
+            "#,
+        ),
+        (
+            "config.kora",
+            r#"
+            let WIDTH = 640;
+            let HEIGHT: int = 480;
+            let TITLE = "kora";
+            int area() { return WIDTH * HEIGHT; }
+            "#,
+        ),
+    ]);
+    assert_eq!(code, 42, "{stderr}");
+}
+
+#[test]
+fn test_module_level_constant_errors() {
+    let cases: &[(&str, &str)] = &[
+        (
+            "let X = 1; int main() { X = 2; return 0; }",
+            "constant and cannot be assigned",
+        ),
+        (
+            r#"let S = "hi"; int main() { S[0] = 'x'; return 0; }"#,
+            "constant and cannot be assigned",
+        ),
+        (
+            "let X = f(); int f() { return 1; } int main() { return 0; }",
+            "must be initialized with a constant expression",
+        ),
+        (
+            "let A = 2; let X = A = 3; int main() { return 0; }",
+            "must be initialized with a constant expression",
+        ),
+        (
+            "let X = 1 / 0; int main() { return 0; }",
+            "Division by zero in a constant expression",
+        ),
+        (
+            "let X = 7 % (3 - 3); int main() { return 0; }",
+            "Division by zero in a constant expression",
+        ),
+        (
+            "let X = 1 + true; int main() { return 0; }",
+            "Binary operator cannot be applied",
+        ),
+        (
+            "let X = true as int; int main() { return 0; }",
+            "cast cannot be applied in a constant expression",
+        ),
+        (
+            r#"let X = -"hi"; int main() { return 0; }"#,
+            "Unary operator cannot be applied",
+        ),
+        (
+            "let X: real = 1; int main() { return 0; }",
+            "Types don't match",
+        ),
+        (
+            r#"let NAME = "hi"; int NAME() { return 0; } int main() { return 0; }"#,
+            "Redeclaration",
+        ),
+        (
+            "let A = B; let B = 1; int main() { return 0; }",
+            "declared above",
+        ),
+        ("let A = A; int main() { return 0; }", "declared above"),
+        (
+            "int f() { return 1; } let A = f; int main() { return 0; }",
+            "declared above",
+        ),
+        (
+            "let A = 1; let B: real = A; int main() { return 0; }",
+            "Types don't match",
+        ),
+    ];
+    for (source, expected) in cases {
+        let errors = compile_fails(&[("main.kora", source)]);
+        assert!(errors.contains(expected), "{source}: {errors}");
+    }
+}
+
+#[test]
 fn test_native_tls_mtls_loopback() {
     let (stdout, stderr, code) = run_native_only(
         r##"

@@ -158,6 +158,10 @@ pub trait ASTVisitor: Sized {
         walk_extern_function(self, func);
     }
 
+    fn visit_global(&mut self, global: &Spanned<Global>) {
+        walk_global(self, global);
+    }
+
     fn visit_module(&mut self, module: &Module) {
         walk_module(self, module);
     }
@@ -442,8 +446,20 @@ pub fn walk_extern_function<V: ASTVisitor>(visitor: &mut V, func: &Spanned<Exter
     visitor.visit_exit_scope();
 }
 
+pub fn walk_global<V: ASTVisitor>(visitor: &mut V, global: &Spanned<Global>) {
+    visitor.visit_identifier(&global.node.name.node);
+    if let Some(typename) = &global.node.typename {
+        visitor.visit_typename(typename);
+    }
+    visitor.visit_expression(&global.node.value);
+}
+
 pub fn walk_module<V: ASTVisitor>(visitor: &mut V, module: &Module) {
     visitor.visit_enter_scope();
+    for global in module.globals.iter() {
+        visitor.visit_global(global);
+    }
+
     for func in module.extern_functions.iter() {
         visitor.visit_extern_function(func);
     }

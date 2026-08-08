@@ -36,7 +36,11 @@ fn main() {
         .include("runtime/libkora/mbedtls/library")
         .define("MBEDTLS_THREADING_C", None)
         .define(
-            if windows { "MBEDTLS_THREADING_ALT" } else { "MBEDTLS_THREADING_PTHREAD" },
+            if windows {
+                "MBEDTLS_THREADING_ALT"
+            } else {
+                "MBEDTLS_THREADING_PTHREAD"
+            },
             None,
         );
 

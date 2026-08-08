@@ -131,6 +131,13 @@ so the native binary and the JavaScript output stay byte-identical.
 ║                                  │                                     ║
 ║                                  ▼                                     ║
 ║           ┌──────────────────────────────────────────────┐             ║
+║           │ Constant Evaluation                          │             ║
+║           │ src/semantic_analyzer/const_eval             │             ║
+║           │ fold module-level lets, declaration order    │             ║
+║           └──────────────────────────────────────────────┘             ║
+║                                  │                                     ║
+║                                  ▼                                     ║
+║           ┌──────────────────────────────────────────────┐             ║
 ║           │ Type Checker                                 │             ║
 ║           │ src/semantic_analyzer/type_checker           │             ║
 ║           │ infer & check types; resolve methods         │             ║
@@ -181,7 +188,7 @@ so the native binary and the JavaScript output stay byte-identical.
 ║  │ + runtime inclusion:       │    │ Linking                    │      ║
 ║  │ kora_node_runtime.js /     │    │ src/codegen::link          │      ║
 ║  │ kora_browser_runtime.js    │    │ + libkora.c runtime        │      ║
-║  └────────────────────────────┘    │ + Boehm GC  (bdwgc)        │      ║
+║  └────────────────────────────┘    │ + Boehm GC + mbedTLS       │      ║
 ║                 │                  └────────────────────────────┘      ║
 ║         ┌───────┴───────────┐                     │                    ║
 ║         ▼                   ▼                     ▼                    ║

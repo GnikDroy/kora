@@ -10,6 +10,7 @@ use crate::parser::*;
 pub use builtins::ArrayMethod;
 #[allow(unused_imports)]
 pub use builtins::is_reference;
+pub(crate) use builtins::{binary_result, is_cast_possible, is_scalar, unary_result};
 
 pub struct TypeChecker<'a> {
     symbols: &'a SymbolTable,

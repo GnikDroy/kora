@@ -8,12 +8,13 @@ use crate::lexer::{LexerErr, Position};
 use crate::loader::{LoadErr, LoadedProgram, Loader};
 use crate::parser::{ASTVisitor, ExternFunction, NodeId, ParseErr, Span, Type};
 use crate::semantic_analyzer::{
-    ArrayMethod, Resolver, ReturnChecker, SymbolId, SymbolTable, TypeChecker, TypeErr,
+    ArrayMethod, ConstValue, Resolver, ReturnChecker, SymbolId, SymbolTable, TypeChecker, TypeErr,
 };
 
 pub struct CompiledProgram {
     pub(crate) program: LoadedProgram,
     pub(crate) symbols: SymbolTable,
+    pub(crate) consts: HashMap<SymbolId, ConstValue>,
     pub(crate) types: HashMap<NodeId, Type>,
     pub(crate) method_calls: HashMap<NodeId, SymbolId>,
     pub(crate) array_method_calls: HashMap<NodeId, ArrayMethod>,
@@ -101,9 +102,15 @@ where
                 .collect::<Vec<_>>()
         })?;
 
-    let symbols = Resolver::new()
+    let mut symbols = Resolver::new()
         .resolve_program(&program, &instances)
         .map_err(|errors| annotate_generic_errors(errors, &instances.regions))?;
+
+    let consts = {
+        let modules: Vec<_> = program.modules.iter().map(|m| &m.module).collect();
+        crate::semantic_analyzer::evaluate_constants(&mut symbols, &modules)
+            .map_err(|errors| annotate_generic_errors(errors, &instances.regions))?
+    };
 
     let mut analyze_errors = Vec::new();
 
@@ -184,6 +191,7 @@ where
     Ok(CompiledProgram {
         program,
         symbols,
+        consts,
         types,
         method_calls,
         array_method_calls,

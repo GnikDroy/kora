@@ -44,6 +44,15 @@ let c = 65 as char;   # 'A'
 let f = 65 as real;   # 65.0
 ```
 
+At module level, `let` declares a constant. Assignment to it is a compile
+error. Other modules reach it as `config.WIDTH`, like a function.
+
+```ruby
+let WIDTH = 640;
+let AREA = WIDTH * 480;
+let TITLE = "kora" + " v1";
+```
+
 ## Arrays
 
 `[...]` is a literal, and `new T[n]` makes `n` default-valued elements. Arrays

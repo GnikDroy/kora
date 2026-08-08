@@ -75,6 +75,12 @@ impl TypeChecker<'_> {
                     span: span.clone(),
                 });
             }
+            if self.is_global_place(left) {
+                return Err(TypeErr {
+                    msg: "A module-level let is a constant and cannot be assigned",
+                    span: span.clone(),
+                });
+            }
             if left_type != right_type {
                 return Err(TypeErr {
                     msg: "LHS and RHS of assign expression don't match",
@@ -454,6 +460,27 @@ impl TypeChecker<'_> {
                 .map(|f| f.id)
                 .chain(m.extern_functions.iter().map(|f| f.id))
                 .any(|decl| self.symbols.symbol_id_of_declaration(decl) == Some(id))
+        })
+    }
+
+    fn is_global_place(&self, expr: &Spanned<Expression>) -> bool {
+        let named_global = self
+            .symbols
+            .symbol_id_of_use(expr.id)
+            .is_some_and(|id| self.is_global_symbol(id));
+        match &expr.node {
+            Expression::Identifier(_) => named_global,
+            Expression::Access(base, _) => named_global || self.is_global_place(base),
+            Expression::ArrayIndex(base, _) => self.is_global_place(base),
+            _ => false,
+        }
+    }
+
+    fn is_global_symbol(&self, id: SymbolId) -> bool {
+        self.modules.iter().any(|m| {
+            m.globals
+                .iter()
+                .any(|decl| self.symbols.symbol_id_of_declaration(decl.id) == Some(id))
         })
     }
 

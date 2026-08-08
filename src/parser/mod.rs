@@ -18,6 +18,8 @@ type StructDecl = ConcreteOrGeneric<Struct, GenericStruct>;
 type FunctionDecl = ConcreteOrGeneric<Function, GenericFunction>;
 type ImplDecl = ConcreteOrGeneric<Impl, GenericImpl>;
 
+type LetBinding = (Spanned<String>, Option<Type>, Spanned<Expression>);
+
 pub struct Parser {
     tokens: Vec<TokenInfo>,
     last_end: Position,
@@ -589,7 +591,7 @@ impl Parser {
         Ok(Statement::Simple(expr))
     }
 
-    fn parse_let_statement(&mut self) -> Result<Statement, ParseErr> {
+    fn parse_let_binding(&mut self) -> Result<LetBinding, ParseErr> {
         self.pop_token(
             Token::Keyword(Keyword::Let),
             "Expected let: let <identifier>[: <type>] = <expression>;",
@@ -610,14 +612,19 @@ impl Parser {
             "Expected =: let <identifier>[: <type>] = <expression>;",
         )?;
 
-        let expr = self.parse_expression()?;
+        let value = self.parse_expression()?;
 
         self.pop_token(
             Token::Symbol(Symbol::Semicolon),
             "Expected semicolon: let <identifier>[: <type>] = <expression>;",
         )?;
 
-        Ok(Statement::Let(name, typename, expr))
+        Ok((name, typename, value))
+    }
+
+    fn parse_let_statement(&mut self) -> Result<Statement, ParseErr> {
+        let (name, typename, value) = self.parse_let_binding()?;
+        Ok(Statement::Let(name, typename, value))
     }
 
     fn parse_if_statement(&mut self) -> Result<Statement, ParseErr> {
@@ -1216,6 +1223,20 @@ impl Parser {
         ))
     }
 
+    fn parse_global(&mut self) -> Result<Spanned<Global>, ParseErr> {
+        let start = self.current_start();
+        let (name, typename, value) = self.parse_let_binding()?;
+        let span = self.span_from(start);
+        Ok(Spanned::new(
+            Global {
+                name,
+                typename,
+                value,
+            },
+            span,
+        ))
+    }
+
     fn parse_function(&mut self) -> Result<FunctionDecl, ParseErr> {
         let start = self.current_start();
         let return_type = self.parse_return_type()?;
@@ -1438,6 +1459,9 @@ impl Parser {
                     ImplDecl::Concrete(imp) => module.impls.push(imp),
                     ImplDecl::Generic(imp) => module.generic_impls.push(imp),
                 },
+                Token::Keyword(Keyword::Let) => {
+                    module.globals.push(self.parse_global()?);
+                }
                 _ => match self.parse_function()? {
                     FunctionDecl::Concrete(func) => module.functions.push(func),
                     FunctionDecl::Generic(func) => module.generic_functions.push(func),

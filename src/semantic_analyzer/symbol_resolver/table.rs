@@ -36,6 +36,10 @@ impl SymbolTable {
         &self.symbols[id.0]
     }
 
+    pub fn set_symbol_type(&mut self, id: SymbolId, ty: Type) {
+        self.symbols[id.0].ty = Some(ty);
+    }
+
     pub fn symbol_id_of_use(&self, use_id: NodeId) -> Option<SymbolId> {
         self.uses.get(&use_id).copied()
     }

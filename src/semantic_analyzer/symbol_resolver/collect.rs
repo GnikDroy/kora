@@ -101,6 +101,13 @@ impl<'a> GlobalsCollector<'a> {
                 self.bind(&mut scope, func.node.name.clone(), id, &func.span);
             }
         }
+        for global in module.globals.iter() {
+            let name = global.node.name.node.clone();
+            let id = self
+                .table
+                .add_symbol(global.id, name.clone(), global.node.typename.clone());
+            self.bind(&mut scope, name, id, &global.span);
+        }
         scope
     }
 

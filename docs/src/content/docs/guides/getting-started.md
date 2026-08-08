@@ -123,6 +123,30 @@ x = x + 1;             # plain assignment; x stays an int
 Types are checked at compile time: assigning a `string` to `x` is an error, not
 a surprise at runtime.
 
+## Constants
+
+A `let` at module level, outside any function, declares a constant. The
+initializer is any expression built from literals, constants declared above
+it, and operators, evaluated at compile time. Assigning to the name is a
+compile error. Division by zero is also a compile error.
+
+```ruby
+let WIDTH = 640;
+let HEIGHT = 480;
+let AREA = WIDTH * HEIGHT;
+let TITLE = "kora" + " v1";
+let ESC = 27 as char;
+
+int rows(cell: int) {
+    return HEIGHT / cell;
+}
+```
+
+A constant is visible anywhere in its module, and other files reach it through
+the module name after an import, just like a function: `config.WIDTH`. A
+constant simply names its computed value, so every use is that value. Locals
+may shadow it.
+
 ## The basic types
 
 Kora has five primitive types:
