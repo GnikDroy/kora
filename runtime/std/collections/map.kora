@@ -1,7 +1,8 @@
+import "std/collections/hasher";
+
 let INITIAL_SLOTS = 8;
 
-struct map<K, V, H> {
-    hasher: H,
+struct map<K, V> {
     stored_keys: [K],
     stored_values: [V],
     slots: [int],
@@ -9,9 +10,8 @@ struct map<K, V, H> {
     used: int,
 }
 
-map<K, V, H> make<K, V, H>() {
-    return new map<K, V, H>{
-        hasher: new H,
+map<K, V> make<K, V>() {
+    return new map<K, V>{
         stored_keys: [],
         stored_values: [],
         slots: new int[INITIAL_SLOTS],
@@ -20,14 +20,14 @@ map<K, V, H> make<K, V, H>() {
     };
 }
 
-impl map<K, V, H> {
+impl map<K, V> {
     int count(self) {
         return self.size;
     }
 
     int slot(self, key: K) {
         let cap = self.slots.len();
-        let s = self.hasher.hash(key) % cap;
+        let s = hasher.hash::<K>(key) % cap;
         if (s < 0) {
             s = s + cap;
         }

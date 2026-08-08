@@ -1,16 +1,16 @@
+import "std/collections/hasher";
+
 let INITIAL_SLOTS = 8;
 
-struct set<K, H> {
-    hasher: H,
+struct set<K> {
     keys: [K],
     slots: [int],
     size: int,
     used: int,
 }
 
-set<K, H> make<K, H>() {
-    return new set<K, H>{
-        hasher: new H,
+set<K> make<K>() {
+    return new set<K>{
         keys: [],
         slots: new int[INITIAL_SLOTS],
         size: 0,
@@ -18,14 +18,14 @@ set<K, H> make<K, H>() {
     };
 }
 
-impl set<K, H> {
+impl set<K> {
     int count(self) {
         return self.size;
     }
 
     int slot(self, key: K) {
         let cap = self.slots.len();
-        let s = self.hasher.hash(key) % cap;
+        let s = hasher.hash::<K>(key) % cap;
         if (s < 0) {
             s = s + cap;
         }

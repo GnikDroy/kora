@@ -21,7 +21,7 @@ int escape_time(cr: real, ci: real) {
 string color_for(iter: int) {
     if (iter >= MAX_ITER) { return "#05050f"; }
     let hue = (210 + iter * 6) % 360;
-    return "hsl(" + conv.int_to_string(hue) + ", 75%, 55%)";
+    return "hsl(" + conv.to_string::<int>(hue) + ", 75%, 55%)";
 }
 
 int main() {

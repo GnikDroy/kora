@@ -13,9 +13,9 @@ import "std/collections/stack";
 let s = stack.make::<int>();
 ```
 
-Keys and elements can be any type. `set` and `map` additionally need a hash
-strategy (see [hasher](#hasher) below) and keys that support `==` (`int`,
-`string`, `char`, `bool`).
+Keys and elements can be any type. `set` and `map` additionally need keys that
+support `==`, which today means `int`, `string`, `char`, or `bool`. They hash
+those keys through [hasher](#hasher) with no setup on your part.
 
 ## stack
 
@@ -96,12 +96,11 @@ l.pop_front();   # 1
 
 ## set
 
-`import "std/collections/set";` gives `set<K, H>`, an open-addressed hash set.
-`K` is the key type and `H` is a hasher struct with a method
-`int hash(self, key: K)`.
+`import "std/collections/set";` gives `set<K>`, an open-addressed hash set
+keyed by `K`.
 
 ```ruby
-set<K, H> make<K, H>()      # a new empty set
+set<K> make<K>()            # a new empty set
 
 bool add(self, key: K)      # insert; true if the key was newly added
 bool has(self, key: K)      # true if the key is present
@@ -112,9 +111,8 @@ int  count(self)            # number of keys
 
 ```ruby
 import "std/collections/set";
-import "std/collections/hasher";
 
-let seen = set.make::<int, int_hasher>();
+let seen = set.make::<int>();
 seen.add(3);    # true
 seen.add(3);    # false, already present
 seen.has(3);    # true
@@ -127,11 +125,11 @@ for x | seen.items() {
 
 ## map
 
-`import "std/collections/map";` gives `map<K, V, H>`, an open-addressed hash
-map from `K` to `V`. `H` is a hasher for `K`, as with `set`.
+`import "std/collections/map";` gives `map<K, V>`, an open-addressed hash map
+from `K` to `V`, keyed the same way as `set`.
 
 ```ruby
-map<K, V, H> make<K, V, H>()      # a new empty map
+map<K, V> make<K, V>()            # a new empty map
 
 void set(self, key: K, value: V)  # insert, or overwrite an existing key
 V?   get(self, key: K)            # the value for key, or none if absent
@@ -147,19 +145,18 @@ not modified in between, `keys()[i]` maps to `values()[i]`:
 
 ```ruby
 import "std/collections/map";
-import "std/collections/hasher";
 import "std/conv";
 import "std/io";
 
 int main() {
-    let counts = map.make::<string, int, string_hasher>();
+    let counts = map.make::<string, int>();
     counts.set("apples", 3);
     counts.set("pears", 5);
 
     let ks = counts.keys();
     let vs = counts.values();
     for (let i = 0; i < ks.len(); i = i + 1) {
-        io.print(ks[i] + ": " + conv.int_to_string(vs[i]));
+        io.print(ks[i] + ": " + conv.to_string::<int>(vs[i]));
     }
     return 0;
 }
@@ -167,30 +164,25 @@ int main() {
 
 ## hasher
 
-`import "std/collections/hasher";` provides ready-made hash strategies for the
-common key types. Each is an empty struct with a method
-`int hash(self, key: ...)`, used as the `H` type parameter of `set` and `map`.
+`import "std/collections/hasher";` gives the one hash function that `set` and
+`map` use for their keys.
 
 ```ruby
-struct int_hasher    {}   # for int keys
-struct string_hasher {}   # for string keys
-struct char_hasher   {}   # for char keys
-struct bool_hasher   {}   # for bool keys
+int hash<T>(key: T)
 ```
 
-To use keys of your own type, write a struct with a matching
-`int hash(self, key: YourType)` method and pass it as `H`. Equal keys must
-hash equally:
+It hashes `int`, `string`, `char`, and `bool` by value, and defers to an
+`int __hash__(self)` method on any other struct. `set` and `map` call it for
+you, so you only import this module to hash something yourself:
 
 ```ruby
-import "std/collections/set";
+import "std/collections/hasher";
 
 struct Point { x: int, y: int }
-
-struct point_hasher {}
-impl point_hasher {
-    int hash(self, key: Point) { return key.x * 31 + key.y; }
+impl Point {
+    int __hash__(self) { return self.x * 31 + self.y; }
 }
 
-let visited = set.make::<Point, point_hasher>();
+let h = hasher.hash::<Point>(new Point{ x: 1, y: 2 });
 ```
+

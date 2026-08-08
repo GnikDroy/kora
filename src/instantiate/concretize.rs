@@ -95,6 +95,14 @@ fn renumber_statement(stmt: &mut Spanned<Statement>) {
     stmt.id = NodeId::new();
     match &mut stmt.node {
         Statement::Empty | Statement::Break | Statement::Continue => {}
+        Statement::TypeIf(lhs, rhs, then_branch, else_branch) => {
+            renumber_type(lhs);
+            renumber_type(rhs);
+            renumber_statement(then_branch);
+            if let Some(else_branch) = else_branch.as_mut() {
+                renumber_statement(else_branch);
+            }
+        }
         Statement::Simple(expr) => renumber_expression(expr),
         Statement::Return(expr) => {
             if let Some(expr) = expr.as_mut() {
@@ -347,6 +355,7 @@ impl Instantiator<'_> {
         let span = stmt.span.clone();
         match &mut stmt.node {
             Statement::Empty | Statement::Break | Statement::Continue => {}
+            Statement::TypeIf(..) => self.concretize_type_if(module, subst, stmt, stack),
             Statement::Simple(expr) => self.concretize_expression(module, subst, expr, stack),
             Statement::Return(expr) => {
                 if let Some(expr) = expr.as_mut() {
@@ -381,6 +390,62 @@ impl Instantiator<'_> {
                     self.concretize_statement(module, subst, stmt, stack);
                 }
             }
+        }
+    }
+
+    fn concretize_type_if(
+        &mut self,
+        module: usize,
+        subst: &TypeSubstitutions,
+        stmt: &mut Spanned<Statement>,
+        stack: &mut InstantiationStack,
+    ) {
+        let span = stmt.span.clone();
+        let Statement::TypeIf(mut lhs, mut rhs, then_branch, else_branch) =
+            std::mem::replace(&mut stmt.node, Statement::Empty)
+        else {
+            unreachable!("guarded by the caller");
+        };
+        self.concretize_type(subst, &mut lhs, &span, stack);
+        self.concretize_type(subst, &mut rhs, &span, stack);
+        self.check_type_if_operand(&lhs);
+        self.check_type_if_operand(&rhs);
+
+        let survivor = if lhs == rhs {
+            Some(then_branch)
+        } else {
+            else_branch
+        };
+        if let Some(mut branch) = survivor {
+            self.concretize_statement(module, subst, &mut branch, stack);
+            *stmt = *branch;
+        }
+    }
+
+    fn check_type_if_operand(&mut self, ty: &Type) {
+        match ty {
+            Type::Struct(sr) => {
+                if sr.target.is_none() {
+                    self.error(
+                        format!(
+                            "unknown type `{}` in a compile-time if; it must be a type \
+                             parameter or a defined type",
+                            sr.name.node
+                        ),
+                        &sr.name.span,
+                    );
+                }
+            }
+            Type::Array(inner) | Type::Optional(inner) => self.check_type_if_operand(inner),
+            Type::Function(ret, args) => {
+                if let Some(ret) = ret {
+                    self.check_type_if_operand(ret);
+                }
+                for arg in args {
+                    self.check_type_if_operand(arg);
+                }
+            }
+            _ => {}
         }
     }
 

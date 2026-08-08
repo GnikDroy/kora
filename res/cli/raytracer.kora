@@ -163,7 +163,7 @@ int main() {
         return 1;
     }
     let f = out!;
-    f.write("P3\n" + conv.int_to_string(WIDTH) + " " + conv.int_to_string(HEIGHT) + "\n255\n");
+    f.write("P3\n" + conv.to_string::<int>(WIDTH) + " " + conv.to_string::<int>(HEIGHT) + "\n255\n");
 
     let origin = vec(0.0, 0.6, 1.5);
     let aspect = (WIDTH as real) / (HEIGHT as real);
@@ -185,12 +185,12 @@ int main() {
             }
             color = color.scale(1.0 / ((grid * grid) as real));
             f.write(
-                conv.int_to_string(byte_of(color.x)) + " "
-                + conv.int_to_string(byte_of(color.y)) + " "
-                + conv.int_to_string(byte_of(color.z)) + "\n");
+                conv.to_string::<int>(byte_of(color.x)) + " "
+                + conv.to_string::<int>(byte_of(color.y)) + " "
+                + conv.to_string::<int>(byte_of(color.z)) + "\n");
         }
     }
     f.close();
-    io.print("wrote raytrace.ppm (" + conv.int_to_string(WIDTH) + "x" + conv.int_to_string(HEIGHT) + ")");
+    io.print("wrote raytrace.ppm (" + conv.to_string::<int>(WIDTH) + "x" + conv.to_string::<int>(HEIGHT) + ")");
     return 0;
 }

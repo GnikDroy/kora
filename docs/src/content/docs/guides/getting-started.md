@@ -27,7 +27,7 @@ int fib(n: int) {
 
 int main() {
     for (let i = 0; i < 10; i = i + 1) {
-        io.print(conv.int_to_string(fib(i)));
+        io.print(conv.to_string::<int>(fib(i)));
     }
     return 0;
 }
@@ -338,6 +338,23 @@ let p = new pair<int, string>{ first: id::<int>(1), second: "two" };
 Every instantiation is monomorphized. The compiler generates concrete code per
 type, so generics cost nothing at runtime. The generic containers in
 [`std/collections`](../../reference/std/collections/) are built this way.
+
+A generic body sometimes needs different code per type. A compile-time `if`
+compares a type parameter against a type. It is written without parentheses,
+and the untaken branch is discarded at instantiation, before it is ever
+checked:
+
+```ruby
+string describe<T>(v: T) {
+    if T == int { return "int " + conv.to_string::<int>(v); }
+    else if T == string { return v; }
+    else { return v.__str__(); }
+}
+```
+
+A discarded branch may contain code that would not compile for the current
+type. That is the point: `describe::<int>` never sees `v.__str__()`, and
+the final `else` only has to make sense for the types that reach it.
 
 ## Modules
 

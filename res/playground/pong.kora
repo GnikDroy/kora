@@ -103,8 +103,8 @@ void render(ball: Ball, player: Paddle, ai: Paddle) {
 
     set_color("#94a3b8");
     set_font_size(36);
-    draw_text(conv.int_to_string(player.score), SCREEN_WIDTH / 2 - 60, 56);
-    draw_text(conv.int_to_string(ai.score), SCREEN_WIDTH / 2 + 36, 56);
+    draw_text(conv.to_string::<int>(player.score), SCREEN_WIDTH / 2 - 60, 56);
+    draw_text(conv.to_string::<int>(ai.score), SCREEN_WIDTH / 2 + 36, 56);
 }
 
 void render_result(player: Paddle, ai: Paddle) {
@@ -119,7 +119,7 @@ void render_result(player: Paddle, ai: Paddle) {
     }
     set_color("#e2e8f0");
     set_font_size(20);
-    let line = conv.int_to_string(player.score) + " - " + conv.int_to_string(ai.score);
+    let line = conv.to_string::<int>(player.score) + " - " + conv.to_string::<int>(ai.score);
     draw_text(line, SCREEN_WIDTH / 2 - 30, SCREEN_HEIGHT / 2 + 40);
 }
 

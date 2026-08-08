@@ -110,7 +110,7 @@ int main() {
         t.join();
     }
 
-    io.print(conv.int_to_string(c.n));   # 4000
+    io.print(conv.to_string::<int>(c.n));   # 4000
     return 0;
 }
 ```

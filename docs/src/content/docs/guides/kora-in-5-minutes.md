@@ -83,7 +83,7 @@ for (let i = 0; i < 10; i = i + 1) {
 }
 
 for x | [10, 20, 30] {
-    io.write(conv.int_to_string(x));
+    io.write(conv.to_string::<int>(x));
 }
 ```
 
@@ -128,6 +128,16 @@ T id<T>(x: T) { return x; }
 let p = new pair<int, string>{ first: id::<int>(1), second: "two" };
 ```
 
+A compile-time `if` (no parentheses) branches on a type parameter. The untaken
+branch is discarded at instantiation, unchecked.
+
+```ruby
+string show<T>(v: T) {
+    if T == int { return conv.to_string::<int>(v); }
+    else { return v.__str__(); }
+}
+```
+
 ## Optionals
 
 `T?` is a `T` or nothing. There is no null. Write `none` for empty, and
@@ -170,7 +180,7 @@ import "std/math";
 import "std/conv";
 
 int main() {
-    io.write(conv.int_to_string(math.gcd(48, 36)));   # 12
+    io.write(conv.to_string::<int>(math.gcd(48, 36)));   # 12
     return 0;
 }
 ```

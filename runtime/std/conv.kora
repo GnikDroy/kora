@@ -1,66 +1,68 @@
-string int_to_string(n: int) {
-    if (n == 0) {
-        return "0";
-    }
-    let negative = n < 0;
-    if (negative) {
-        n = -n;
-    }
-    let digits: [char] = [];
-    while (n > 0) {
-        digits.insert(0, ((n % 10) + 48) as char);
-        n = n / 10;
-    }
-    if (negative) {
-        digits.insert(0, '-');
-    }
-    return digits;
-}
-
-string real_to_string(x: real) {
-    if (x != x) {
-        return "nan";
-    }
-    if (x * 0.5 == x && x != 0.0) {
-        if (x > 0.0) {
-            return "inf";
+# Converts any supported value: the primitives here, or any struct with a
+# `string __str__(self)` method.
+string to_string<T>(v: T) {
+    if T == int {
+        if (v == 0) {
+            return "0";
         }
-        return "-inf";
+        let negative = v < 0;
+        if (negative) {
+            v = -v;
+        }
+        let digits: [char] = [];
+        while (v > 0) {
+            digits.insert(0, ((v % 10) + 48) as char);
+            v = v / 10;
+        }
+        if (negative) {
+            digits.insert(0, '-');
+        }
+        return digits;
+    } else if T == real {
+        if (v != v) {
+            return "nan";
+        }
+        if (v * 0.5 == v && v != 0.0) {
+            if (v > 0.0) {
+                return "inf";
+            }
+            return "-inf";
+        }
+        let s = "";
+        if (v < 0.0) {
+            s.push('-');
+            v = -v;
+        }
+        let whole = v as int;
+        s = s + to_string::<int>(whole);
+        s.push('.');
+        let frac = v - (whole as real);
+        let digits = 0;
+        while (digits < 6) {
+            frac = frac * 10.0;
+            let d = frac as int;
+            s.push((d + 48) as char);
+            frac = frac - (d as real);
+            digits = digits + 1;
+        }
+        while (s[s.len() - 1] == '0' && s[s.len() - 2] != '.') {
+            s.pop();
+        }
+        return s;
+    } else if T == bool {
+        if (v) {
+            return "true";
+        }
+        return "false";
+    } else if T == char {
+        let s: [char] = [];
+        s.push(v);
+        return s;
+    } else if T == string {
+        return v;
+    } else {
+        return v.__str__();
     }
-    let s = "";
-    if (x < 0.0) {
-        s.push('-');
-        x = -x;
-    }
-    let whole = x as int;
-    s = s + int_to_string(whole);
-    s.push('.');
-    let frac = x - (whole as real);
-    let digits = 0;
-    while (digits < 6) {
-        frac = frac * 10.0;
-        let d = frac as int;
-        s.push((d + 48) as char);
-        frac = frac - (d as real);
-        digits = digits + 1;
-    }
-    while (s[s.len() - 1] == '0' && s[s.len() - 2] != '.') {
-        s.pop();
-    }
-    return s;
-}
-
-string bool_to_string(b: bool) {
-    if (b) {
-        return "true";
-    }
-    return "false";
-}
-
-string char_to_string(c: char) {
-    let s: [char] = [];
-    s.push(c);
-    return s;
 }
 
 int? string_to_int(s: string) {

@@ -20,8 +20,8 @@ int main() {
         line = io.input();
     }
     io.print(
-        conv.int_to_string(lines) + " "
-        + conv.int_to_string(words) + " "
-        + conv.int_to_string(chars));
+        conv.to_string::<int>(lines) + " "
+        + conv.to_string::<int>(words) + " "
+        + conv.to_string::<int>(chars));
     return 0;
 }

@@ -633,6 +633,10 @@ impl Parser {
             "Expected if: if (<expression>) <statement> else <statement>",
         )?;
 
+        if !matches!(self.peek()?.token, Token::Symbol(Symbol::LeftParen)) {
+            return self.parse_type_if_statement();
+        }
+
         self.pop_token(
             Token::Symbol(Symbol::LeftParen),
             "Expected ( before expression: if (<expr>) <statement>",
@@ -660,6 +664,39 @@ impl Parser {
         }
 
         Ok(Statement::If(expr, Box::new(stmt), None))
+    }
+
+    fn parse_type_if_statement(&mut self) -> Result<Statement, ParseErr> {
+        let retype = |mut e: ParseErr| {
+            e.msg = "Expected a type in a compile-time if: if <type> == <type> <statement> \
+                     (a runtime condition needs parentheses: if (<expr>) <statement>)";
+            e
+        };
+        let lhs = self.parse_typename().map_err(retype)?;
+
+        self.pop_token(
+            Token::Symbol(Symbol::EqualEqual),
+            "Expected == in a compile-time if: if <type> == <type> <statement> (a runtime \
+             condition needs parentheses: if (<expr>) <statement>)",
+        )?;
+
+        let rhs = self.parse_typename().map_err(retype)?;
+        let stmt = self.parse_statement()?;
+
+        if let Ok(token) = self.peek()
+            && let Token::Keyword(Keyword::Else) = token.token
+        {
+            self.pop()?;
+            let else_stmt = self.parse_statement()?;
+            return Ok(Statement::TypeIf(
+                lhs,
+                rhs,
+                Box::new(stmt),
+                Some(Box::new(else_stmt)),
+            ));
+        }
+
+        Ok(Statement::TypeIf(lhs, rhs, Box::new(stmt), None))
     }
 
     fn parse_while_statement(&mut self) -> Result<Statement, ParseErr> {

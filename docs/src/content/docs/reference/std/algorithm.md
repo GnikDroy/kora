@@ -21,6 +21,25 @@ impl desc { bool less(self, a: int, b: int) { return a > b; } }
 
 ## Functions
 
+### `less`
+
+```ruby
+bool less<T>(a: T, b: T)
+```
+
+Returns whether `a` orders before `b`, for any supported type: `int`, `real`,
+and `char` by `<`, strings byte-wise lexicographically, and any struct that
+defines a `bool __less__(self, other: T)` method.
+
+```ruby
+struct asc_of<T> {}
+impl asc_of<T> {
+    bool less(self, a: T, b: T) { return algorithm.less::<T>(a, b); }
+}
+
+algorithm.sort::<string, asc_of<string>>(names, new asc_of<string>);
+```
+
 ### `sort`
 
 ```ruby

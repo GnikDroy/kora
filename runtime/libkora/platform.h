@@ -27,6 +27,10 @@ void __kora_write(const char *buf, int64_t n) {
   _write(1, buf, (unsigned int)n);
 }
 
+void __kora_ewrite(const char *buf, int64_t n) {
+  _write(2, buf, (unsigned int)n);
+}
+
 int __kora_system(const char *cmd) {
   int status = system(cmd);
   return status < 0 ? -1 : status;
@@ -129,6 +133,10 @@ void __kora_sleep_ms(int64_t ms) {
 
 void __kora_write(const char *buf, int64_t n) {
   (void)write(1, buf, (size_t)n);
+}
+
+void __kora_ewrite(const char *buf, int64_t n) {
+  (void)write(2, buf, (size_t)n);
 }
 
 int __kora_system(const char *cmd) {

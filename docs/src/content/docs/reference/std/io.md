@@ -36,6 +36,19 @@ io.print("one line");
 io.print("another");
 ```
 
+### `ewrite`, `eprint`
+
+```ruby
+void ewrite(s: string)
+void eprint(s: string)
+```
+
+The same as `write` and `print`, but to standard error.
+
+```ruby
+io.eprint("usage: greet <name>");
+```
+
 ### `input`
 
 ```ruby

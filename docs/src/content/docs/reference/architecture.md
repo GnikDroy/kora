@@ -38,7 +38,7 @@ byte-identical results.
 ║           ┌──────────────────────────────────────────────┐             ║
 ║           │ Generic Instantiator        src/instantiate  │             ║
 ║           │ monomorphize <T>; fill concrete              │             ║
-║           │ structs / impls / calls                      │             ║
+║           │ structs / impls / calls; prune type ifs      │             ║
 ║           └──────────────────────────────────────────────┘             ║
 ║                                  │                                     ║
 ║                                  ▼                                     ║

@@ -109,7 +109,7 @@ impl Game {
 
         set_color("#e2e8f0");
         set_font_size(16);
-        draw_text("Score: " + conv.int_to_string(self.score),
+        draw_text("Score: " + conv.to_string::<int>(self.score),
             ORIGIN_X, ORIGIN_Y + GRID_ROWS * CELL_SIZE + 26);
     }
 }
@@ -122,7 +122,7 @@ void game_over(score: int) {
     draw_text("GAME OVER", ORIGIN_X + 180, ORIGIN_Y + 150);
     set_color("#e2e8f0");
     set_font_size(18);
-    draw_text("Score: " + conv.int_to_string(score), ORIGIN_X + 180, ORIGIN_Y + 182);
+    draw_text("Score: " + conv.to_string::<int>(score), ORIGIN_X + 180, ORIGIN_Y + 182);
 }
 
 int main() {

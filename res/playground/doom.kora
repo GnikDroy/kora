@@ -80,7 +80,7 @@ string wall_shade(distance: real, side: int, tex: real) {
     if (tex < 0.06 || tex > 0.94) { light = light - 16; }
     if (light < 8) { light = 8; }
     if (light > 70) { light = 70; }
-    return "hsl(210, 35%, " + conv.int_to_string(light) + "%)";
+    return "hsl(210, 35%, " + conv.to_string::<int>(light) + "%)";
 }
 
 # A floating demon head, centered at screen column cx, scaled by size.
@@ -91,7 +91,7 @@ void draw_enemy(cx: int, size: int, distance: real) {
 
     let light = 55 - (distance * 4.0) as int;
     if (light < 15) { light = 15; }
-    set_color("hsl(0, 60%, " + conv.int_to_string(light) + "%)");
+    set_color("hsl(0, 60%, " + conv.to_string::<int>(light) + "%)");
     fill_circle(cx, cy, r);
 
     let eye = r / 4;
@@ -281,13 +281,13 @@ impl World {
 
         set_font_size(18);
         set_color("#f87171");
-        draw_text("HP " + conv.int_to_string(self.player.health), 16, base - 16);
+        draw_text("HP " + conv.to_string::<int>(self.player.health), 16, base - 16);
         set_color("#fbbf24");
-        draw_text("AMMO " + conv.int_to_string(self.player.ammo), 130, base - 16);
+        draw_text("AMMO " + conv.to_string::<int>(self.player.ammo), 130, base - 16);
         set_color("#a3e635");
-        draw_text("SCORE " + conv.int_to_string(self.player.score), 280, base - 16);
+        draw_text("SCORE " + conv.to_string::<int>(self.player.score), 280, base - 16);
         set_color("#e2e8f0");
-        draw_text("LEFT " + conv.int_to_string(self.alive_count()), 470, base - 16);
+        draw_text("LEFT " + conv.to_string::<int>(self.alive_count()), 470, base - 16);
     }
 
     void render_minimap(self) {
@@ -325,7 +325,7 @@ impl World {
         draw_text(text, canvas_width() / 2 - 150, canvas_height() / 2);
         set_color("#e2e8f0");
         set_font_size(20);
-        draw_text("Score: " + conv.int_to_string(self.player.score), canvas_width() / 2 - 50, canvas_height() / 2 + 44);
+        draw_text("Score: " + conv.to_string::<int>(self.player.score), canvas_width() / 2 - 50, canvas_height() / 2 + 44);
     }
 }
 

@@ -24,7 +24,7 @@ void home() {
 }
 
 void move_to(row: int, col: int) {
-    io.write(csi(conv.int_to_string(row) + ";" + conv.int_to_string(col) + "H"));
+    io.write(csi(conv.to_string::<int>(row) + ";" + conv.to_string::<int>(col) + "H"));
 }
 
 void cursor(visible: bool) {

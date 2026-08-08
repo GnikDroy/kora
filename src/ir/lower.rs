@@ -239,6 +239,9 @@ impl<'a> Lowering<'a> {
     fn lower_stmt_into(&mut self, stmt: &ast::Spanned<ast::Statement>, out: &mut Block) {
         match &stmt.node {
             ast::Statement::Empty => {}
+            ast::Statement::TypeIf(..) => {
+                unreachable!("compile-time ifs are resolved during instantiation")
+            }
             ast::Statement::Compound(stmts) => {
                 for stmt in stmts {
                     self.lower_stmt_into(stmt, out);

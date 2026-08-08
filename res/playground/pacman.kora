@@ -286,8 +286,8 @@ impl Game {
 
         set_font_size(18);
         set_color("#facc15");
-        draw_text("SCORE " + conv.int_to_string(self.score), 16, 22);
-        draw_text("LIVES " + conv.int_to_string(self.lives), canvas_width() - 120, 22);
+        draw_text("SCORE " + conv.to_string::<int>(self.score), 16, 22);
+        draw_text("LIVES " + conv.to_string::<int>(self.lives), canvas_width() - 120, 22);
     }
 
     void render_message(self, text: string, color: string) {
@@ -296,7 +296,7 @@ impl Game {
         draw_text(text, canvas_width() / 2 - 150, canvas_height() / 2);
         set_color("#e2e8f0");
         set_font_size(20);
-        draw_text("Score: " + conv.int_to_string(self.score), canvas_width() / 2 - 50, canvas_height() / 2 + 44);
+        draw_text("Score: " + conv.to_string::<int>(self.score), canvas_width() / 2 - 50, canvas_height() / 2 + 44);
     }
 }
 

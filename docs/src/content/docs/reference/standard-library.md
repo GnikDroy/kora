@@ -52,7 +52,8 @@ The library reports failure through types, not exceptions:
   handle.
 
 Generic functions and containers take explicit type arguments with the
-turbofish: `iter.map::<int, string>(xs, f)`, `stack.make::<int>()`. Where an
-ordering or a hash is needed, you supply it as a small struct: a comparator
-with a `less` method for [std/algorithm](../std/algorithm/), or a hasher with a
-`hash` method for [std/collections](../std/collections/).
+turbofish: `iter.map::<int, string>(xs, f)`, `stack.make::<int>()`. Hashing is
+handled for you by [std/collections](../std/collections/), which reaches for an
+`int __hash__(self)` method on your own types. Where an ordering is needed you
+supply it as a small struct with a `less` method, see
+[std/algorithm](../std/algorithm/).

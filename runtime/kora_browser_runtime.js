@@ -24,6 +24,10 @@ function __kora_write(buf, n) {
   postMessage({ type: "write", text: new TextDecoder().decode(new Uint8Array(bytes)) });
 }
 
+function __kora_ewrite(buf, n) {
+  __kora_write(buf, n);
+}
+
 function putchar(c) {
   stdoutBuffer.push(Number(c) & 0xff);
   if (stdoutBuffer.length >= 4096) flushStdout();

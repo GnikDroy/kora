@@ -294,7 +294,7 @@ impl Game {
         set_font_size(14);
         draw_text("SCORE", panel, ORIGIN_Y + 20);
         set_font_size(28);
-        draw_text(conv.int_to_string(self.score), panel, ORIGIN_Y + 50);
+        draw_text(conv.to_string::<int>(self.score), panel, ORIGIN_Y + 50);
         set_font_size(13);
         draw_text("Arrows: move / rotate", panel, ORIGIN_Y + 110);
         draw_text("Down: soft drop", panel, ORIGIN_Y + 132);
@@ -311,7 +311,7 @@ void game_over(score: int) {
     draw_text("GAME OVER", ORIGIN_X + 30, ORIGIN_Y + 200);
     set_color("#e2e8f0");
     set_font_size(18);
-    draw_text("Score: " + conv.int_to_string(score), ORIGIN_X + 30, ORIGIN_Y + 232);
+    draw_text("Score: " + conv.to_string::<int>(score), ORIGIN_X + 30, ORIGIN_Y + 232);
 }
 
 int main() {

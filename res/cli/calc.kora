@@ -222,9 +222,9 @@ impl Calc {
         }
         if (target.len() > 0) {
             self.assign(target, v);
-            io.print(target + " = " + conv.real_to_string(v));
+            io.print(target + " = " + conv.to_string::<real>(v));
         } else {
-            io.print(conv.real_to_string(v));
+            io.print(conv.to_string::<real>(v));
         }
     }
 }

@@ -1,6 +1,7 @@
 import "std/libc";
 
 extern void __kora_write(buf: cstring, n: csize);
+extern void __kora_ewrite(buf: cstring, n: csize);
 extern cint __kora_isatty(fd: cint);
 
 void write(s: string) {
@@ -10,6 +11,15 @@ void write(s: string) {
 void print(s: string) {
     write(s);
     write("\n");
+}
+
+void ewrite(s: string) {
+    __kora_ewrite(s, s.len());
+}
+
+void eprint(s: string) {
+    ewrite(s);
+    ewrite("\n");
 }
 
 bool is_tty() {

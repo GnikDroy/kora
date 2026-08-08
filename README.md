@@ -70,7 +70,7 @@ int main() {
         sum = sum + s.pop();
     }
 
-    io.write(conv.int_to_string(sum));      # 30
+    io.write(conv.to_string::<int>(sum));      # 30
     io.write("\n");
     return 0;
 }
@@ -119,7 +119,7 @@ so the native binary and the JavaScript output stay byte-identical.
 ║           ┌──────────────────────────────────────────────┐             ║
 ║           │ Generic Instantiator        src/instantiate  │             ║
 ║           │ monomorphize <T>; fill concrete              │             ║
-║           │ structs / impls / calls                      │             ║
+║           │ structs / impls / calls; prune type ifs      │             ║
 ║           └──────────────────────────────────────────────┘             ║
 ║                                  │                                     ║
 ║                                  ▼                                     ║

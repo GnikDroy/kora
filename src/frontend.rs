@@ -276,7 +276,7 @@ mod tests {
                 "main.kora",
                 r#"import "std/conv";
                    int main() {
-                       let s = conv.int_to_string(-42);
+                       let s = conv.to_string::<int>(-42);
                        let n = conv.string_to_int("100");
                        if (n == none) { return 1; }
                        return s.len() + n!;

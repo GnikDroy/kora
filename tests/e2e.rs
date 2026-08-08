@@ -338,6 +338,116 @@ fn test_native_udp_loopback() {
 }
 
 #[test]
+fn test_compile_time_type_if() {
+    let (stdout, stderr, code) = run(r#"
+        import "std/io";
+        import "std/conv";
+
+        struct Point { x: int, y: int }
+        impl Point {
+            string __str__(self) {
+                return conv.to_string::<int>(self.x) + "," + conv.to_string::<int>(self.y);
+            }
+        }
+
+        string describe<T>(v: T) {
+            if T == int { return "int " + conv.to_string::<int>(v); }
+            else if T == string { return "str " + v; }
+            else if T == [int] { return "arr " + conv.to_string::<int>(v.len()); }
+            else { return "obj " + v.__str__(); }
+        }
+
+        # nested type-ifs stand in for && between type conditions
+        int both_ints<A, B>(a: A, b: B) {
+            if A == int {
+                if B == int { return a + b; }
+            }
+            return -1;
+        }
+
+        int main() {
+            io.print(describe::<int>(42));
+            io.print(describe::<string>("hi"));
+            io.print(describe::<[int]>([1, 2, 3]));
+            io.print(describe::<Point>(new Point{ x: 1, y: 2 }));
+            if (both_ints::<int, int>(40, 2) != 42) { return 1; }
+            if (both_ints::<int, bool>(1, true) != -1) { return 2; }
+            return 0;
+        }
+    "#);
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(stdout, "int 42\nstr hi\narr 3\nobj 1,2\n");
+}
+
+#[test]
+fn test_compile_time_type_if_errors() {
+    let cases: &[(&str, &str)] = &[
+        (
+            "int f<T>(v: T) { if T == Stirng { return 1; } return 0; } \
+             int main() { return f::<int>(1); }",
+            "unknown type `Stirng`",
+        ),
+        (
+            "int main() { if T == int { return 1; } return 0; }",
+            "unknown type `T`",
+        ),
+        (
+            "int main() { if x == 1 { return 1; } return 0; }",
+            "runtime condition needs parentheses",
+        ),
+        (
+            // without an else, an instantiation that skips the branch must
+            // still satisfy the return checker
+            "int f<T>(v: T) { if T == int { return 1; } } \
+             int main() { return f::<real>(1.0); }",
+            "does not return on all paths",
+        ),
+    ];
+    for (source, expected) in cases {
+        let errors = compile_fails(&[("main.kora", source)]);
+        assert!(errors.contains(expected), "{source}: {errors}");
+    }
+}
+
+#[test]
+fn test_std_generic_dispatch_helpers() {
+    let (_, stderr, code) = run(r#"
+        import "std/conv";
+        import "std/algorithm";
+        import "std/collections/hasher";
+
+        struct Money { cents: int }
+        impl Money {
+            string __str__(self) { return conv.to_string::<int>(self.cents) + "c"; }
+            bool __less__(self, other: Money) { return self.cents < other.cents; }
+            int __hash__(self) { return self.cents; }
+        }
+
+        int main() {
+            if (conv.to_string::<int>(-3) != "-3") { return 1; }
+            if (conv.to_string::<real>(1.5) != "1.5") { return 2; }
+            if (conv.to_string::<bool>(true) != "true") { return 3; }
+            if (conv.to_string::<string>("id") != "id") { return 4; }
+            if (conv.to_string::<Money>(new Money{ cents: 99 }) != "99c") { return 5; }
+
+            if (!algorithm.less::<int>(1, 2)) { return 6; }
+            if (algorithm.less::<string>("b", "abc")) { return 7; }
+            if (!algorithm.less::<string>("abc", "b")) { return 8; }
+            if (!algorithm.less::<string>("ab", "abc")) { return 9; }
+            let cheap = new Money{ cents: 1 };
+            let rich = new Money{ cents: 100 };
+            if (!algorithm.less::<Money>(cheap, rich)) { return 10; }
+
+            # the generic hash is order-sensitive and defers to __hash__
+            if (hasher.hash::<string>("kora") == hasher.hash::<string>("arok")) { return 11; }
+            if (hasher.hash::<Money>(rich) != 100) { return 12; }
+            return 0;
+        }
+    "#);
+    assert_eq!(code, 0, "{stderr}");
+}
+
+#[test]
 fn test_module_level_constants() {
     let (stdout, stderr, code) = run(r#"
         import "std/io";
@@ -739,7 +849,7 @@ fn test_native_env_args() {
             import "std/conv";
             int main() {
                 let a = env.args();
-                io.print(conv.int_to_string(a.len()));
+                io.print(conv.to_string::<int>(a.len()));
                 if (a.len() > 1) { io.print(a[1]); }
                 return 0;
             }
@@ -845,7 +955,7 @@ fn test_native_io_is_tty() {
             import "std/io";
             import "std/conv";
             int main() {
-                io.print(conv.bool_to_string(io.is_tty()));
+                io.print(conv.to_string::<bool>(io.is_tty()));
                 return 0;
             }
         "#,
@@ -880,7 +990,7 @@ fn test_fib() {
                 return fib(n - 1) + fib(n - 2);
             }
             int main() {
-                for (let i = 0; i < 10; i = i + 1) { io.print(conv.int_to_string(fib(i))); }
+                for (let i = 0; i < 10; i = i + 1) { io.print(conv.to_string::<int>(fib(i))); }
                 return 0;
             }
         "#);
@@ -1252,6 +1362,23 @@ fn test_optional_equality_forms() {
 }
 
 #[test]
+fn test_eprint_writes_to_stderr() {
+    let (stdout, stderr, code) = run(r#"
+        import "std/io";
+        int main() {
+            io.print("to stdout");
+            io.eprint("to stderr");
+            io.ewrite("more ");
+            io.ewrite("stderr\n");
+            return 0;
+        }
+    "#);
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(stdout, "to stdout\n");
+    assert_eq!(stderr, "to stderr\nmore stderr\n");
+}
+
+#[test]
 fn test_input_reads_lines_until_eof() {
     let long = "x".repeat(9000);
     let (stdout, _, code) = run_program_with_stdin(
@@ -1316,11 +1443,11 @@ fn test_std_conv() {
             import "std/conv";
             import "std/io";
             int main() {
-                io.print(conv.int_to_string(-42));
-                io.print(conv.bool_to_string(1 < 2));
-                io.print(conv.real_to_string(3.5));
-                io.print(conv.real_to_string(-2.25));
-                io.print(conv.real_to_string(2.0));
+                io.print(conv.to_string::<int>(-42));
+                io.print(conv.to_string::<bool>(1 < 2));
+                io.print(conv.to_string::<real>(3.5));
+                io.print(conv.to_string::<real>(-2.25));
+                io.print(conv.to_string::<real>(2.0));
                 let n = conv.string_to_int("123");
                 let bad = conv.string_to_int("12x");
                 let r = 0;
@@ -1409,7 +1536,7 @@ fn test_for_range_loops() {
                 for p | ps {
                     p.x = p.x * 10;
                 }
-                io.print(conv.int_to_string(ps[0].x + ps[1].x));
+                io.print(conv.to_string::<int>(ps[0].x + ps[1].x));
                 let xs = [1];
                 let walked = 0;
                 for x | xs {
@@ -1597,7 +1724,7 @@ fn test_all_std_modules() {
 
             int main() {
                 term.home();
-                io.print(str.to_upper("kora") + conv.int_to_string(math.max(1, 5)));
+                io.print(str.to_upper("kora") + conv.to_string::<int>(math.max(1, 5)));
                 let r = math.random();
                 if (r < 0.0 || r >= 1.0) { return 1; }
                 if (math.PI < 3.141592 || math.PI > 3.141593) { return 2; }
@@ -1646,7 +1773,7 @@ fn test_complex_program() {
             impl Vec2 {
                 int dot(self, o: Vec2) { return self.x * o.x + self.y * o.y; }
             }
-            void show(n: int) { io.print(conv.int_to_string(n)); }
+            void show(n: int) { io.print(conv.to_string::<int>(n)); }
             int main() {
                 show(17 / 5 * 100 + 17 % 5);
                 show((1 << 40) % 1000007);
@@ -1656,7 +1783,7 @@ fn test_complex_program() {
                 let xs = [3, 1, 2];
                 xs.insert(0, 9);
                 xs.push(xs.remove(1));
-                io.print(conv.int_to_string(xs.pop()) + conv.int_to_string(xs.len()));
+                io.print(conv.to_string::<int>(xs.pop()) + conv.to_string::<int>(xs.len()));
                 let ys = copy(xs);
                 ys.extend(ys);
                 show(ys.len() * 10 + xs.len());
@@ -1666,7 +1793,7 @@ fn test_complex_program() {
                 let maybe = conv.string_to_int("123");
                 if (maybe != none) { show(maybe! + 1); }
                 if (conv.string_to_int("12x") == none) { io.print("bad-none"); }
-                io.print(conv.bool_to_string(math.absf(math.sin(1.0) - 0.8414709848) < 0.000001));
+                io.print(conv.to_string::<bool>(math.absf(math.sin(1.0) - 0.8414709848) < 0.000001));
                 show(math.gcd(84, 35) * 1000 + math.pow(3, 7));
                 return 0;
             }
@@ -1686,7 +1813,7 @@ fn test_kora_names_cannot_interpose_host_symbols() {
             int main() {
                 let xs = [1, 2, 3];
                 xs.push(write(4));
-                io.print(conv.int_to_string(malloc(10) + remove(5) + xs[3]));
+                io.print(conv.to_string::<int>(malloc(10) + remove(5) + xs[3]));
                 return 0;
             }
         "#);
@@ -1780,9 +1907,9 @@ fn test_real_special_values() {
                 if (negz == 0.0) { r = r + 16; }
                 if (1.0 / negz < 0.0) { r = r + 32; }
                 if (inf == inf) { r = r + 64; }
-                io.print(conv.real_to_string(inf));
-                io.print(conv.real_to_string(0.0 - inf));
-                io.print(conv.real_to_string(nan));
+                io.print(conv.to_string::<real>(inf));
+                io.print(conv.to_string::<real>(0.0 - inf));
+                io.print(conv.to_string::<real>(nan));
                 return r;
             }
         "#);
@@ -1804,7 +1931,7 @@ fn test_bool_equality_and_chained_short_circuit() {
                 if (step(log, 1, true) && step(log, 2, false) && step(log, 3, true)) { r = r + 100; }
                 if (step(log, 4, false) || step(log, 5, true) || step(log, 6, true)) { r = r + 4; }
                 let s = "";
-                for i | log { s = s + conv.int_to_string(i); }
+                for i | log { s = s + conv.to_string::<int>(i); }
                 io.print(s);
                 if (log.len() == 4) { r = r + 8; }
                 return r;
@@ -1929,7 +2056,7 @@ fn test_generic_identity_and_pair() {
             int main() {
                 let p = new pair<int, string>{ first: 40, second: "xy" };
                 p.set_second("abc");
-                io.print(conv.int_to_string(id::<int>(p.fst()) + p.second.len()));
+                io.print(conv.to_string::<int>(id::<int>(p.fst()) + p.second.len()));
                 let q = new pair<bool, real>{ first: true, second: 1.5 };
                 if (q.fst() && q.second == 1.5) { return id::<int>(2); }
                 return 0;
@@ -2004,7 +2131,7 @@ fn test_generic_list_pattern() {
                 let cur = list;
                 while (cur != none) {
                     sum = sum + cur!.value;
-                    io.print(conv.int_to_string(cur!.value));
+                    io.print(conv.to_string::<int>(cur!.value));
                     cur = cur!.next;
                 }
                 return sum;
@@ -3117,7 +3244,7 @@ fn test_std_iter() {
         bool lt4(x: int) { return x < 4; }
         int add(a: int, b: int) { return a + b; }
         [int] dup(x: int) { return [x, x]; }
-        void show(x: int) { io.print(conv.int_to_string(x)); }
+        void show(x: int) { io.print(conv.to_string::<int>(x)); }
         int main() {
             let xs = [1, 2, 3, 4, 5, 6];
             let d = iter.map::<int, int>(xs, dbl);
@@ -3149,10 +3276,9 @@ fn test_std_iter() {
 fn test_std_collections_map() {
     let (_, _, code) = run(r#"
         import "std/collections/map";
-        import "std/collections/hasher";
         string key(i: int) { return ['k', i as char]; }
         int main() {
-            let m = map.make::<string, int, string_hasher>();
+            let m = map.make::<string, int>();
             let i = 0;
             while (i < 60) { m.set(key(i), i * 2); i = i + 1; }
             m.set(key(7), 700);
@@ -3182,9 +3308,8 @@ fn test_std_collections_map() {
 fn test_std_collections_set() {
     let (_, _, code) = run(r#"
         import "std/collections/set";
-        import "std/collections/hasher";
         int main() {
-            let s = set.make::<int, int_hasher>();
+            let s = set.make::<int>();
             let i = 0;
             while (i < 50) { s.add(i * 2); i = i + 1; }
             if (s.count() != 50) { return 1; }
@@ -3208,9 +3333,8 @@ fn test_std_collections_set() {
 fn test_std_collections_map_iteration() {
     let (_, _, code) = run(r#"
         import "std/collections/map";
-        import "std/collections/hasher";
         int main() {
-            let m = map.make::<int, int, int_hasher>();
+            let m = map.make::<int, int>();
             let i = 0;
             while (i < 40) { m.set(i, i * 3); i = i + 1; }
             m.remove(5);
@@ -3243,9 +3367,8 @@ fn test_std_collections_map_iteration() {
 fn test_std_collections_set_iteration() {
     let (_, _, code) = run(r#"
         import "std/collections/set";
-        import "std/collections/hasher";
         int main() {
-            let s = set.make::<int, int_hasher>();
+            let s = set.make::<int>();
             let i = 0;
             while (i < 30) { s.add(i); i = i + 1; }
             s.remove(7);

@@ -140,6 +140,16 @@ pub trait ASTVisitor: Sized {
         walk_if_statement(self, cond, if_case, else_case);
     }
 
+    fn visit_type_if_statement(
+        &mut self,
+        lhs: &Type,
+        rhs: &Type,
+        if_case: &Spanned<Statement>,
+        else_case: Option<&Spanned<Statement>>,
+    ) {
+        walk_type_if_statement(self, lhs, rhs, if_case, else_case);
+    }
+
     fn visit_statement(&mut self, stmt: &Spanned<Statement>) {
         walk_statement(self, stmt);
     }
@@ -398,6 +408,21 @@ pub fn walk_if_statement<V: ASTVisitor>(
     }
 }
 
+pub fn walk_type_if_statement<V: ASTVisitor>(
+    visitor: &mut V,
+    lhs: &Type,
+    rhs: &Type,
+    if_case: &Spanned<Statement>,
+    else_case: Option<&Spanned<Statement>>,
+) {
+    visitor.visit_typename(lhs);
+    visitor.visit_typename(rhs);
+    visitor.visit_statement(if_case);
+    if let Some(else_case) = else_case {
+        visitor.visit_statement(else_case);
+    }
+}
+
 pub fn walk_statement<V: ASTVisitor>(visitor: &mut V, stmt: &Spanned<Statement>) {
     match &stmt.node {
         Statement::Empty => visitor.visit_empty_statement(),
@@ -423,6 +448,9 @@ pub fn walk_statement<V: ASTVisitor>(visitor: &mut V, stmt: &Spanned<Statement>)
         Statement::Continue => visitor.visit_continue_statement(&stmt.span),
         Statement::If(cond, if_case, else_case) => {
             visitor.visit_if_statement(cond, if_case, else_case.as_deref())
+        }
+        Statement::TypeIf(lhs, rhs, if_case, else_case) => {
+            visitor.visit_type_if_statement(lhs, rhs, if_case, else_case.as_deref())
         }
     }
 }

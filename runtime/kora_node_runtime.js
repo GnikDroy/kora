@@ -12,6 +12,12 @@ function __kora_write(buf, n) {
   require("node:fs").writeSync(1, Buffer.from(bytes));
 }
 
+function __kora_ewrite(buf, n) {
+  flushStdout();
+  const bytes = Array.isArray(buf) ? buf.slice(0, Number(n)) : [];
+  require("node:fs").writeSync(2, Buffer.from(bytes));
+}
+
 function putchar(c) {
   stdoutBuffer.push(Number(c) & 0xff);
   if (stdoutBuffer.length >= 4096) flushStdout();

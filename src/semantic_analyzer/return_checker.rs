@@ -32,6 +32,9 @@ impl ReturnChecker {
             Statement::Break | Statement::Continue => false,
             Statement::Empty | Statement::Simple(_) | Statement::Let(_, _, _) => false,
             Statement::If(_, _, None) => false,
+            Statement::TypeIf(..) => {
+                unreachable!("compile-time ifs are resolved during instantiation")
+            }
             Statement::Return(_) => true,
             Statement::If(_, if_case, Some(else_case)) => {
                 Self::always_returns(&if_case.node) && Self::always_returns(&else_case.node)

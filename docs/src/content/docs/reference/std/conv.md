@@ -8,54 +8,42 @@ Converting values to and from their string forms. Import with
 
 ## Functions
 
-### `int_to_string`
+### `to_string`
 
 ```ruby
-string int_to_string(n: int)
+string to_string<T>(v: T)
 ```
 
-Returns the decimal representation of `n`, with a leading `-` if negative.
+Converts any supported value to its string form. The type argument is
+required, since Kora does not infer type arguments from the call.
 
 ```ruby
-conv.int_to_string(42)     # "42"
-conv.int_to_string(-7)     # "-7"
+conv.to_string::<int>(42)       # "42"
+conv.to_string::<bool>(true)    # "true"
+conv.to_string::<char>('A')     # "A"
+conv.to_string::<Money>(m)      # whatever Money's __str__ returns
 ```
 
-### `real_to_string`
+What each type produces:
+
+| `T` | Result |
+| --- | --- |
+| `int` | decimal, with a leading `-` if negative |
+| `real` | decimal with up to six fractional digits, trailing zeros trimmed (at least one digit always remains). Non-finite values become `"nan"`, `"inf"`, or `"-inf"` |
+| `bool` | `"true"` or `"false"` |
+| `char` | a one-character string |
+| `string` | the value unchanged |
+| a struct | whatever its `string __str__(self)` method returns |
 
 ```ruby
-string real_to_string(x: real)
+conv.to_string::<int>(-7)         # "-7"
+conv.to_string::<real>(3.14)      # "3.14"
+conv.to_string::<real>(2.0)       # "2.0"
+conv.to_string::<real>(1.0/3.0)   # "0.333333"
 ```
 
-Returns `x` in decimal with up to six fractional digits, trailing zeros
-trimmed (at least one digit always remains). Non-finite values become `"nan"`,
-`"inf"`, or `"-inf"`.
-
-```ruby
-conv.real_to_string(3.14)     # "3.14"
-conv.real_to_string(2.0)      # "2.0"
-conv.real_to_string(1.0/3.0)  # "0.333333"
-```
-
-### `bool_to_string`
-
-```ruby
-string bool_to_string(b: bool)
-```
-
-Returns `"true"` or `"false"`.
-
-### `char_to_string`
-
-```ruby
-string char_to_string(c: char)
-```
-
-Returns a one-character string containing `c`.
-
-```ruby
-conv.char_to_string('A')   # "A"
-```
+Any other `T` is an error at the call site, reported as a missing `__str__`
+method on the type.
 
 ### `string_to_int`
 

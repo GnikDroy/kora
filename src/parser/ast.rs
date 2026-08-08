@@ -336,6 +336,12 @@ pub enum Statement {
         Box<Spanned<Statement>>,
         Option<Box<Spanned<Statement>>>,
     ),
+    TypeIf(
+        Type,
+        Type,
+        Box<Spanned<Statement>>,
+        Option<Box<Spanned<Statement>>>,
+    ),
     Compound(Vec<Spanned<Statement>>),
 }
 

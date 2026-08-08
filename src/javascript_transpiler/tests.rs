@@ -380,15 +380,15 @@ fn test_imported_stdlib_functions_are_mangled_and_called() {
         vec![(
             "main.kora",
             r#"import "std/conv";
-               int main() { return conv.int_to_string(42).len(); }"#
+               int main() { return conv.to_string::<int>(42).len(); }"#
                 .to_string(),
         )],
         HashSet::new(),
     );
-    assert!(js.contains("function kora$std$conv$int_to_string("), "{js}");
-    assert!(js.contains("kora$std$conv$int_to_string(42)"), "{js}");
+    assert!(js.contains("function kora$std$conv$to_string$$int("), "{js}");
+    assert!(js.contains("kora$std$conv$to_string$$int(42)"), "{js}");
     assert!(js.contains("function __kora_main("), "{js}");
-    assert!(!js.contains("conv.int_to_string"), "{js}");
+    assert!(!js.contains("conv.to_string"), "{js}");
 }
 
 #[test]

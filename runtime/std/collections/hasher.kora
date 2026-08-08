@@ -1,13 +1,9 @@
-struct int_hasher {}
-impl int_hasher {
-    int hash(self, key: int) {
+# Hashes any supported key: the primitives here, or any struct with an
+# `int __hash__(self)` method.
+int hash<T>(key: T) {
+    if T == int {
         return (key ^ (key >> 32)) & 4294967295;
-    }
-}
-
-struct string_hasher {}
-impl string_hasher {
-    int hash(self, key: string) {
+    } else if T == string {
         let h = 5381;
         let i = 0;
         while (i < key.len()) {
@@ -15,22 +11,14 @@ impl string_hasher {
             i = i + 1;
         }
         return h;
-    }
-}
-
-struct char_hasher {}
-impl char_hasher {
-    int hash(self, key: char) {
+    } else if T == char {
         return key as int;
-    }
-}
-
-struct bool_hasher {}
-impl bool_hasher {
-    int hash(self, key: bool) {
+    } else if T == bool {
         if (key) {
             return 1;
         }
         return 0;
+    } else {
+        return key.__hash__();
     }
 }
