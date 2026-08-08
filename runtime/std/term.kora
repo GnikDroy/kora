@@ -6,9 +6,11 @@ extern cint __kora_term_read_key(timeout_ms: int64);
 extern cint __kora_term_cols();
 extern cint __kora_term_rows();
 
+let ESC = 27 as char;
+
 string csi(code: string) {
     let s = "";
-    s.push(27 as char);
+    s.push(ESC);
     s.push('[');
     return s + code;
 }

@@ -4,22 +4,22 @@ import "std/conv";
 # Mandelbrot set: the classic escape-time fractal, rendered pixel-by-pixel to
 # the canvas and colored by how fast each point escapes.
 
-int max_iter() { return 100; }
+let MAX_ITER = 100;
 
 int escape_time(cr: real, ci: real) {
     let zr = 0.0;
     let zi = 0.0;
-    for (let i = 0; i < max_iter(); i = i + 1) {
+    for (let i = 0; i < MAX_ITER; i = i + 1) {
         if (zr * zr + zi * zi > 4.0) { return i; }
         let re = zr * zr - zi * zi + cr;
         zi = 2.0 * zr * zi + ci;
         zr = re;
     }
-    return max_iter();
+    return MAX_ITER;
 }
 
 string color_for(iter: int) {
-    if (iter >= max_iter()) { return "#05050f"; }
+    if (iter >= MAX_ITER) { return "#05050f"; }
     let hue = (210 + iter * 6) % 360;
     return "hsl(" + conv.int_to_string(hue) + ", 75%, 55%)";
 }
@@ -39,7 +39,7 @@ int main() {
     # Precompute one color per escape count so the inner loop never rebuilds a
     # color string.
     let palette: [string] = [];
-    for (let i = 0; i <= max_iter(); i = i + 1) {
+    for (let i = 0; i <= MAX_ITER; i = i + 1) {
         palette.push(color_for(i));
     }
 

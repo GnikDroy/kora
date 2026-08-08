@@ -39,6 +39,21 @@ extern int64 __kora_tls_peer_cert_der(h: opaque, out: cstring, cap: int64);
 extern cstring __kora_tls_version(h: opaque);
 extern cstring? __kora_tls_alpn(h: opaque);
 
+# Address families for tcp_socket and udp_socket.
+let IPV4 = 4;
+let IPV6 = 6;
+
+# Option codes for Socket.set_option.
+let OPT_REUSE = 0;
+let OPT_KEEPALIVE = 1;
+let OPT_BROADCAST = 2;
+let OPT_NODELAY = 3;
+
+# Directions for Socket.shutdown.
+let SHUT_READ = 0;
+let SHUT_WRITE = 1;
+let SHUT_BOTH = 2;
+
 struct Addr {
     handle: opaque,
 }
@@ -157,19 +172,19 @@ impl Socket {
     }
 
     bool set_reuse(self, on: bool) {
-        return __kora_net_set_option(self.fd, 0, flag(on)) == 0;
+        return __kora_net_set_option(self.fd, OPT_REUSE, flag(on)) == 0;
     }
 
     bool set_keepalive(self, on: bool) {
-        return __kora_net_set_option(self.fd, 1, flag(on)) == 0;
+        return __kora_net_set_option(self.fd, OPT_KEEPALIVE, flag(on)) == 0;
     }
 
     bool set_broadcast(self, on: bool) {
-        return __kora_net_set_option(self.fd, 2, flag(on)) == 0;
+        return __kora_net_set_option(self.fd, OPT_BROADCAST, flag(on)) == 0;
     }
 
     bool set_nodelay(self, on: bool) {
-        return __kora_net_set_option(self.fd, 3, flag(on)) == 0;
+        return __kora_net_set_option(self.fd, OPT_NODELAY, flag(on)) == 0;
     }
 
     bool set_timeout(self, ms: int) {

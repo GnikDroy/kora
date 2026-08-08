@@ -76,8 +76,8 @@ Socket? tcp_socket(family: int)
 Socket? udp_socket(family: int)
 ```
 
-Create an unbound, unconnected socket. `family` is `4` for IPv4 or `6` for
-IPv6. These are the low-level building blocks. Most programs use `connect`,
+Create an unbound, unconnected socket. `family` is `net.IPV4` or `net.IPV6`.
+These are the low-level building blocks. Most programs use `connect`,
 `listen`, or `bind_udp` instead.
 
 ## Methods on `Socket`
@@ -163,13 +163,32 @@ bool set_reuse(self, on: bool)           # SO_REUSEADDR
 bool set_keepalive(self, on: bool)       # SO_KEEPALIVE
 bool set_broadcast(self, on: bool)       # SO_BROADCAST, needed to send UDP broadcasts
 bool set_nodelay(self, on: bool)         # TCP_NODELAY, disable Nagle batching
-bool set_option(self, option: int, value: int)  # generic form; 0 reuse, 1 keepalive,
-                                                # 2 broadcast, 3 nodelay
-bool shutdown(self, how: int)            # stop one direction: 0 read, 1 write, 2 both
+bool set_option(self, option: int, value: int)  # generic form, see the constants below
+bool shutdown(self, how: int)            # stop one direction, see the constants below
 void close(self)                         # release the OS handle
 ```
 
-All the setters return `true` on success.
+All the setters return `true` on success. The module provides constants for
+the numeric codes:
+
+```ruby
+let IPV4 = 4;           # address families, for tcp_socket and udp_socket
+let IPV6 = 6;
+
+let OPT_REUSE = 0;      # option codes, for set_option
+let OPT_KEEPALIVE = 1;
+let OPT_BROADCAST = 2;
+let OPT_NODELAY = 3;
+
+let SHUT_READ = 0;      # directions, for shutdown
+let SHUT_WRITE = 1;
+let SHUT_BOTH = 2;
+```
+
+```ruby
+let sock = net.tcp_socket(net.IPV6)!;
+sock.shutdown(net.SHUT_WRITE);
+```
 
 ## TLS
 

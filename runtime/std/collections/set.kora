@@ -1,3 +1,5 @@
+let INITIAL_SLOTS = 8;
+
 struct set<K, H> {
     hasher: H,
     keys: [K],
@@ -10,7 +12,7 @@ set<K, H> make<K, H>() {
     return new set<K, H>{
         hasher: new H,
         keys: [],
-        slots: new int[8],
+        slots: new int[INITIAL_SLOTS],
         size: 0,
         used: 0,
     };

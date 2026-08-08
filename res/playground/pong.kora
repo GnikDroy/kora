@@ -4,11 +4,11 @@ import "std/conv";
 # Pong. Your paddle is on the left: ArrowUp / ArrowDown to move. The right
 # paddle is a simple tracking AI. First to 11 wins. q quits. Canvas-rendered.
 
-int screen_width() { return 640; }
-int screen_height() { return 480; }
-int paddle_width() { return 12; }
-int paddle_height() { return 80; }
-int ball_radius() { return 8; }
+let SCREEN_WIDTH = 640;
+let SCREEN_HEIGHT = 480;
+let PADDLE_WIDTH = 12;
+let PADDLE_HEIGHT = 80;
+let BALL_RADIUS = 8;
 
 struct Ball { x: real, y: real, vx: real, vy: real }
 
@@ -16,8 +16,8 @@ struct Paddle { x: int, y: real, score: int }
 
 impl Ball {
     void serve(self, toward_left: bool) {
-        self.x = (screen_width() / 2) as real;
-        self.y = (screen_height() / 2) as real;
+        self.x = (SCREEN_WIDTH / 2) as real;
+        self.y = (SCREEN_HEIGHT / 2) as real;
         self.vy = 2.5;
         if (toward_left) { self.vx = -4.0; } else { self.vx = 4.0; }
     }
@@ -28,12 +28,12 @@ impl Ball {
     }
 
     void bounce_off_walls(self) {
-        let radius = ball_radius() as real;
+        let radius = BALL_RADIUS as real;
         if (self.y < radius) {
             self.y = radius;
             self.vy = -self.vy;
         }
-        let floor = (screen_height() - ball_radius()) as real;
+        let floor = (SCREEN_HEIGHT - BALL_RADIUS) as real;
         if (self.y > floor) {
             self.y = floor;
             self.vy = -self.vy;
@@ -42,11 +42,11 @@ impl Ball {
 }
 
 impl Paddle {
-    int center(self) { return (self.y as int) + paddle_height() / 2; }
+    int center(self) { return (self.y as int) + PADDLE_HEIGHT / 2; }
 
     void nudge(self, delta: int) {
         self.y = self.y + (delta as real);
-        let lowest = (screen_height() - paddle_height()) as real;
+        let lowest = (SCREEN_HEIGHT - PADDLE_HEIGHT) as real;
         if (self.y < 0.0) { self.y = 0.0; }
         if (self.y > lowest) { self.y = lowest; }
     }
@@ -54,21 +54,21 @@ impl Paddle {
     # Track the ball's vertical position, but with a capped speed so the AI
     # can lose.
     void follow(self, ball: Ball) {
-        let target = (ball.y as int) - paddle_height() / 2;
+        let target = (ball.y as int) - PADDLE_HEIGHT / 2;
         if (target > (self.y as int) + 4) { self.nudge(5); }
         if (target < (self.y as int) - 4) { self.nudge(-5); }
     }
 
     bool blocks(self, ball: Ball) {
-        let radius = ball_radius() as real;
-        let front = (self.x + paddle_width()) as real;
+        let radius = BALL_RADIUS as real;
+        let front = (self.x + PADDLE_WIDTH) as real;
         let overlap_x = ball.x + radius > (self.x as real) && ball.x - radius < front;
 
         let ball_y = ball.y as int;
-        let overlap_y = ball_y + ball_radius() > (self.y as int)
-                     && ball_y - ball_radius() < (self.y as int) + paddle_height();
+        let overlap_y = ball_y + BALL_RADIUS > (self.y as int)
+                     && ball_y - BALL_RADIUS < (self.y as int) + PADDLE_HEIGHT;
 
-        let on_left = self.x < screen_width() / 2;
+        let on_left = self.x < SCREEN_WIDTH / 2;
         let approaching = (on_left && ball.vx < 0.0) || (!on_left && ball.vx > 0.0);
 
         return overlap_x && overlap_y && approaching;
@@ -87,52 +87,52 @@ void render(ball: Ball, player: Paddle, ai: Paddle) {
     draw_clear();
 
     set_color("#0f172a");
-    fill_rect(0, 0, screen_width(), screen_height());
+    fill_rect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
 
     set_color("#1e293b");
-    for (let y = 10; y < screen_height(); y = y + 30) {
-        fill_rect(screen_width() / 2 - 2, y, 4, 16);
+    for (let y = 10; y < SCREEN_HEIGHT; y = y + 30) {
+        fill_rect(SCREEN_WIDTH / 2 - 2, y, 4, 16);
     }
 
     set_color("#e2e8f0");
-    fill_rect(player.x, player.y as int, paddle_width(), paddle_height());
-    fill_rect(ai.x, ai.y as int, paddle_width(), paddle_height());
+    fill_rect(player.x, player.y as int, PADDLE_WIDTH, PADDLE_HEIGHT);
+    fill_rect(ai.x, ai.y as int, PADDLE_WIDTH, PADDLE_HEIGHT);
 
     set_color("#facc15");
-    fill_circle(ball.x as int, ball.y as int, ball_radius());
+    fill_circle(ball.x as int, ball.y as int, BALL_RADIUS);
 
     set_color("#94a3b8");
     set_font_size(36);
-    draw_text(conv.int_to_string(player.score), screen_width() / 2 - 60, 56);
-    draw_text(conv.int_to_string(ai.score), screen_width() / 2 + 36, 56);
+    draw_text(conv.int_to_string(player.score), SCREEN_WIDTH / 2 - 60, 56);
+    draw_text(conv.int_to_string(ai.score), SCREEN_WIDTH / 2 + 36, 56);
 }
 
 void render_result(player: Paddle, ai: Paddle) {
     set_color("#0f172a");
-    fill_rect(0, 0, screen_width(), screen_height());
+    fill_rect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
     set_color("#facc15");
     set_font_size(40);
     if (player.score > ai.score) {
-        draw_text("YOU WIN", screen_width() / 2 - 90, screen_height() / 2);
+        draw_text("YOU WIN", SCREEN_WIDTH / 2 - 90, SCREEN_HEIGHT / 2);
     } else {
-        draw_text("AI WINS", screen_width() / 2 - 90, screen_height() / 2);
+        draw_text("AI WINS", SCREEN_WIDTH / 2 - 90, SCREEN_HEIGHT / 2);
     }
     set_color("#e2e8f0");
     set_font_size(20);
     let line = conv.int_to_string(player.score) + " - " + conv.int_to_string(ai.score);
-    draw_text(line, screen_width() / 2 - 30, screen_height() / 2 + 40);
+    draw_text(line, SCREEN_WIDTH / 2 - 30, SCREEN_HEIGHT / 2 + 40);
 }
 
 int main() {
-    let middle = (screen_height() / 2 - paddle_height() / 2) as real;
+    let middle = (SCREEN_HEIGHT / 2 - PADDLE_HEIGHT / 2) as real;
     let ball = new Ball {
-        x: (screen_width() / 2) as real,
-        y: (screen_height() / 2) as real,
+        x: (SCREEN_WIDTH / 2) as real,
+        y: (SCREEN_HEIGHT / 2) as real,
         vx: -4.0,
         vy: 2.5,
     };
     let player = new Paddle { x: 20, y: middle, score: 0 };
-    let ai = new Paddle { x: screen_width() - 20 - paddle_width(), y: middle, score: 0 };
+    let ai = new Paddle { x: SCREEN_WIDTH - 20 - PADDLE_WIDTH, y: middle, score: 0 };
 
     render(ball, player, ai);
     time.sleep(800);
@@ -152,7 +152,7 @@ int main() {
             ai.score = ai.score + 1;
             ball.serve(false);
         }
-        if (ball.x > screen_width() as real) {
+        if (ball.x > SCREEN_WIDTH as real) {
             player.score = player.score + 1;
             ball.serve(true);
         }

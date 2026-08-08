@@ -8,11 +8,11 @@ import "std/math";
 # Each tetromino rotation is a 4x4 grid drawn as an ASCII string, 'X' for a
 # filled cell and '.' for empty. Index (row, col) is at row * 4 + col.
 
-int board_cols() { return 10; }
-int board_rows() { return 20; }
-int cell_size() { return 22; }
-int origin_x() { return 20; }
-int origin_y() { return 20; }
+let BOARD_COLS = 10;
+let BOARD_ROWS = 20;
+let CELL_SIZE = 22;
+let ORIGIN_X = 20;
+let ORIGIN_Y = 20;
 
 struct Piece { kind: int, rot: int, x: int, y: int }
 
@@ -85,9 +85,9 @@ string piece_color(kind: int) {
 }
 
 void fill_cell(col: int, row: int) {
-    let x = origin_x() + col * cell_size();
-    let y = origin_y() + row * cell_size();
-    fill_rect(x + 1, y + 1, cell_size() - 2, cell_size() - 2);
+    let x = ORIGIN_X + col * CELL_SIZE;
+    let y = ORIGIN_Y + row * CELL_SIZE;
+    fill_rect(x + 1, y + 1, CELL_SIZE - 2, CELL_SIZE - 2);
 }
 
 impl Piece {
@@ -110,8 +110,8 @@ impl Board {
                 if (cells[r * 4 + c] == 'X') {
                     let x = piece.x + c;
                     let y = piece.y + r;
-                    if (x < 0 || x >= board_cols() || y >= board_rows()) { return false; }
-                    if (y >= 0 && self.cells[y * board_cols() + x] != 0) { return false; }
+                    if (x < 0 || x >= BOARD_COLS || y >= BOARD_ROWS) { return false; }
+                    if (y >= 0 && self.cells[y * BOARD_COLS + x] != 0) { return false; }
                 }
             }
         }
@@ -130,7 +130,7 @@ impl Board {
         for (let r = 0; r < 4; r = r + 1) {
             for (let c = 0; c < 4; c = c + 1) {
                 if (cells[r * 4 + c] == 'X') {
-                    self.cells[(piece.y + r) * board_cols() + piece.x + c] = piece.kind + 1;
+                    self.cells[(piece.y + r) * BOARD_COLS + piece.x + c] = piece.kind + 1;
                 }
             }
         }
@@ -139,20 +139,20 @@ impl Board {
 
     int clear_lines(self) {
         let cleared = 0;
-        let row = board_rows() - 1;
+        let row = BOARD_ROWS - 1;
         while (row >= 0) {
             let full = true;
-            for (let col = 0; col < board_cols(); col = col + 1) {
-                if (self.cells[row * board_cols() + col] == 0) { full = false; }
+            for (let col = 0; col < BOARD_COLS; col = col + 1) {
+                if (self.cells[row * BOARD_COLS + col] == 0) { full = false; }
             }
             if (full) {
                 cleared = cleared + 1;
                 for (let r = row; r > 0; r = r - 1) {
-                    for (let col = 0; col < board_cols(); col = col + 1) {
-                        self.cells[r * board_cols() + col] = self.cells[(r - 1) * board_cols() + col];
+                    for (let col = 0; col < BOARD_COLS; col = col + 1) {
+                        self.cells[r * BOARD_COLS + col] = self.cells[(r - 1) * BOARD_COLS + col];
                     }
                 }
-                for (let col = 0; col < board_cols(); col = col + 1) {
+                for (let col = 0; col < BOARD_COLS; col = col + 1) {
                     self.cells[col] = 0;
                 }
             } else {
@@ -267,11 +267,11 @@ impl Game {
         fill_rect(0, 0, canvas_width(), canvas_height());
 
         set_color("#0f172a");
-        fill_rect(origin_x(), origin_y(), board_cols() * cell_size(), board_rows() * cell_size());
+        fill_rect(ORIGIN_X, ORIGIN_Y, BOARD_COLS * CELL_SIZE, BOARD_ROWS * CELL_SIZE);
 
-        for (let row = 0; row < board_rows(); row = row + 1) {
-            for (let col = 0; col < board_cols(); col = col + 1) {
-                let v = self.board.cells[row * board_cols() + col];
+        for (let row = 0; row < BOARD_ROWS; row = row + 1) {
+            for (let col = 0; col < BOARD_COLS; col = col + 1) {
+                let v = self.board.cells[row * BOARD_COLS + col];
                 if (v != 0) {
                     set_color(piece_color(v - 1));
                     fill_cell(col, row);
@@ -287,19 +287,19 @@ impl Game {
 
         set_color("#334155");
         set_line_width(2);
-        stroke_rect(origin_x(), origin_y(), board_cols() * cell_size(), board_rows() * cell_size());
+        stroke_rect(ORIGIN_X, ORIGIN_Y, BOARD_COLS * CELL_SIZE, BOARD_ROWS * CELL_SIZE);
 
-        let panel = origin_x() + board_cols() * cell_size() + 24;
+        let panel = ORIGIN_X + BOARD_COLS * CELL_SIZE + 24;
         set_color("#e2e8f0");
         set_font_size(14);
-        draw_text("SCORE", panel, origin_y() + 20);
+        draw_text("SCORE", panel, ORIGIN_Y + 20);
         set_font_size(28);
-        draw_text(conv.int_to_string(self.score), panel, origin_y() + 50);
+        draw_text(conv.int_to_string(self.score), panel, ORIGIN_Y + 50);
         set_font_size(13);
-        draw_text("Arrows: move / rotate", panel, origin_y() + 110);
-        draw_text("Down: soft drop", panel, origin_y() + 132);
-        draw_text("Space: hard drop", panel, origin_y() + 154);
-        draw_text("q: quit", panel, origin_y() + 176);
+        draw_text("Arrows: move / rotate", panel, ORIGIN_Y + 110);
+        draw_text("Down: soft drop", panel, ORIGIN_Y + 132);
+        draw_text("Space: hard drop", panel, ORIGIN_Y + 154);
+        draw_text("q: quit", panel, ORIGIN_Y + 176);
     }
 }
 
@@ -308,15 +308,15 @@ void game_over(score: int) {
     fill_rect(0, 0, canvas_width(), canvas_height());
     set_color("#ef4444");
     set_font_size(32);
-    draw_text("GAME OVER", origin_x() + 30, origin_y() + 200);
+    draw_text("GAME OVER", ORIGIN_X + 30, ORIGIN_Y + 200);
     set_color("#e2e8f0");
     set_font_size(18);
-    draw_text("Score: " + conv.int_to_string(score), origin_x() + 30, origin_y() + 232);
+    draw_text("Score: " + conv.int_to_string(score), ORIGIN_X + 30, ORIGIN_Y + 232);
 }
 
 int main() {
     let game = new Game {
-        board: new Board { cells: new int[board_cols() * board_rows()] },
+        board: new Board { cells: new int[BOARD_COLS * BOARD_ROWS] },
         bag: new Bag { queue: [] },
         piece: new Piece { kind: 0, rot: 0, x: 3, y: -1 },
         score: 0,

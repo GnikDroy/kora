@@ -304,6 +304,15 @@ fn test_native_udp_loopback() {
             import "std/net";
 
             int main() {
+                # the numeric codes behind the std/net constants are ABI
+                if (net.IPV4 != 4 || net.IPV6 != 6) { return 6; }
+                if (net.OPT_REUSE != 0 || net.OPT_NODELAY != 3) { return 7; }
+                if (net.SHUT_READ != 0 || net.SHUT_BOTH != 2) { return 8; }
+
+                let probe = net.tcp_socket(net.IPV4);
+                if (probe == none) { return 9; }
+                probe!.close();
+
                 let opened = net.bind_udp("127.0.0.1", 0);
                 if (opened == none) { return 1; }
                 let sock = opened!;
@@ -1590,8 +1599,12 @@ fn test_all_std_modules() {
                 term.home();
                 io.print(str.to_upper("kora") + conv.int_to_string(math.max(1, 5)));
                 let r = math.random();
-                if (r >= 0.0 && r < 1.0) { return 0; }
-                return 1;
+                if (r < 0.0 || r >= 1.0) { return 1; }
+                if (math.PI < 3.141592 || math.PI > 3.141593) { return 2; }
+                if (math.TAU != math.PI * 2.0) { return 3; }
+                if (math.sin(math.PI) > 0.000001) { return 4; }
+                if (term.ESC != (27 as char)) { return 5; }
+                return 0;
             }
         "#);
     assert_eq!(stdout, "\x1b[HKORA5\n");

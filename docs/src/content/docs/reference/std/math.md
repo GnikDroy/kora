@@ -10,6 +10,18 @@ Integer helpers take and return `int`. Floating-point helpers take and return
 `real`, and most carry an `f` suffix (`abs` vs `absf`). The exponential and
 trigonometric functions are backed by the platform math library.
 
+## Constants
+
+```ruby
+let PI = 3.141592653589793;
+let TAU = PI * 2.0;
+let E = 2.718281828459045;
+```
+
+```ruby
+let degrees = radians * 180.0 / math.PI;
+```
+
 ## Random numbers
 
 ```ruby

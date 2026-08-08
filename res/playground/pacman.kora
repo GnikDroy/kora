@@ -9,9 +9,6 @@ import "std/math";
 # The maze is generated as a pillar grid so it is always fully connected; it is
 # not the original arcade layout.
 
-int view_width() { return canvas_width(); }
-int view_height() { return canvas_height(); }
-
 struct Pac { x: real, y: real, dx: int, dy: int, want_dx: int, want_dy: int, mouth: int, face: real, sx: real, sy: real }
 struct Ghost { x: real, y: real, dx: int, dy: int, kind: int, frightened: int, home_x: int, home_y: int, sx: real, sy: real }
 struct Game { map: [string], pac: Pac, ghosts: [Ghost], score: int, lives: int, pellets: int, mode_timer: int }
@@ -258,11 +255,11 @@ impl Game {
     void render(self) {
         draw_clear();
         set_color("#000000");
-        fill_rect(0, 0, view_width(), view_height());
+        fill_rect(0, 0, canvas_width(), canvas_height());
 
         let cs = 20;
-        let ox = (view_width() - self.map[0].len() * cs) / 2;
-        let oy = (view_height() - self.map.len() * cs) / 2 + 6;
+        let ox = (canvas_width() - self.map[0].len() * cs) / 2;
+        let oy = (canvas_height() - self.map.len() * cs) / 2 + 6;
 
         for (let r = 0; r < self.map.len(); r = r + 1) {
             for (let c = 0; c < self.map[r].len(); c = c + 1) {
@@ -290,16 +287,16 @@ impl Game {
         set_font_size(18);
         set_color("#facc15");
         draw_text("SCORE " + conv.int_to_string(self.score), 16, 22);
-        draw_text("LIVES " + conv.int_to_string(self.lives), view_width() - 120, 22);
+        draw_text("LIVES " + conv.int_to_string(self.lives), canvas_width() - 120, 22);
     }
 
     void render_message(self, text: string, color: string) {
         set_color(color);
         set_font_size(48);
-        draw_text(text, view_width() / 2 - 150, view_height() / 2);
+        draw_text(text, canvas_width() / 2 - 150, canvas_height() / 2);
         set_color("#e2e8f0");
         set_font_size(20);
-        draw_text("Score: " + conv.int_to_string(self.score), view_width() / 2 - 50, view_height() / 2 + 44);
+        draw_text("Score: " + conv.int_to_string(self.score), canvas_width() / 2 - 50, canvas_height() / 2 + 44);
     }
 }
 

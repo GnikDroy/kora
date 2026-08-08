@@ -12,20 +12,20 @@ struct Snake { body: [Point] }
 
 struct Game { snake: Snake, food: Point, dx: int, dy: int, score: int, alive: bool }
 
-int grid_cols() { return 32; }
-int grid_rows() { return 18; }
-int cell_size() { return 18; }
-int origin_x() { return 20; }
-int origin_y() { return 20; }
+let GRID_COLS = 32;
+let GRID_ROWS = 18;
+let CELL_SIZE = 18;
+let ORIGIN_X = 20;
+let ORIGIN_Y = 20;
 
 Point point(x: int, y: int) {
     return new Point { x: x, y: y };
 }
 
 void fill_tile(col: int, row: int) {
-    let x = origin_x() + col * cell_size();
-    let y = origin_y() + row * cell_size();
-    fill_rect(x + 1, y + 1, cell_size() - 2, cell_size() - 2);
+    let x = ORIGIN_X + col * CELL_SIZE;
+    let y = ORIGIN_Y + row * CELL_SIZE;
+    fill_rect(x + 1, y + 1, CELL_SIZE - 2, CELL_SIZE - 2);
 }
 
 impl Snake {
@@ -49,8 +49,8 @@ impl Game {
         let placed = false;
         while (!placed) {
             self.food = point(
-                (math.random() * ((grid_cols() - 2) as real)) as int + 1,
-                (math.random() * ((grid_rows() - 2) as real)) as int + 1,
+                (math.random() * ((GRID_COLS - 2) as real)) as int + 1,
+                (math.random() * ((GRID_ROWS - 2) as real)) as int + 1,
             );
             placed = !self.snake.hits(self.food.x, self.food.y);
         }
@@ -66,8 +66,8 @@ impl Game {
     void step(self) {
         let head = point(self.snake.head().x + self.dx, self.snake.head().y + self.dy);
 
-        let hit_wall = head.x == 0 || head.x == grid_cols() - 1
-                    || head.y == 0 || head.y == grid_rows() - 1;
+        let hit_wall = head.x == 0 || head.x == GRID_COLS - 1
+                    || head.y == 0 || head.y == GRID_ROWS - 1;
         if (hit_wall || self.snake.hits(head.x, head.y)) {
             self.alive = false;
             return;
@@ -86,13 +86,13 @@ impl Game {
         fill_rect(0, 0, canvas_width(), canvas_height());
 
         set_color("#0f172a");
-        fill_rect(origin_x(), origin_y(), grid_cols() * cell_size(), grid_rows() * cell_size());
+        fill_rect(ORIGIN_X, ORIGIN_Y, GRID_COLS * CELL_SIZE, GRID_ROWS * CELL_SIZE);
 
         set_color("#ef4444");
-        let half = cell_size() / 2;
+        let half = CELL_SIZE / 2;
         fill_circle(
-            origin_x() + self.food.x * cell_size() + half,
-            origin_y() + self.food.y * cell_size() + half,
+            ORIGIN_X + self.food.x * CELL_SIZE + half,
+            ORIGIN_Y + self.food.y * CELL_SIZE + half,
             half - 2,
         );
 
@@ -105,12 +105,12 @@ impl Game {
 
         set_color("#334155");
         set_line_width(2);
-        stroke_rect(origin_x(), origin_y(), grid_cols() * cell_size(), grid_rows() * cell_size());
+        stroke_rect(ORIGIN_X, ORIGIN_Y, GRID_COLS * CELL_SIZE, GRID_ROWS * CELL_SIZE);
 
         set_color("#e2e8f0");
         set_font_size(16);
         draw_text("Score: " + conv.int_to_string(self.score),
-            origin_x(), origin_y() + grid_rows() * cell_size() + 26);
+            ORIGIN_X, ORIGIN_Y + GRID_ROWS * CELL_SIZE + 26);
     }
 }
 
@@ -119,10 +119,10 @@ void game_over(score: int) {
     fill_rect(0, 0, canvas_width(), canvas_height());
     set_color("#ef4444");
     set_font_size(32);
-    draw_text("GAME OVER", origin_x() + 180, origin_y() + 150);
+    draw_text("GAME OVER", ORIGIN_X + 180, ORIGIN_Y + 150);
     set_color("#e2e8f0");
     set_font_size(18);
-    draw_text("Score: " + conv.int_to_string(score), origin_x() + 180, origin_y() + 182);
+    draw_text("Score: " + conv.int_to_string(score), ORIGIN_X + 180, ORIGIN_Y + 182);
 }
 
 int main() {

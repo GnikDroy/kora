@@ -11,13 +11,11 @@ import "std/math";
 # wall, then draws a vertical slice whose height falls off with distance.
 # Enemies are billboard sprites, depth-tested against the walls.
 
-int view_width() { return canvas_width(); }
-int view_height() { return canvas_height(); }
-int column_width() { return 2; }
-int column_count() { return view_width() / column_width(); }
-real field_of_view() { return 1.05; }
-real max_depth() { return 16.0; }
-real pi() { return 3.14159265; }
+let COLUMN_WIDTH = 2;
+let FIELD_OF_VIEW = 1.05;
+let MAX_DEPTH = 16.0;
+
+int column_count() { return canvas_width() / COLUMN_WIDTH; }
 
 struct Hit { distance: real, side: int, tex: real }
 struct Player { x: real, y: real, angle: real, health: int, ammo: int, score: int }
@@ -32,8 +30,8 @@ struct World {
 }
 
 real normalize(a: real) {
-    while (a > pi()) { a = a - 2.0 * pi(); }
-    while (a < -pi()) { a = a + 2.0 * pi(); }
+    while (a > math.PI) { a = a - 2.0 * math.PI; }
+    while (a < -math.PI) { a = a + 2.0 * math.PI; }
     return a;
 }
 
@@ -56,7 +54,7 @@ Hit cast_ray(map: [string], ox: real, oy: real, angle: real) {
     let y = oy;
     let distance = 0.0;
     let prev_row = y as int;
-    while (distance < max_depth()) {
+    while (distance < MAX_DEPTH) {
         x = x + dx;
         y = y + dy;
         distance = distance + step;
@@ -71,7 +69,7 @@ Hit cast_ray(map: [string], ox: real, oy: real, angle: real) {
         }
         prev_row = y as int;
     }
-    return new Hit { distance: max_depth(), side: 0, tex: 0.0 };
+    return new Hit { distance: MAX_DEPTH, side: 0, tex: 0.0 };
 }
 
 # Bluish walls: darker with distance, darker on horizontal faces, with a dark
@@ -87,7 +85,7 @@ string wall_shade(distance: real, side: int, tex: real) {
 
 # A floating demon head, centered at screen column cx, scaled by size.
 void draw_enemy(cx: int, size: int, distance: real) {
-    let cy = view_height() / 2;
+    let cy = canvas_height() / 2;
     let r = size / 2;
     if (r < 2) { r = 2; }
 
@@ -122,7 +120,7 @@ impl Player {
     }
 
     void strafe(self, amount: real, map: [string]) {
-        let side = self.angle + pi() / 2.0;
+        let side = self.angle + math.PI / 2.0;
         let nx = self.x + math.cos(side) * amount;
         let ny = self.y + math.sin(side) * amount;
         if (!is_wall(map, nx, self.y)) { self.x = nx; }
@@ -222,24 +220,24 @@ impl World {
 
     void render_walls(self) {
         set_color("#0b1020");
-        fill_rect(0, 0, view_width(), view_height() / 2);
+        fill_rect(0, 0, canvas_width(), canvas_height() / 2);
         set_color("#161616");
-        fill_rect(0, view_height() / 2, view_width(), view_height() / 2);
+        fill_rect(0, canvas_height() / 2, canvas_width(), canvas_height() / 2);
 
-        let half_fov = field_of_view() / 2.0;
-        for (let col = 0; col < view_width(); col = col + column_width()) {
-            let offset = field_of_view() * (col as real / view_width() as real);
+        let half_fov = FIELD_OF_VIEW / 2.0;
+        for (let col = 0; col < canvas_width(); col = col + COLUMN_WIDTH) {
+            let offset = FIELD_OF_VIEW * (col as real / canvas_width() as real);
             let ray = self.player.angle - half_fov + offset;
 
             let hit = cast_ray(self.map, self.player.x, self.player.y, ray);
             let corrected = hit.distance * math.cos(ray - self.player.angle);
             if (corrected < 0.05) { corrected = 0.05; }
-            self.depth[col / column_width()] = corrected;
+            self.depth[col / COLUMN_WIDTH] = corrected;
 
-            let wall = (view_height() as real / corrected) as int;
-            let top = view_height() / 2 - wall / 2;
+            let wall = (canvas_height() as real / corrected) as int;
+            let top = canvas_height() / 2 - wall / 2;
             set_color(wall_shade(corrected, hit.side, hit.tex));
-            fill_rect(col, top, column_width(), wall);
+            fill_rect(col, top, COLUMN_WIDTH, wall);
         }
     }
 
@@ -251,11 +249,11 @@ impl World {
                 let dist = math.sqrtf(dx * dx + dy * dy);
                 let angle = normalize(math.atan2(dy, dx) - self.player.angle);
                 let perp = dist * math.cos(angle);
-                if (math.absf(angle) < field_of_view() / 2.0 + 0.4 && perp > 0.3) {
-                    let screen_x = ((0.5 + angle / field_of_view()) * (view_width() as real)) as int;
-                    let idx = screen_x / column_width();
+                if (math.absf(angle) < FIELD_OF_VIEW / 2.0 + 0.4 && perp > 0.3) {
+                    let screen_x = ((0.5 + angle / FIELD_OF_VIEW) * (canvas_width() as real)) as int;
+                    let idx = screen_x / COLUMN_WIDTH;
                     if (idx >= 0 && idx < column_count() && perp < self.depth[idx]) {
-                        draw_enemy(screen_x, (view_height() as real / perp) as int, perp);
+                        draw_enemy(screen_x, (canvas_height() as real / perp) as int, perp);
                     }
                 }
             }
@@ -263,8 +261,8 @@ impl World {
     }
 
     void render_hud(self) {
-        let mid = view_width() / 2;
-        let base = view_height();
+        let mid = canvas_width() / 2;
+        let base = canvas_height();
 
         if (self.flash > 0) {
             set_color("#fde047");
@@ -278,8 +276,8 @@ impl World {
         fill_rect(mid - 24, base - 44, 48, 44);
 
         set_color("#e2e8f0");
-        fill_rect(mid - 1, view_height() / 2 - 8, 2, 16);
-        fill_rect(mid - 8, view_height() / 2 - 1, 16, 2);
+        fill_rect(mid - 1, canvas_height() / 2 - 8, 2, 16);
+        fill_rect(mid - 8, canvas_height() / 2 - 1, 16, 2);
 
         set_font_size(18);
         set_color("#f87171");
@@ -324,10 +322,10 @@ impl World {
     void render_message(self, text: string, color: string) {
         set_color(color);
         set_font_size(48);
-        draw_text(text, view_width() / 2 - 150, view_height() / 2);
+        draw_text(text, canvas_width() / 2 - 150, canvas_height() / 2);
         set_color("#e2e8f0");
         set_font_size(20);
-        draw_text("Score: " + conv.int_to_string(self.player.score), view_width() / 2 - 50, view_height() / 2 + 44);
+        draw_text("Score: " + conv.int_to_string(self.player.score), canvas_width() / 2 - 50, canvas_height() / 2 + 44);
     }
 }
 

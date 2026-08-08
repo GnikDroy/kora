@@ -55,7 +55,8 @@ string csi(code: string)
 ```
 
 Returns the ANSI control sequence for `code`: the escape byte, `[`, then
-`code`. A building block for effects the module does not wrap.
+`code`. A building block for effects the module does not wrap. The escape
+byte itself is exported as the constant `term.ESC` (`27 as char`).
 
 ```ruby
 io.write(term.csi("1m"));    # bold

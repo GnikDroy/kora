@@ -3,6 +3,9 @@ import "std/fs";
 import "std/io";
 import "std/math";
 
+let WIDTH = 800;
+let HEIGHT = 600;
+
 struct Vec {
     x: real,
     y: real,
@@ -123,8 +126,6 @@ int byte_of(v: real) {
 }
 
 int main() {
-    let width = 800;
-    let height = 600;
     let spheres = [
         new Sphere { center: vec(0.0, -1000.5, -4.0), radius: 1000.0, color: vec(0.85, 0.85, 0.8), mirror: 0.0, checker: true },
         new Sphere { center: vec(-2.1, 0.5, -4.6), radius: 1.0, color: vec(0.9, 0.25, 0.2), mirror: 0.08, checker: false },
@@ -162,22 +163,22 @@ int main() {
         return 1;
     }
     let f = out!;
-    f.write("P3\n" + conv.int_to_string(width) + " " + conv.int_to_string(height) + "\n255\n");
+    f.write("P3\n" + conv.int_to_string(WIDTH) + " " + conv.int_to_string(HEIGHT) + "\n255\n");
 
     let origin = vec(0.0, 0.6, 1.5);
-    let aspect = (width as real) / (height as real);
+    let aspect = (WIDTH as real) / (HEIGHT as real);
 
     # 2x2 supersampling
     let grid = 2;
-    for (let y = 0; y < height; y = y + 1) {
-        for (let x = 0; x < width; x = x + 1) {
+    for (let y = 0; y < HEIGHT; y = y + 1) {
+        for (let x = 0; x < WIDTH; x = x + 1) {
             let color = vec(0.0, 0.0, 0.0);
             for (let sy = 0; sy < grid; sy = sy + 1) {
                 for (let sx = 0; sx < grid; sx = sx + 1) {
                     let px = (x as real) + ((sx as real) + 0.5) / (grid as real);
                     let py = (y as real) + ((sy as real) + 0.5) / (grid as real);
-                    let u = ((2.0 * px / (width as real)) - 1.0) * aspect;
-                    let v = 1.0 - 2.0 * py / (height as real);
+                    let u = ((2.0 * px / (WIDTH as real)) - 1.0) * aspect;
+                    let v = 1.0 - 2.0 * py / (HEIGHT as real);
                     let dir = vec(u * 0.7, v * 0.7 - 0.12, -1.0).unit();
                     color = color.plus(trace(spheres, origin, dir, 3));
                 }
@@ -190,6 +191,6 @@ int main() {
         }
     }
     f.close();
-    io.print("wrote raytrace.ppm (" + conv.int_to_string(width) + "x" + conv.int_to_string(height) + ")");
+    io.print("wrote raytrace.ppm (" + conv.int_to_string(WIDTH) + "x" + conv.int_to_string(HEIGHT) + ")");
     return 0;
 }

@@ -1,3 +1,5 @@
+let INITIAL_SLOTS = 8;
+
 struct map<K, V, H> {
     hasher: H,
     stored_keys: [K],
@@ -12,7 +14,7 @@ map<K, V, H> make<K, V, H>() {
         hasher: new H,
         stored_keys: [],
         stored_values: [],
-        slots: new int[8],
+        slots: new int[INITIAL_SLOTS],
         size: 0,
         used: 0,
     };
